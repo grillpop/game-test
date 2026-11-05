@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="タップ練習">
+<meta name="theme-color" content="#14213d">
+<title>タップ練習ゲーム</title>
+<style>
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: #14213d;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  #hud {
+    position: fixed;
+    inset: env(safe-area-inset-top) 0 auto 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 16px 20px;
+    font-size: 22px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  #field { position: fixed; inset: 0; touch-action: none; }
+  #target {
+    position: absolute;
+    width: 84px;
+    height: 84px;
+    border: 0;
+    border-radius: 50%;
+    background: #ffb703;
+    box-shadow: 0 0 0 8px rgba(255, 183, 3, .25);
+    touch-action: none;
+    display: none;
+  }
+  #panel {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 24px;
+    text-align: center;
+  }
+  #panel h1 { font-size: 30px; }
+  #panel p { font-size: 17px; line-height: 1.6; color: #d7deea; }
+  #start {
+    min-width: 200px;
+    padding: 16px 28px;
+    border: 0;
+    border-radius: 12px;
+    background: #ffb703;
+    color: #14213d;
+    font: inherit;
+    font-size: 20px;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+  <div id="field"><button id="target" type="button" aria-label="的"></button></div>
+  <div id="hud"><span id="score">スコア 0</span><span id="time">残り 20</span></div>
+  <div id="panel">
+    <h1 id="title">タップ練習ゲーム</h1>
+    <p id="message">20秒間に、丸をいくつタップできるかな?</p>
+    <button id="start" type="button">スタート</button>
+  </div>
+
+<script>
+  const ROUND_SECONDS = 20;
+  const BEST_KEY = 'game-test-best';
+
+  const field = document.getElementById('field');
+  const target = document.getElementById('target');
+  const panel = document.getElementById('panel');
+  const title = document.getElementById('title');
+  const message = document.getElementById('message');
+  const startButton = document.getElementById('start');
+  const scoreLabel = document.getElementById('score');
+  const timeLabel = document.getElementById('time');
+
+  let score = 0;
+  let timer = null;
+
+  // localStorage can be unavailable in some private browsing modes.
+  function loadBest() {
+    try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) { return 0; }
+  }
+  function saveBest(value) {
+    try { localStorage.setItem(BEST_KEY, String(value)); } catch (e) {}
+  }
+
+  function moveTarget() {
+    const size = target.offsetWidth;
+    const margin = 16;
+    const top = 76;
+    const x = margin + Math.random() * Math.max(0, field.clientWidth - size - margin * 2);
+    const y = top + Math.random() * Math.max(0, field.clientHeight - size - top - margin);
+    target.style.left = x + 'px';
+    target.style.top = y + 'px';
+  }
+
+  function start() {
+    score = 0;
+    let remaining = ROUND_SECONDS;
+    scoreLabel.textContent = 'スコア 0';
+    timeLabel.textContent = '残り ' + remaining;
+    panel.style.display = 'none';
+    target.style.display = 'block';
+    moveTarget();
+    timer = setInterval(() => {
+      remaining -= 1;
+      timeLabel.textContent = '残り ' + remaining;
+      if (remaining <= 0) finish();
+    }, 1000);
+  }
+
+  function finish() {
+    clearInterval(timer);
+    target.style.display = 'none';
+    const best = Math.max(score, loadBest());
+    saveBest(best);
+    title.textContent = 'スコア ' + score;
+    message.textContent = '自己ベスト ' + best;
+    startButton.textContent = 'もう一回';
+    panel.style.display = 'flex';
+  }
+
+  target.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    score += 1;
+    scoreLabel.textContent = 'スコア ' + score;
+    if (navigator.vibrate) navigator.vibrate(10);
+    moveTarget();
+  });
+  startButton.addEventListener('click', start);
+</script>
+</body>
+</html>
