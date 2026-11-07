@@ -5,145 +5,363 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="タップ練習">
-<meta name="theme-color" content="#14213d">
-<title>タップ練習ゲーム</title>
+<meta name="apple-mobile-web-app-title" content="おさんぽ">
+<meta name="theme-color" content="#3f7d3a">
+<title>おさんぽ(見下ろし移動テスト)</title>
 <style>
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: #2b4a2a; }
   body {
-    background: #14213d;
-    color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
   }
-  #hud {
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  #hint {
     position: fixed;
-    inset: env(safe-area-inset-top) 0 auto 0;
-    display: flex;
-    justify-content: space-between;
-    padding: 16px 20px;
-    font-size: 22px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-  #field { position: fixed; inset: 0; touch-action: none; }
-  #target {
-    position: absolute;
-    width: 84px;
-    height: 84px;
-    border: 0;
-    border-radius: 50%;
-    background: #ffb703;
-    box-shadow: 0 0 0 8px rgba(255, 183, 3, .25);
-    touch-action: none;
-    display: none;
-  }
-  #panel {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 18px;
-    padding: 24px;
+    left: 0; right: 0;
+    bottom: calc(env(safe-area-inset-bottom) + 40px);
     text-align: center;
-  }
-  #panel h1 { font-size: 30px; }
-  #panel p { font-size: 17px; line-height: 1.6; color: #d7deea; }
-  #start {
-    min-width: 200px;
-    padding: 16px 28px;
-    border: 0;
-    border-radius: 12px;
-    background: #ffb703;
-    color: #14213d;
-    font: inherit;
-    font-size: 20px;
+    color: #fff;
+    font-size: 18px;
     font-weight: 700;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, .5);
+    pointer-events: none;
+    transition: opacity .6s;
   }
 </style>
 </head>
 <body>
-  <div id="field"><button id="target" type="button" aria-label="的"></button></div>
-  <div id="hud"><span id="score">スコア 0</span><span id="time">残り 20</span></div>
-  <div id="panel">
-    <h1 id="title">タップ練習ゲーム</h1>
-    <p id="message">20秒間に、丸をいくつタップできるかな?</p>
-    <button id="start" type="button">スタート</button>
-  </div>
+  <canvas id="game"></canvas>
+  <div id="hint">画面をなぞって歩こう</div>
 
 <script>
-  const ROUND_SECONDS = 20;
-  const BEST_KEY = 'game-test-best';
+  // ---- 設定 ----
+  const HALF = 20;          // ステージの半分の広さ(ワールド単位)
+  const TILE = 2;           // 地面のマス目の大きさ
+  const TILT = 0.62;        // 奥行きのつぶし具合(小さいほど真上から遠くなる)
+  const SPEED = 7;          // 歩く速さ(単位/秒)
+  const STICK_RADIUS = 56;  // バーチャルスティックの半径(px)
+  const PLAYER_R = 0.35;    // キャラクターの当たり判定の半径
 
-  const field = document.getElementById('field');
-  const target = document.getElementById('target');
-  const panel = document.getElementById('panel');
-  const title = document.getElementById('title');
-  const message = document.getElementById('message');
-  const startButton = document.getElementById('start');
-  const scoreLabel = document.getElementById('score');
-  const timeLabel = document.getElementById('time');
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const hint = document.getElementById('hint');
 
-  let score = 0;
-  let timer = null;
+  let W = 0, H = 0, S = 40; // 画面の幅・高さ、1単位あたりのピクセル数
 
-  // localStorage can be unavailable in some private browsing modes.
-  function loadBest() {
-    try { return Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) { return 0; }
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    S = Math.min(W, H) / 9;
   }
-  function saveBest(value) {
-    try { localStorage.setItem(BEST_KEY, String(value)); } catch (e) {}
-  }
+  window.addEventListener('resize', resize);
+  resize();
 
-  function moveTarget() {
-    const size = target.offsetWidth;
-    const margin = 16;
-    const top = 76;
-    const x = margin + Math.random() * Math.max(0, field.clientWidth - size - margin * 2);
-    const y = top + Math.random() * Math.max(0, field.clientHeight - size - top - margin);
-    target.style.left = x + 'px';
-    target.style.top = y + 'px';
-  }
-
-  function start() {
-    score = 0;
-    let remaining = ROUND_SECONDS;
-    scoreLabel.textContent = 'スコア 0';
-    timeLabel.textContent = '残り ' + remaining;
-    panel.style.display = 'none';
-    target.style.display = 'block';
-    moveTarget();
-    timer = setInterval(() => {
-      remaining -= 1;
-      timeLabel.textContent = '残り ' + remaining;
-      if (remaining <= 0) finish();
-    }, 1000);
+  // ---- 乱数(毎回同じ配置にするため種つき) ----
+  let seed = 7;
+  function rand() {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
   }
 
-  function finish() {
-    clearInterval(timer);
-    target.style.display = 'none';
-    const best = Math.max(score, loadBest());
-    saveBest(best);
-    title.textContent = 'スコア ' + score;
-    message.textContent = '自己ベスト ' + best;
-    startButton.textContent = 'もう一回';
-    panel.style.display = 'flex';
+  // ---- ステージの飾り ----
+  const trees = [];
+  while (trees.length < 18) {
+    const x = (rand() * 2 - 1) * (HALF - 2);
+    const z = (rand() * 2 - 1) * (HALF - 2);
+    if (Math.hypot(x, z) < 4) continue; // スタート地点の近くには置かない
+    if (trees.some(t => Math.hypot(t.x - x, t.z - z) < 3)) continue;
+    trees.push({ x, z, r: 0.55, size: 0.85 + rand() * 0.35 });
+  }
+  const tufts = [];
+  for (let i = 0; i < 220; i++) {
+    tufts.push({
+      x: (rand() * 2 - 1) * (HALF - 0.5),
+      z: (rand() * 2 - 1) * (HALF - 0.5),
+      flower: rand() < 0.18,
+      color: ['#ffffff', '#ffd166', '#ff8fab'][Math.floor(rand() * 3)],
+    });
   }
 
-  target.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    score += 1;
-    scoreLabel.textContent = 'スコア ' + score;
-    if (navigator.vibrate) navigator.vibrate(10);
-    moveTarget();
+  // ---- キャラクター ----
+  const player = { x: 0, z: 0, vx: 0, vz: 0, angle: Math.PI / 2, walk: 0 };
+  const cam = { x: 0, z: 0 };
+  const dust = [];
+
+  // ---- 入力(タッチ/マウス と キーボード) ----
+  const stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+  const keys = {};
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (stick.active) return;
+    e.preventDefault();
+    stick.active = true;
+    stick.id = e.pointerId;
+    stick.ox = e.clientX;
+    stick.oy = e.clientY;
+    stick.dx = stick.dy = 0;
+    canvas.setPointerCapture(e.pointerId);
   });
-  startButton.addEventListener('click', start);
+  canvas.addEventListener('pointermove', (e) => {
+    if (!stick.active || e.pointerId !== stick.id) return;
+    let dx = e.clientX - stick.ox;
+    let dy = e.clientY - stick.oy;
+    const len = Math.hypot(dx, dy);
+    if (len > STICK_RADIUS) {
+      // 指が遠くまで行ったら、スティックの中心ごと引っぱってくる
+      stick.ox += dx - dx / len * STICK_RADIUS;
+      stick.oy += dy - dy / len * STICK_RADIUS;
+      dx = dx / len * STICK_RADIUS;
+      dy = dy / len * STICK_RADIUS;
+    }
+    stick.dx = dx;
+    stick.dy = dy;
+  });
+  function endStick(e) {
+    if (e.pointerId !== stick.id) return;
+    stick.active = false;
+    stick.id = null;
+    stick.dx = stick.dy = 0;
+  }
+  canvas.addEventListener('pointerup', endStick);
+  canvas.addEventListener('pointercancel', endStick);
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+  window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+  window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+
+  function readInput() {
+    let ix = 0, iz = 0;
+    if (stick.active) {
+      ix = stick.dx / STICK_RADIUS;
+      iz = stick.dy / STICK_RADIUS;
+      if (Math.hypot(ix, iz) < 0.15) ix = iz = 0; // 少しの指ブレは無視
+    }
+    if (keys.ArrowLeft || keys.a) ix -= 1;
+    if (keys.ArrowRight || keys.d) ix += 1;
+    if (keys.ArrowUp || keys.w) iz -= 1;
+    if (keys.ArrowDown || keys.s) iz += 1;
+    const len = Math.hypot(ix, iz);
+    if (len > 1) { ix /= len; iz /= len; }
+    return { ix, iz };
+  }
+
+  // ---- 更新 ----
+  let hintShown = true;
+  let dustTimer = 0;
+
+  function update(dt) {
+    const { ix, iz } = readInput();
+
+    // 目標の速さにすばやく近づける(キビキビした動きのため強め)
+    const k = Math.min(1, dt * 14);
+    player.vx += (ix * SPEED - player.vx) * k;
+    player.vz += (iz * SPEED - player.vz) * k;
+    player.x += player.vx * dt;
+    player.z += player.vz * dt;
+
+    // 木にめりこまないよう押し出す
+    for (const t of trees) {
+      const dx = player.x - t.x, dz = player.z - t.z;
+      const d = Math.hypot(dx, dz);
+      const min = t.r + PLAYER_R;
+      if (d < min && d > 0.0001) {
+        player.x = t.x + dx / d * min;
+        player.z = t.z + dz / d * min;
+      }
+    }
+    // ステージの外に出ない
+    const lim = HALF - PLAYER_R;
+    player.x = Math.max(-lim, Math.min(lim, player.x));
+    player.z = Math.max(-lim, Math.min(lim, player.z));
+
+    const speed = Math.hypot(player.vx, player.vz);
+    if (speed > 0.5) {
+      // 向きをなめらかに回す
+      const target = Math.atan2(player.vz, player.vx);
+      let diff = target - player.angle;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      player.angle += diff * Math.min(1, dt * 18);
+      player.walk += speed * dt * 2.4;
+
+      dustTimer -= dt;
+      if (dustTimer <= 0) {
+        dustTimer = 0.09;
+        dust.push({ x: player.x, z: player.z, life: 0.45, max: 0.45 });
+      }
+      if (hintShown) { hintShown = false; hint.style.opacity = '0'; }
+    } else {
+      // 止まったら足をそろえる
+      player.walk += (Math.round(player.walk / Math.PI) * Math.PI - player.walk) * Math.min(1, dt * 10);
+    }
+
+    for (const p of dust) p.life -= dt;
+    while (dust.length && dust[0].life <= 0) dust.shift();
+
+    // カメラはキャラクターを少し遅れて追いかける
+    const ck = Math.min(1, dt * 6);
+    cam.x += (player.x - cam.x) * ck;
+    cam.z += (player.z - cam.z) * ck;
+  }
+
+  // ---- 描画 ----
+  function toScreen(x, z, h = 0) {
+    return [W / 2 + (x - cam.x) * S, H * 0.55 + (z - cam.z) * S * TILT - h * S];
+  }
+
+  function ellipse(x, y, rx, ry, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawGround() {
+    // ステージの手前側の側面(土の厚み)で立体感を出す
+    const [lx, ny] = toScreen(-HALF, HALF);
+    const [rx] = toScreen(HALF, HALF);
+    ctx.fillStyle = '#7a5230';
+    ctx.fillRect(lx, ny, rx - lx, S * 0.9);
+    ctx.fillStyle = '#5e3e24';
+    ctx.fillRect(lx, ny + S * 0.45, rx - lx, S * 0.45);
+
+    for (let gx = -HALF; gx < HALF; gx += TILE) {
+      for (let gz = -HALF; gz < HALF; gz += TILE) {
+        const [x0, y0] = toScreen(gx, gz);
+        const [x1, y1] = toScreen(gx + TILE, gz + TILE);
+        if (x1 < 0 || x0 > W || y1 < 0 || y0 > H) continue;
+        const even = ((gx + gz) / TILE) % 2 === 0;
+        ctx.fillStyle = even ? '#6cbf4a' : '#62b342';
+        ctx.fillRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1);
+      }
+    }
+
+    for (const t of tufts) {
+      const [x, y] = toScreen(t.x, t.z);
+      if (x < -10 || x > W + 10 || y < -10 || y > H + 10) continue;
+      if (t.flower) {
+        ellipse(x, y, S * 0.07, S * 0.05, t.color);
+      } else {
+        ctx.strokeStyle = '#4e9a36';
+        ctx.lineWidth = Math.max(1.5, S * 0.035);
+        ctx.beginPath();
+        ctx.moveTo(x - S * 0.08, y - S * 0.1);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + S * 0.08, y - S * 0.12);
+        ctx.stroke();
+      }
+    }
+
+    for (const p of dust) {
+      const [x, y] = toScreen(p.x, p.z);
+      const a = p.life / p.max;
+      ctx.globalAlpha = a * 0.5;
+      ellipse(x, y, S * (0.25 - a * 0.12), S * (0.25 - a * 0.12) * TILT, '#e9f5d0');
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawTree(t) {
+    const [x, y] = toScreen(t.x, t.z);
+    const s = t.size * S;
+    ellipse(x, y, s * 0.7, s * 0.7 * TILT, 'rgba(0,0,0,.22)');
+    ctx.fillStyle = '#8a5a34';
+    ctx.fillRect(x - s * 0.12, y - s * 0.75, s * 0.24, s * 0.75);
+    ellipse(x, y - s * 1.15, s * 0.7, s * 0.62, '#2f8f46');
+    ellipse(x - s * 0.15, y - s * 1.3, s * 0.45, s * 0.4, '#3fa957');
+    ellipse(x - s * 0.25, y - s * 1.42, s * 0.16, s * 0.12, '#6fcf7f');
+  }
+
+  function drawPlayer() {
+    const [x, y] = toScreen(player.x, player.z);
+    const fx = Math.cos(player.angle);
+    const fz = Math.sin(player.angle);
+    const moving = Math.hypot(player.vx, player.vz) > 0.5;
+    const swing = Math.sin(player.walk);
+    const bob = moving ? Math.abs(Math.cos(player.walk)) * S * 0.06 : 0;
+
+    ellipse(x, y, S * 0.36, S * 0.36 * TILT, 'rgba(0,0,0,.25)');
+
+    // 足(進む向きに前後させる)
+    const step = S * 0.13;
+    for (const side of [-1, 1]) {
+      const phase = swing * side;
+      const footX = x + side * S * 0.13 + fx * phase * step;
+      const footY = y - S * 0.06 + fz * TILT * phase * step - Math.max(0, phase) * S * 0.08;
+      ellipse(footX, footY, S * 0.1, S * 0.08, '#3d3a4b');
+    }
+
+    const bodyY = y - S * 0.5 - bob;
+    // うで
+    for (const side of [-1, 1]) {
+      const phase = -swing * side;
+      ellipse(x + side * S * 0.3 + fx * phase * S * 0.08, bodyY + S * 0.05 + fz * TILT * phase * S * 0.08,
+        S * 0.09, S * 0.12, '#2a6fb0');
+    }
+    // からだ
+    ellipse(x, bodyY, S * 0.29, S * 0.32, '#3a86d1');
+    // マフラー
+    ellipse(x, bodyY - S * 0.24, S * 0.25, S * 0.09, '#ef6c3a');
+
+    // あたま
+    const headY = bodyY - S * 0.55;
+    ellipse(x, headY, S * 0.3, S * 0.28, '#ffd9b3');
+    // ぼうし
+    ctx.fillStyle = '#ef6c3a';
+    ctx.beginPath();
+    ctx.ellipse(x, headY - S * 0.06, S * 0.31, S * 0.26, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ellipse(x, headY - S * 0.33, S * 0.08, S * 0.08, '#fff4e6');
+
+    // 目(こちらを向いているときだけ見える)
+    if (fz > -0.35) {
+      const ex = x + fx * S * 0.12;
+      const spread = S * 0.1 * (1 - Math.abs(fx) * 0.45);
+      const ey = headY + S * 0.06;
+      ellipse(ex - spread, ey, S * 0.04, S * 0.055, '#2b2b35');
+      ellipse(ex + spread, ey, S * 0.04, S * 0.055, '#2b2b35');
+    }
+  }
+
+  function drawStick() {
+    if (!stick.active) return;
+    ctx.globalAlpha = 0.35;
+    ellipse(stick.ox, stick.oy, STICK_RADIUS, STICK_RADIUS, '#ffffff');
+    ctx.globalAlpha = 0.8;
+    ellipse(stick.ox + stick.dx, stick.oy + stick.dy, STICK_RADIUS * 0.45, STICK_RADIUS * 0.45, '#ffffff');
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    ctx.fillStyle = '#2b4a2a';
+    ctx.fillRect(0, 0, W, H);
+    drawGround();
+
+    // 奥にあるものから順に描く(手前のものが上に重なる)
+    const objects = trees.map(t => ({ z: t.z, draw: () => drawTree(t) }));
+    objects.push({ z: player.z, draw: drawPlayer });
+    objects.sort((a, b) => a.z - b.z);
+    for (const o of objects) o.draw();
+
+    drawStick();
+  }
+
+  // ---- メインループ ----
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 </script>
 </body>
 </html>
