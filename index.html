@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="雪のキャンプ">
 <meta name="theme-color" content="#cfe3f2">
-<title>雪のキャンプ(移動テスト)</title>
+<title>雪のキャンプ</title>
 <style>
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: #cfe3f2; }
@@ -39,11 +39,52 @@
     pointer-events: none;
     transition: opacity .6s;
   }
+  #hud {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 12px);
+    left: 12px; right: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    pointer-events: none;
+  }
+  .pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(40, 30, 25, .55);
+    color: #fff;
+    font-size: 17px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  #fire-pill { flex: 1; }
+  #fire-bar { flex: 1; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+  #fire-fill { height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #ffb02e, #ff5a1f); transition: width .15s; }
+  #max {
+    position: fixed;
+    transform: translate(-50%, -100%);
+    padding: 2px 10px;
+    border-radius: 8px;
+    background: #ff5a1f;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 900;
+    pointer-events: none;
+    display: none;
+  }
 </style>
 </head>
 <body>
   <div id="stick-base" class="stick"></div>
   <div id="stick-knob" class="stick"></div>
+  <div id="hud">
+    <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div></div>
+    <div class="pill">🪵 <span id="carry">0/12</span></div>
+  </div>
+  <div id="max">MAX</div>
   <div id="hint">画面をなぞって歩こう</div>
 
 <script type="module">
@@ -304,27 +345,39 @@
     circles.push({ x, z, r: 0.95 });
   }
 
-  // 床の四角い枠(あとで「ここに物を置く」場所などに使う)
-  const zoneTex = canvasTexture(256, (g, n) => {
-    const r = 40, m = 14;
-    g.fillStyle = 'rgba(255,246,230,.22)';
-    g.strokeStyle = 'rgba(255,246,230,.85)';
-    g.lineWidth = 10;
-    g.beginPath();
-    g.roundRect(m, m, n - m * 2, n - m * 2, r);
-    g.fill();
-    g.stroke();
-  });
-  function addZone(x, z, size) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size),
-      new THREE.MeshStandardMaterial({ map: zoneTex, transparent: true, roughness: 1, depthWrite: false }));
+  // 床の四角い枠(乗ると薪を拾う/置く場所)
+  function addZone(x, z, size, icon) {
+    const tex = canvasTexture(256, (g, n) => {
+      const r = 40, m = 14;
+      g.fillStyle = 'rgba(255,246,230,.3)';
+      g.strokeStyle = 'rgba(255,250,240,1)';
+      g.lineWidth = 10;
+      g.beginPath();
+      g.roundRect(m, m, n - m * 2, n - m * 2, r);
+      g.fill();
+      g.stroke();
+      // 斜めのカメラから見て、アイコンがまっすぐ立って見えるように回す
+      g.translate(n / 2, n / 2);
+      g.rotate(-CAM_YAW);
+      g.font = '120px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(icon, 0, 8);
+    });
+    const material = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 1, depthWrite: false });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), material);
     m.rotation.x = -Math.PI / 2;
     m.position.set(x, FLOOR + 0.01, z);
     m.receiveShadow = true;
     scene.add(m);
+    return { x, z, half: size / 2, mesh: m, material };
+  }
+  function inZone(zone, p) {
+    return Math.abs(p.x - zone.x) < zone.half && Math.abs(p.z - zone.z) < zone.half;
   }
 
-  addCampfire(-2.2, -2.5);
+  const FIRE = { x: -2.2, z: -2.5 };
+  addCampfire(FIRE.x, FIRE.z);
   addBench(-2.2, -4.6, true);
   addBench(-4.6, -2.5, false);
   addLogPile(4.8, -6.5);
@@ -332,8 +385,8 @@
   boxes.push({ x: 5.15, z: 7.7, hx: 0.95, hz: 0.5 });
   addCrate(-6.1, 6.2);
   circles.push({ x: -6.1, z: 6.2, r: 0.5 });
-  addZone(2.8, 1.5, 2.6);
-  addZone(-2.5, 4.5, 2.6);
+  const pickupZone = addZone(4.8, -4.5, 2.4, '🪵');
+  const dropZone = addZone(-2.2, -0.35, 2.4, '🔥');
 
   // ---- キャラクター(頭の大きいちびキャラ) ----
   const C = {
@@ -422,6 +475,219 @@
     d.mesh.visible = true;
   }
 
+  // ---- 効果音(ファイルを使わず、その場で音を作る) ----
+  let audio = null;
+  function unlockAudio() {
+    if (audio) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audio = new AC();
+  }
+  function blip(freq, dur = 0.07, type = 'triangle', vol = 0.08) {
+    if (!audio) return;
+    const t = audio.currentTime;
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 1.5, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(audio.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
+  // ---- 説明の文字 ----
+  const HINTS = [
+    '画面をなぞって歩こう',
+    '🪵 の枠に入って、薪を拾おう',
+    '🔥 の枠まで運ぼう',
+  ];
+  let tutorial = 0;
+  function setHint(step) {
+    tutorial = step;
+    if (step < HINTS.length) {
+      hint.textContent = HINTS[step];
+      hint.style.opacity = '1';
+    } else {
+      hint.style.opacity = '0';
+    }
+  }
+
+  // ---- 薪を拾って、背中に積んで、焚き火に運ぶ ----
+  const MAX_CARRY = 12;
+  const PICK_INTERVAL = 0.09;  // 薪を1本拾う間隔(秒)
+  const DROP_INTERVAL = 0.06;  // 薪を1本置く間隔(秒)
+  const FLY_TIME = 0.22;       // 薪が飛んでいく時間(秒)
+  const HEAT_PER_LOG = 5;      // 薪1本で増える火の強さ
+  const HEAT_DECAY = 1.5;      // 火が弱まる速さ(1秒あたり)
+
+  const fire = { heat: 30, pop: 0 };
+  const carryLabel = document.getElementById('carry');
+  const fireFill = document.getElementById('fire-fill');
+  const maxLabel = document.getElementById('max');
+
+  const woodGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.85, 9);
+  function makeLog() {
+    const m = new THREE.Mesh(woodGeo, [logSide, logTop, logTop]);
+    m.castShadow = true;
+    return m;
+  }
+
+  // 背中の薪の山
+  const stackRoot = new THREE.Group();
+  stackRoot.position.set(0, 0.6, -0.62);
+  body.add(stackRoot);
+  const stack = [];
+  const LOG_STEP = 0.27; // 1本ごとの高さ
+  function slotLocal(i, out) {
+    return out.set(0, i * LOG_STEP, 0);
+  }
+
+  const flying = [];
+  let pendingPickups = 0;
+  let pickTimer = 0, dropTimer = 0;
+  let lean = 0;
+  const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+
+  function fly(meshObj, from, toFn, onLand, arc) {
+    meshObj.position.copy(from);
+    scene.add(meshObj);
+    flying.push({ mesh: meshObj, from: from.clone(), toFn, onLand, arc, t: 0 });
+  }
+
+  function pickOne() {
+    const log = makeLog();
+    log.rotation.set(0, Math.random() * 3, Math.PI / 2);
+    const index = stack.length + pendingPickups;
+    pendingPickups++;
+    const from = new THREE.Vector3(4.8 + (Math.random() - 0.5) * 0.8, FLOOR + 0.8, -6.5 + (Math.random() - 0.5) * 0.6);
+    fly(log, from, () => stackRoot.localToWorld(slotLocal(index, tmpB)), () => {
+      pendingPickups--;
+      log.position.set(0, 0, 0);
+      log.rotation.set(0, 0, Math.PI / 2);
+      slotLocal(stack.length, log.position);
+      stackRoot.add(log);
+      stack.push(log);
+      blip(420 + stack.length * 45);
+      if (tutorial === 1) setHint(2);
+    }, 1.2);
+  }
+
+  function dropOne() {
+    const log = stack.pop();
+    log.getWorldPosition(tmpA);
+    stackRoot.remove(log);
+    const target = new THREE.Vector3(FIRE.x, FLOOR + 0.5, FIRE.z);
+    fly(log, tmpA, () => target, () => {
+      fire.heat = Math.min(100, fire.heat + HEAT_PER_LOG);
+      fire.pop = Math.min(0.5, fire.pop + 0.25);
+      sparkBurst();
+      blip(300 + fire.heat * 4, 0.09, 'sine', 0.1);
+      if (tutorial === 2 && stack.length === 0) setHint(3);
+    }, 1.6);
+  }
+
+  // 火の粉
+  const sparkGeo = new THREE.SphereGeometry(0.06, 6, 4);
+  const sparkMat = new THREE.MeshBasicMaterial({ color: '#ffcf4a' });
+  const sparks = [];
+  for (let i = 0; i < 40; i++) {
+    const m = new THREE.Mesh(sparkGeo, sparkMat);
+    m.visible = false;
+    scene.add(m);
+    sparks.push({ mesh: m, life: 0, vx: 0, vy: 0, vz: 0 });
+  }
+  let sparkIndex = 0;
+  function sparkBurst() {
+    for (let i = 0; i < 5; i++) {
+      const s = sparks[sparkIndex++ % sparks.length];
+      s.life = 0.5 + Math.random() * 0.3;
+      s.vx = (Math.random() - 0.5) * 2.5;
+      s.vz = (Math.random() - 0.5) * 2.5;
+      s.vy = 3 + Math.random() * 2.5;
+      s.mesh.position.set(FIRE.x, FLOOR + 0.6, FIRE.z);
+      s.mesh.visible = true;
+    }
+  }
+
+  function setZoneActive(zone, active, time) {
+    const pulse = active ? 0.9 + Math.sin(time * 10) * 0.1 : 0.8;
+    zone.material.opacity = pulse;
+    zone.material.color.set(active ? '#fff3b0' : '#ffffff');
+    const s = active ? 1.06 : 1;
+    zone.mesh.scale.set(s, s, 1);
+  }
+
+  function updateWood(dt, time) {
+    const p = player.position;
+    const inPick = inZone(pickupZone, p);
+    const inDrop = inZone(dropZone, p);
+    setZoneActive(pickupZone, inPick, time);
+    setZoneActive(dropZone, inDrop, time);
+
+    pickTimer -= dt;
+    if (inPick && pickTimer <= 0 && stack.length + pendingPickups < MAX_CARRY) {
+      pickTimer = PICK_INTERVAL;
+      pickOne();
+    }
+    dropTimer -= dt;
+    if (inDrop && dropTimer <= 0 && stack.length > 0) {
+      dropTimer = DROP_INTERVAL;
+      dropOne();
+    }
+
+    // 飛んでいる薪(放物線を描いて飛ぶ)
+    for (let i = flying.length - 1; i >= 0; i--) {
+      const f = flying[i];
+      f.t += dt;
+      const k = Math.min(1, f.t / FLY_TIME);
+      const to = f.toFn();
+      f.mesh.position.lerpVectors(f.from, to, k);
+      f.mesh.position.y += Math.sin(Math.PI * k) * f.arc;
+      f.mesh.rotation.x += dt * 14;
+      if (k >= 1) {
+        flying.splice(i, 1);
+        scene.remove(f.mesh);
+        f.onLand();
+      }
+    }
+
+    // 走ると背中の薪の山が後ろにしなる
+    const speed = Math.hypot(state.vx, state.vz) / SPEED;
+    lean += (speed - lean) * Math.min(1, dt * 6);
+    stack.forEach((log, i) => {
+      log.position.z = -lean * i * i * 0.006;
+      log.position.x = Math.sin(time * 9 + i * 0.5) * 0.012 * i * lean;
+      log.rotation.y = ((i * 37) % 7 - 3) * 0.04; // 少し不ぞろいに積む
+    });
+
+    for (const s of sparks) {
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      s.vy -= 9 * dt;
+      s.mesh.position.x += s.vx * dt;
+      s.mesh.position.y += s.vy * dt;
+      s.mesh.position.z += s.vz * dt;
+      if (s.life <= 0) s.mesh.visible = false;
+    }
+
+    fire.heat = Math.max(0, fire.heat - HEAT_DECAY * dt);
+    fireFill.style.width = fire.heat + '%';
+    carryLabel.textContent = stack.length + '/' + MAX_CARRY;
+
+    // いっぱいのときは頭の上に MAX を出す
+    if (stack.length >= MAX_CARRY) {
+      stackRoot.localToWorld(slotLocal(stack.length + 1, tmpA));
+      tmpA.project(camera);
+      maxLabel.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
+      maxLabel.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
+      maxLabel.style.display = 'block';
+    } else {
+      maxLabel.style.display = 'none';
+    }
+  }
+
   // ---- 入力(タッチ/マウス と キーボード) ----
   const stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
   const keys = {};
@@ -437,6 +703,7 @@
   canvas.addEventListener('pointerdown', (e) => {
     if (stick.active) return;
     e.preventDefault();
+    unlockAudio();
     Object.assign(stick, { active: true, id: e.pointerId, ox: e.clientX, oy: e.clientY, dx: 0, dy: 0 });
     canvas.setPointerCapture(e.pointerId);
     showStick();
@@ -465,7 +732,7 @@
   canvas.addEventListener('pointerup', endStick);
   canvas.addEventListener('pointercancel', endStick);
   document.addEventListener('gesturestart', (e) => e.preventDefault());
-  window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+  window.addEventListener('keydown', (e) => { keys[e.key] = true; unlockAudio(); });
   window.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
   // 画面上の向き(右・下)を返す
@@ -490,7 +757,6 @@
   }
 
   // ---- 更新 ----
-  let hintShown = true;
   let dustTimer = 0;
   const camTarget = player.position.clone();
 
@@ -520,7 +786,7 @@
 
       dustTimer -= dt;
       if (dustTimer <= 0) { dustTimer = 0.1; puff(p.x, p.z); }
-      if (hintShown) { hintShown = false; hint.style.opacity = '0'; }
+      if (tutorial === 0) setHint(1);
     } else {
       // 止まったら足をそろえる
       state.walk += (Math.round(state.walk / Math.PI) * Math.PI - state.walk) * Math.min(1, dt * 10);
@@ -547,14 +813,20 @@
       if (d.life <= 0) d.mesh.visible = false;
     }
 
-    // 焚き火の炎をゆらす
+    updateWood(dt, time);
+
+    // 焚き火の炎をゆらす(火の強さで大きさが変わる)
+    fire.pop = Math.max(0, fire.pop - dt * 3);
+    const power = (0.4 + fire.heat / 100 * 1.0) * (1 + fire.pop);
     for (const f of flames) {
-      const s = 1 + Math.sin(time * 12 + f.phase) * 0.12 + Math.sin(time * 7.3 + f.phase) * 0.08;
-      f.mesh.scale.set(1 / Math.sqrt(s), s, 1 / Math.sqrt(s));
+      const s = power * (1 + Math.sin(time * 12 + f.phase) * 0.12 + Math.sin(time * 7.3 + f.phase) * 0.08);
+      const w = Math.sqrt(power) / Math.sqrt(s / power);
+      f.mesh.scale.set(w, s, w);
       f.mesh.position.y = 0.2 + f.h * s / 2;
       f.mesh.rotation.y += dt * 2;
     }
-    fireLight.intensity = 5.5 + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6;
+    fireLight.intensity = (2 + fire.heat / 100 * 7) * (1 + fire.pop)
+      + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6;
 
     // カメラはキャラクターを少し遅れて追いかける
     const ck = Math.min(1, dt * 6);
