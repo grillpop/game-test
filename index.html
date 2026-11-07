@@ -55,8 +55,8 @@
   const STICK_RADIUS = 56;    // バーチャルスティックの半径(px)
   const PLAYER_R = 0.4;       // キャラクターの当たり判定の半径
   const CAM_YAW = Math.PI / 4;   // カメラを45度回して、ステージを斜めに見せる
-  const CAM_DIST = 13;           // カメラまでの水平距離
-  const CAM_HEIGHT = 13.5;         // カメラの高さ
+  const CAM_DIST = 18;           // カメラまでの水平距離
+  const CAM_HEIGHT = 19;         // カメラの高さ
   const CAM_OFFSET = new THREE.Vector3(Math.sin(CAM_YAW) * CAM_DIST, CAM_HEIGHT, Math.cos(CAM_YAW) * CAM_DIST);
   // 画面の「右」と「下」が、ステージ上でどちら向きになるか
   const SCREEN_RIGHT = { x: Math.cos(CAM_YAW), z: -Math.sin(CAM_YAW) };
@@ -76,7 +76,7 @@
   const SKY = '#cfe3f2';
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, 30, 52);
+  scene.fog = new THREE.Fog(SKY, 38, 64);
 
   const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 120);
 
