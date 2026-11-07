@@ -6,11 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="おさんぽ">
-<meta name="theme-color" content="#3f7d3a">
+<meta name="theme-color" content="#9fd3f0">
 <title>おさんぽ(見下ろし移動テスト)</title>
 <style>
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: #2b4a2a; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: #9fd3f0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
     user-select: none;
@@ -18,6 +18,15 @@
     -webkit-touch-callout: none;
   }
   canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  .stick {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    display: none;
+    transform: translate(-50%, -50%);
+  }
+  #stick-base { width: 112px; height: 112px; background: rgba(255, 255, 255, .3); border: 3px solid rgba(255, 255, 255, .6); }
+  #stick-knob { width: 52px; height: 52px; background: rgba(255, 255, 255, .9); box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
   #hint {
     position: fixed;
     left: 0; right: 0;
@@ -33,35 +42,63 @@
 </style>
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <div id="stick-base" class="stick"></div>
+  <div id="stick-knob" class="stick"></div>
   <div id="hint">画面をなぞって歩こう</div>
 
-<script>
+<script type="module">
+  import * as THREE from './vendor/three.module.min.js';
+
   // ---- 設定 ----
-  const HALF = 20;          // ステージの半分の広さ(ワールド単位)
-  const TILE = 2;           // 地面のマス目の大きさ
-  const TILT = 0.62;        // 奥行きのつぶし具合(小さいほど真上から遠くなる)
+  const HALF = 20;          // ステージの半分の広さ
   const SPEED = 7;          // 歩く速さ(単位/秒)
   const STICK_RADIUS = 56;  // バーチャルスティックの半径(px)
-  const PLAYER_R = 0.35;    // キャラクターの当たり判定の半径
+  const PLAYER_R = 0.4;     // キャラクターの当たり判定の半径
+  const CAM_OFFSET = new THREE.Vector3(0, 10.5, 13); // キャラクターから見たカメラの位置
 
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
   const hint = document.getElementById('hint');
+  const stickBase = document.getElementById('stick-base');
+  const stickKnob = document.getElementById('stick-knob');
 
-  let W = 0, H = 0, S = 40; // 画面の幅・高さ、1単位あたりのピクセル数
+  // ---- 3Dの土台 ----
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#9fd3f0');
+  scene.fog = new THREE.Fog('#9fd3f0', 26, 48);
+
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
 
   function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    W = window.innerWidth;
-    H = window.innerHeight;
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    S = Math.min(W, H) / 9;
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    // 縦長の画面では少し引いて、まわりが見えるようにする
+    camera.fov = w < h ? 42 : 34;
+    camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize);
   resize();
+
+  // ---- 光 ----
+  scene.add(new THREE.HemisphereLight('#ffffff', '#6c8f4e', 1.6));
+  const sun = new THREE.DirectionalLight('#fff4dd', 2.2);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -14;
+  sun.shadow.camera.right = 14;
+  sun.shadow.camera.top = 14;
+  sun.shadow.camera.bottom = -14;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 50;
+  sun.shadow.bias = -0.0008;
+  sun.shadow.normalBias = 0.03;
+  scene.add(sun, sun.target);
+  const SUN_OFFSET = new THREE.Vector3(-8, 18, 6);
 
   // ---- 乱数(毎回同じ配置にするため種つき) ----
   let seed = 7;
@@ -70,34 +107,196 @@
     return (seed - 1) / 2147483646;
   }
 
-  // ---- ステージの飾り ----
-  const trees = [];
-  while (trees.length < 18) {
-    const x = (rand() * 2 - 1) * (HALF - 2);
-    const z = (rand() * 2 - 1) * (HALF - 2);
-    if (Math.hypot(x, z) < 4) continue; // スタート地点の近くには置かない
-    if (trees.some(t => Math.hypot(t.x - x, t.z - z) < 3)) continue;
-    trees.push({ x, z, r: 0.55, size: 0.85 + rand() * 0.35 });
+  // ---- 地面 ----
+  function makeGrassTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#74c94f'; g.fillRect(0, 0, 128, 128);
+    g.fillStyle = '#69bd46'; g.fillRect(0, 0, 64, 64); g.fillRect(64, 64, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(HALF / 2, HALF / 2);
+    tex.magFilter = THREE.NearestFilter;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
   }
-  const tufts = [];
-  for (let i = 0; i < 220; i++) {
-    tufts.push({
-      x: (rand() * 2 - 1) * (HALF - 0.5),
-      z: (rand() * 2 - 1) * (HALF - 0.5),
-      flower: rand() < 0.18,
-      color: ['#ffffff', '#ffd166', '#ff8fab'][Math.floor(rand() * 3)],
-    });
+  const dirt = new THREE.MeshLambertMaterial({ color: '#8a5a34' });
+  const ground = new THREE.Mesh(
+    new THREE.BoxGeometry(HALF * 2, 1.2, HALF * 2),
+    [dirt, dirt, new THREE.MeshLambertMaterial({ map: makeGrassTexture() }), dirt, dirt, dirt]
+  );
+  ground.position.y = -0.6;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // ---- 木と岩(ぶつかる物) ----
+  const obstacles = [];
+  const trunkMat = new THREE.MeshLambertMaterial({ color: '#8a5a34', flatShading: true });
+  const leafMats = ['#2f9e4f', '#3cb35c', '#279146'].map(c => new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
+  const rockMat = new THREE.MeshLambertMaterial({ color: '#9aa3ad', flatShading: true });
+
+  function addTree(x, z) {
+    const s = 0.9 + rand() * 0.45;
+    const tree = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.26, 1, 6), trunkMat);
+    trunk.position.y = 0.5;
+    tree.add(trunk);
+    const leaf = leafMats[Math.floor(rand() * leafMats.length)];
+    for (let i = 0; i < 3; i++) {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(1.1 - i * 0.25, 1.2, 7), leaf);
+      cone.position.y = 1.2 + i * 0.65;
+      cone.rotation.y = rand() * Math.PI;
+      tree.add(cone);
+    }
+    tree.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+    tree.position.set(x, 0, z);
+    tree.scale.setScalar(s);
+    tree.rotation.y = rand() * Math.PI * 2;
+    scene.add(tree);
+    obstacles.push({ x, z, r: 0.35 * s });
   }
 
+  function addRock(x, z) {
+    const s = 0.4 + rand() * 0.4;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), rockMat);
+    rock.scale.set(s * 1.2, s * 0.8, s);
+    rock.position.set(x, s * 0.3, z);
+    rock.rotation.set(rand(), rand() * 6, rand());
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    scene.add(rock);
+    obstacles.push({ x, z, r: s * 0.9 });
+  }
+
+  function freeSpot(minGap) {
+    for (let tries = 0; tries < 200; tries++) {
+      const x = (rand() * 2 - 1) * (HALF - 1.5);
+      const z = (rand() * 2 - 1) * (HALF - 1.5);
+      if (Math.hypot(x, z) < 4) continue; // スタート地点の近くには置かない
+      if (obstacles.some(o => Math.hypot(o.x - x, o.z - z) < minGap)) continue;
+      return [x, z];
+    }
+    return null;
+  }
+  for (let i = 0; i < 26; i++) { const p = freeSpot(3); if (p) addTree(...p); }
+  for (let i = 0; i < 10; i++) { const p = freeSpot(2.5); if (p) addRock(...p); }
+
+  // 草と花(たくさん置くので InstancedMesh でまとめて描く)
+  function scatter(geometry, color, count, minY, maxY) {
+    const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshLambertMaterial({ color, flatShading: true }), count);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
+    for (let i = 0; i < count; i++) {
+      p.set((rand() * 2 - 1) * (HALF - 0.5), 0, (rand() * 2 - 1) * (HALF - 0.5));
+      const k = minY + rand() * (maxY - minY);
+      s.set(k, k, k);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 6);
+      m.compose(p, q, s);
+      mesh.setMatrixAt(i, m);
+    }
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+  const tuftGeo = new THREE.ConeGeometry(0.08, 0.35, 4);
+  tuftGeo.translate(0, 0.17, 0);
+  scatter(tuftGeo, '#4f9e35', 260, 0.7, 1.3);
+  const flowerGeo = new THREE.SphereGeometry(0.09, 6, 4);
+  flowerGeo.translate(0, 0.08, 0);
+  scatter(flowerGeo, '#ffffff', 40, 0.8, 1.2);
+  scatter(flowerGeo, '#ffd166', 40, 0.8, 1.2);
+  scatter(flowerGeo, '#ff8fab', 40, 0.8, 1.2);
+
   // ---- キャラクター ----
-  const player = { x: 0, z: 0, vx: 0, vz: 0, angle: Math.PI / 2, walk: 0 };
-  const cam = { x: 0, z: 0 };
-  const dust = [];
+  function mat(color) { return new THREE.MeshStandardMaterial({ color, roughness: 0.7 }); }
+  const jacket = mat('#3a86d1'), jacketDark = mat('#2a6fb0'), skin = mat('#ffd9b3');
+  const orange = mat('#ef6c3a'), cream = mat('#fff4e6'), boots = mat('#3d3a4b'), black = mat('#22222a');
+
+  const player = new THREE.Group();   // 位置と向き
+  const body = new THREE.Group();     // 上下に弾む部分
+  player.add(body);
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.3, 4, 12), jacket);
+  torso.position.y = 0.85;
+  torso.scale.z = 0.85;
+  body.add(torso);
+
+  const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.09, 8, 16), orange);
+  scarf.rotation.x = Math.PI / 2;
+  scarf.position.y = 1.17;
+  body.add(scarf);
+
+  const head = new THREE.Group();
+  head.position.y = 1.55;
+  body.add(head);
+  head.add(new THREE.Mesh(new THREE.SphereGeometry(0.38, 20, 14), skin));
+  const hat = new THREE.Mesh(new THREE.SphereGeometry(0.4, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), orange);
+  hat.position.y = 0.04;
+  head.add(hat);
+  const hatBand = new THREE.Mesh(new THREE.TorusGeometry(0.39, 0.07, 8, 20), cream);
+  hatBand.rotation.x = Math.PI / 2;
+  hatBand.position.y = 0.06;
+  head.add(hatBand);
+  const pompom = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), cream);
+  pompom.position.y = 0.46;
+  head.add(pompom);
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), black);
+    eye.position.set(side * 0.13, -0.04, 0.35);
+    eye.scale.y = 1.4;
+    head.add(eye);
+  }
+
+  // 腕と足は付け根を軸にして振る
+  const limbs = [];
+  function addLimb(parent, x, y, len, radius, material, isLeg, side) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, 0);
+    const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, len, 4, 8), material);
+    mesh.position.y = -len / 2 - radius * 0.5;
+    pivot.add(mesh);
+    parent.add(pivot);
+    limbs.push({ pivot, isLeg, side });
+  }
+  addLimb(player, -0.16, 0.5, 0.25, 0.12, boots, true, -1);
+  addLimb(player, 0.16, 0.5, 0.25, 0.12, boots, true, 1);
+  addLimb(body, -0.42, 1.08, 0.3, 0.1, jacketDark, false, -1);
+  addLimb(body, 0.42, 1.08, 0.3, 0.1, jacketDark, false, 1);
+  limbs.forEach(l => { if (!l.isLeg) l.pivot.rotation.z = -l.side * 0.25; });
+
+  player.traverse(m => { if (m.isMesh) m.castShadow = true; });
+  scene.add(player);
+
+  const state = { vx: 0, vz: 0, angle: 0, walk: 0 };
+
+  // ---- 土ぼこり ----
+  const dustGeo = new THREE.SphereGeometry(0.16, 6, 4);
+  const dustPool = [];
+  for (let i = 0; i < 16; i++) {
+    const m = new THREE.Mesh(dustGeo, new THREE.MeshBasicMaterial({ color: '#f1f7e2', transparent: true, opacity: 0 }));
+    m.visible = false;
+    scene.add(m);
+    dustPool.push({ mesh: m, life: 0 });
+  }
+  let dustIndex = 0;
+  function puff(x, z) {
+    const d = dustPool[dustIndex++ % dustPool.length];
+    d.life = d.max = 0.45;
+    d.mesh.position.set(x + (Math.random() - 0.5) * 0.2, 0.12, z + (Math.random() - 0.5) * 0.2);
+    d.mesh.visible = true;
+  }
 
   // ---- 入力(タッチ/マウス と キーボード) ----
   const stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
   const keys = {};
+  const canvas = renderer.domElement;
 
+  function showStick() {
+    stickBase.style.display = stickKnob.style.display = stick.active ? 'block' : 'none';
+    stickBase.style.left = stick.ox + 'px';
+    stickBase.style.top = stick.oy + 'px';
+    stickKnob.style.left = (stick.ox + stick.dx) + 'px';
+    stickKnob.style.top = (stick.oy + stick.dy) + 'px';
+  }
   canvas.addEventListener('pointerdown', (e) => {
     if (stick.active) return;
     e.preventDefault();
@@ -107,6 +306,7 @@
     stick.oy = e.clientY;
     stick.dx = stick.dy = 0;
     canvas.setPointerCapture(e.pointerId);
+    showStick();
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!stick.active || e.pointerId !== stick.id) return;
@@ -122,17 +322,18 @@
     }
     stick.dx = dx;
     stick.dy = dy;
+    showStick();
   });
   function endStick(e) {
     if (e.pointerId !== stick.id) return;
     stick.active = false;
     stick.id = null;
     stick.dx = stick.dy = 0;
+    showStick();
   }
   canvas.addEventListener('pointerup', endStick);
   canvas.addEventListener('pointercancel', endStick);
   document.addEventListener('gesturestart', (e) => e.preventDefault());
-
   window.addEventListener('keydown', (e) => { keys[e.key] = true; });
   window.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
@@ -155,201 +356,86 @@
   // ---- 更新 ----
   let hintShown = true;
   let dustTimer = 0;
+  const camTarget = new THREE.Vector3();
 
-  function update(dt) {
+  function update(dt, time) {
     const { ix, iz } = readInput();
 
     // 目標の速さにすばやく近づける(キビキビした動きのため強め)
     const k = Math.min(1, dt * 14);
-    player.vx += (ix * SPEED - player.vx) * k;
-    player.vz += (iz * SPEED - player.vz) * k;
-    player.x += player.vx * dt;
-    player.z += player.vz * dt;
+    state.vx += (ix * SPEED - state.vx) * k;
+    state.vz += (iz * SPEED - state.vz) * k;
+    player.position.x += state.vx * dt;
+    player.position.z += state.vz * dt;
 
-    // 木にめりこまないよう押し出す
-    for (const t of trees) {
-      const dx = player.x - t.x, dz = player.z - t.z;
+    // 木や岩にめりこまないよう押し出す
+    for (const o of obstacles) {
+      const dx = player.position.x - o.x, dz = player.position.z - o.z;
       const d = Math.hypot(dx, dz);
-      const min = t.r + PLAYER_R;
+      const min = o.r + PLAYER_R;
       if (d < min && d > 0.0001) {
-        player.x = t.x + dx / d * min;
-        player.z = t.z + dz / d * min;
+        player.position.x = o.x + dx / d * min;
+        player.position.z = o.z + dz / d * min;
       }
     }
     // ステージの外に出ない
     const lim = HALF - PLAYER_R;
-    player.x = Math.max(-lim, Math.min(lim, player.x));
-    player.z = Math.max(-lim, Math.min(lim, player.z));
+    player.position.x = Math.max(-lim, Math.min(lim, player.position.x));
+    player.position.z = Math.max(-lim, Math.min(lim, player.position.z));
 
-    const speed = Math.hypot(player.vx, player.vz);
-    if (speed > 0.5) {
-      // 向きをなめらかに回す
-      const target = Math.atan2(player.vz, player.vx);
-      let diff = target - player.angle;
+    const speed = Math.hypot(state.vx, state.vz);
+    const moving = speed > 0.5;
+    if (moving) {
+      // 進む方向へなめらかに向きを変える
+      const target = Math.atan2(state.vx, state.vz);
+      let diff = target - state.angle;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      player.angle += diff * Math.min(1, dt * 18);
-      player.walk += speed * dt * 2.4;
+      state.angle += diff * Math.min(1, dt * 18);
+      state.walk += speed * dt * 2.2;
 
       dustTimer -= dt;
       if (dustTimer <= 0) {
         dustTimer = 0.09;
-        dust.push({ x: player.x, z: player.z, life: 0.45, max: 0.45 });
+        puff(player.position.x, player.position.z);
       }
       if (hintShown) { hintShown = false; hint.style.opacity = '0'; }
     } else {
       // 止まったら足をそろえる
-      player.walk += (Math.round(player.walk / Math.PI) * Math.PI - player.walk) * Math.min(1, dt * 10);
+      state.walk += (Math.round(state.walk / Math.PI) * Math.PI - state.walk) * Math.min(1, dt * 10);
     }
+    player.rotation.y = state.angle;
 
-    for (const p of dust) p.life -= dt;
-    while (dust.length && dust[0].life <= 0) dust.shift();
+    // 手足を振る・体を弾ませる・止まっているときは呼吸
+    const amount = Math.min(1, speed / SPEED);
+    const swing = Math.sin(state.walk);
+    for (const l of limbs) {
+      l.pivot.rotation.x = swing * l.side * (l.isLeg ? 0.8 : -0.9) * amount;
+    }
+    body.position.y = moving
+      ? Math.abs(Math.cos(state.walk)) * 0.09 * amount
+      : Math.sin(time * 2.5) * 0.015;
+    body.rotation.x = 0.12 * amount; // 走るときは少し前のめり
+
+    for (const d of dustPool) {
+      if (d.life <= 0) continue;
+      d.life -= dt;
+      const a = Math.max(0, d.life / d.max);
+      d.mesh.material.opacity = a * 0.7;
+      d.mesh.scale.setScalar(1 + (1 - a) * 1.5);
+      d.mesh.position.y += dt * 0.4;
+      if (d.life <= 0) d.mesh.visible = false;
+    }
 
     // カメラはキャラクターを少し遅れて追いかける
     const ck = Math.min(1, dt * 6);
-    cam.x += (player.x - cam.x) * ck;
-    cam.z += (player.z - cam.z) * ck;
-  }
+    camTarget.x += (player.position.x - camTarget.x) * ck;
+    camTarget.z += (player.position.z - camTarget.z) * ck;
+    camera.position.copy(camTarget).add(CAM_OFFSET);
+    camera.lookAt(camTarget.x, 0.8, camTarget.z);
 
-  // ---- 描画 ----
-  function toScreen(x, z, h = 0) {
-    return [W / 2 + (x - cam.x) * S, H * 0.55 + (z - cam.z) * S * TILT - h * S];
-  }
-
-  function ellipse(x, y, rx, ry, color) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  function drawGround() {
-    // ステージの手前側の側面(土の厚み)で立体感を出す
-    const [lx, ny] = toScreen(-HALF, HALF);
-    const [rx] = toScreen(HALF, HALF);
-    ctx.fillStyle = '#7a5230';
-    ctx.fillRect(lx, ny, rx - lx, S * 0.9);
-    ctx.fillStyle = '#5e3e24';
-    ctx.fillRect(lx, ny + S * 0.45, rx - lx, S * 0.45);
-
-    for (let gx = -HALF; gx < HALF; gx += TILE) {
-      for (let gz = -HALF; gz < HALF; gz += TILE) {
-        const [x0, y0] = toScreen(gx, gz);
-        const [x1, y1] = toScreen(gx + TILE, gz + TILE);
-        if (x1 < 0 || x0 > W || y1 < 0 || y0 > H) continue;
-        const even = ((gx + gz) / TILE) % 2 === 0;
-        ctx.fillStyle = even ? '#6cbf4a' : '#62b342';
-        ctx.fillRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1);
-      }
-    }
-
-    for (const t of tufts) {
-      const [x, y] = toScreen(t.x, t.z);
-      if (x < -10 || x > W + 10 || y < -10 || y > H + 10) continue;
-      if (t.flower) {
-        ellipse(x, y, S * 0.07, S * 0.05, t.color);
-      } else {
-        ctx.strokeStyle = '#4e9a36';
-        ctx.lineWidth = Math.max(1.5, S * 0.035);
-        ctx.beginPath();
-        ctx.moveTo(x - S * 0.08, y - S * 0.1);
-        ctx.lineTo(x, y);
-        ctx.lineTo(x + S * 0.08, y - S * 0.12);
-        ctx.stroke();
-      }
-    }
-
-    for (const p of dust) {
-      const [x, y] = toScreen(p.x, p.z);
-      const a = p.life / p.max;
-      ctx.globalAlpha = a * 0.5;
-      ellipse(x, y, S * (0.25 - a * 0.12), S * (0.25 - a * 0.12) * TILT, '#e9f5d0');
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  function drawTree(t) {
-    const [x, y] = toScreen(t.x, t.z);
-    const s = t.size * S;
-    ellipse(x, y, s * 0.7, s * 0.7 * TILT, 'rgba(0,0,0,.22)');
-    ctx.fillStyle = '#8a5a34';
-    ctx.fillRect(x - s * 0.12, y - s * 0.75, s * 0.24, s * 0.75);
-    ellipse(x, y - s * 1.15, s * 0.7, s * 0.62, '#2f8f46');
-    ellipse(x - s * 0.15, y - s * 1.3, s * 0.45, s * 0.4, '#3fa957');
-    ellipse(x - s * 0.25, y - s * 1.42, s * 0.16, s * 0.12, '#6fcf7f');
-  }
-
-  function drawPlayer() {
-    const [x, y] = toScreen(player.x, player.z);
-    const fx = Math.cos(player.angle);
-    const fz = Math.sin(player.angle);
-    const moving = Math.hypot(player.vx, player.vz) > 0.5;
-    const swing = Math.sin(player.walk);
-    const bob = moving ? Math.abs(Math.cos(player.walk)) * S * 0.06 : 0;
-
-    ellipse(x, y, S * 0.36, S * 0.36 * TILT, 'rgba(0,0,0,.25)');
-
-    // 足(進む向きに前後させる)
-    const step = S * 0.13;
-    for (const side of [-1, 1]) {
-      const phase = swing * side;
-      const footX = x + side * S * 0.13 + fx * phase * step;
-      const footY = y - S * 0.06 + fz * TILT * phase * step - Math.max(0, phase) * S * 0.08;
-      ellipse(footX, footY, S * 0.1, S * 0.08, '#3d3a4b');
-    }
-
-    const bodyY = y - S * 0.5 - bob;
-    // うで
-    for (const side of [-1, 1]) {
-      const phase = -swing * side;
-      ellipse(x + side * S * 0.3 + fx * phase * S * 0.08, bodyY + S * 0.05 + fz * TILT * phase * S * 0.08,
-        S * 0.09, S * 0.12, '#2a6fb0');
-    }
-    // からだ
-    ellipse(x, bodyY, S * 0.29, S * 0.32, '#3a86d1');
-    // マフラー
-    ellipse(x, bodyY - S * 0.24, S * 0.25, S * 0.09, '#ef6c3a');
-
-    // あたま
-    const headY = bodyY - S * 0.55;
-    ellipse(x, headY, S * 0.3, S * 0.28, '#ffd9b3');
-    // ぼうし
-    ctx.fillStyle = '#ef6c3a';
-    ctx.beginPath();
-    ctx.ellipse(x, headY - S * 0.06, S * 0.31, S * 0.26, 0, Math.PI, Math.PI * 2);
-    ctx.fill();
-    ellipse(x, headY - S * 0.33, S * 0.08, S * 0.08, '#fff4e6');
-
-    // 目(こちらを向いているときだけ見える)
-    if (fz > -0.35) {
-      const ex = x + fx * S * 0.12;
-      const spread = S * 0.1 * (1 - Math.abs(fx) * 0.45);
-      const ey = headY + S * 0.06;
-      ellipse(ex - spread, ey, S * 0.04, S * 0.055, '#2b2b35');
-      ellipse(ex + spread, ey, S * 0.04, S * 0.055, '#2b2b35');
-    }
-  }
-
-  function drawStick() {
-    if (!stick.active) return;
-    ctx.globalAlpha = 0.35;
-    ellipse(stick.ox, stick.oy, STICK_RADIUS, STICK_RADIUS, '#ffffff');
-    ctx.globalAlpha = 0.8;
-    ellipse(stick.ox + stick.dx, stick.oy + stick.dy, STICK_RADIUS * 0.45, STICK_RADIUS * 0.45, '#ffffff');
-    ctx.globalAlpha = 1;
-  }
-
-  function draw() {
-    ctx.fillStyle = '#2b4a2a';
-    ctx.fillRect(0, 0, W, H);
-    drawGround();
-
-    // 奥にあるものから順に描く(手前のものが上に重なる)
-    const objects = trees.map(t => ({ z: t.z, draw: () => drawTree(t) }));
-    objects.push({ z: player.z, draw: drawPlayer });
-    objects.sort((a, b) => a.z - b.z);
-    for (const o of objects) o.draw();
-
-    drawStick();
+    // 影はキャラクターのまわりだけ描けば十分なので、太陽ごとついてくる
+    sun.position.copy(camTarget).add(SUN_OFFSET);
+    sun.target.position.copy(camTarget);
   }
 
   // ---- メインループ ----
@@ -357,8 +443,8 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    update(dt);
-    draw();
+    update(dt, now / 1000);
+    renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
