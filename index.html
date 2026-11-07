@@ -55,8 +55,8 @@
   const STICK_RADIUS = 56;    // バーチャルスティックの半径(px)
   const PLAYER_R = 0.4;       // キャラクターの当たり判定の半径
   const CAM_YAW = Math.PI / 4;   // カメラを45度回して、ステージを斜めに見せる
-  const CAM_DIST = 18;           // カメラまでの水平距離
-  const CAM_HEIGHT = 19;         // カメラの高さ
+  const CAM_DIST = 24;           // カメラまでの水平距離
+  const CAM_HEIGHT = 25;         // カメラの高さ
   const CAM_OFFSET = new THREE.Vector3(Math.sin(CAM_YAW) * CAM_DIST, CAM_HEIGHT, Math.cos(CAM_YAW) * CAM_DIST);
   // 画面の「右」と「下」が、ステージ上でどちら向きになるか
   const SCREEN_RIGHT = { x: Math.cos(CAM_YAW), z: -Math.sin(CAM_YAW) };
@@ -76,7 +76,7 @@
   const SKY = '#cfe3f2';
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, 38, 64);
+  scene.fog = new THREE.Fog(SKY, 50, 85);
 
   const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 120);
 
@@ -95,7 +95,7 @@
   const sun = new THREE.DirectionalLight('#ffe6c4', 2.1);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 60 });
+  Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
@@ -220,8 +220,8 @@
     tree.rotation.y = rand() * 6;
     scene.add(tree);
   }
-  for (let i = 0; i < 90; i++) {
-    const x = (rand() * 2 - 1) * 28, z = (rand() * 2 - 1) * 28;
+  for (let i = 0; i < 150; i++) {
+    const x = (rand() * 2 - 1) * 36, z = (rand() * 2 - 1) * 36;
     if (Math.abs(x) < PX + 2.2 && Math.abs(z) < PZ + 2.2) continue;
     addPine(x, z);
   }
