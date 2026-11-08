@@ -121,7 +121,10 @@
   // ================================================================
   //  設定(ここの数字を変えると、遊びやすさを調整できます)
   // ================================================================
-  const PX = 7, PZ = 9;          // キャンプ(柵の内側)の半分の広さ
+  const PX = 7, PZ = 9;          // 最初のキャンプ(柵の内側)の半分の広さ
+  const camp = { x1: -PX, x2: PX, z1: -PZ, z2: PZ }; // 今の柵の内側の範囲(拡張すると広がる)
+  const EXPAND_COST = 80;        // キャンプ拡張の値段
+  const EXPAND_X2 = 13;          // 拡張したあとの、キャンプの右端
   const SPEED = 6.5;             // 主人公の歩く速さ(単位/秒)
   const STICK_RADIUS = 56;       // バーチャルスティックの半径(px)
   const PLAYER_R = 0.4;          // 当たり判定の半径
@@ -266,7 +269,7 @@
     p.z = Math.max(-WORLD + R, Math.min(WORLD - R, p.z));
   }
   // 広場の中は床が少し高い
-  const insidePlaza = (x, z) => Math.abs(x) < PX + 0.7 && Math.abs(z) < PZ + 0.7;
+  const insidePlaza = (x, z) => x > camp.x1 - 0.7 && x < camp.x2 + 0.7 && z > camp.z1 - 0.7 && z < camp.z2 + 0.7;
   const groundY = (x, z) => insidePlaza(x, z) ? 0.2 : 0;
   function followGround(p, dt) { p.y += (groundY(p.x, p.z) - p.y) * Math.min(1, dt * 15); }
 
@@ -298,15 +301,19 @@
     }
   });
   dirtTex.wrapS = dirtTex.wrapT = THREE.RepeatWrapping;
-  dirtTex.repeat.set(PX / 2.5, PZ / 2.5);
   const plazaSide = mat('#a5704a');
-  const plaza = new THREE.Mesh(
-    new THREE.BoxGeometry(PX * 2 + 1.4, 0.2, PZ * 2 + 1.4),
-    [plazaSide, plazaSide, new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.95 }), plazaSide, plazaSide, plazaSide]
-  );
-  plaza.position.y = 0.1;
-  plaza.receiveShadow = true;
-  scene.add(plaza);
+  const plazaTop = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.95 });
+  let plaza = null;
+  function buildPlaza() {
+    if (plaza) { scene.remove(plaza); plaza.geometry.dispose(); }
+    const w = camp.x2 - camp.x1, d = camp.z2 - camp.z1;
+    dirtTex.repeat.set(w / 5, d / 5);
+    plaza = new THREE.Mesh(new THREE.BoxGeometry(w + 1.4, 0.2, d + 1.4), [plazaSide, plazaSide, plazaTop, plazaSide, plazaSide, plazaSide]);
+    plaza.position.set((camp.x1 + camp.x2) / 2, 0.1, (camp.z1 + camp.z2) / 2);
+    plaza.receiveShadow = true;
+    scene.add(plaza);
+  }
+  buildPlaza();
   const FLOOR = 0.2; // 広場の床の高さ
 
   // 入口から外へ続く雪の道
@@ -319,39 +326,52 @@
   const logTop = mat('#f1c890');
   const postGeo = new THREE.CylinderGeometry(0.28, 0.3, 1, 10);
   const GATE_Z = 2.5;
-  function addPost(x, z, h = 1.0 + rand() * 0.35) {
+  function addPost(x, z, h = 1.0 + Math.random() * 0.35) {
     const post = new THREE.Mesh(postGeo, [logSide, logTop, logSide]);
     post.position.set(x, FLOOR + h / 2, z);
     post.scale.y = h;
-    post.rotation.y = rand() * 6;
+    post.rotation.y = Math.random() * 6;
     post.castShadow = post.receiveShadow = true;
     scene.add(post);
+    return post;
   }
   const FX = PX + 0.35, FZ = PZ + 0.35, GAP = 0.58;
   const BACK_GATE_X = 4.0; // 奥の出入口(森へ行く道)
-  for (let x = -FX; x <= FX + 0.01; x += GAP) {
-    if (Math.abs(x - BACK_GATE_X) > 1.1) addPost(x, -FZ);
-    addPost(x, FZ);
-  }
-  for (let z = -FZ + GAP; z < FZ - 0.01; z += GAP) {
-    if (Math.abs(z - GATE_Z) > 1.1) addPost(-FX, z);
-    addPost(FX, z);
-  }
-  addPost(-FX, GATE_Z - 1.25, 1.7); // 入口の門柱
-  addPost(-FX, GATE_Z + 1.25, 1.7);
-  addPost(BACK_GATE_X - 1.25, -FZ, 1.7); // 奥の出入口の門柱
-  addPost(BACK_GATE_X + 1.25, -FZ, 1.7);
-  // 柵の当たり判定(出入口だけあけておく)
-  {
+  const fence = { posts: [], boxes: [] };
+  function buildFence() {
+    for (const m of fence.posts) scene.remove(m);
+    for (const b of fence.boxes) boxes.splice(boxes.indexOf(b), 1);
+    fence.posts = [];
+    fence.boxes = [];
+    const x1 = camp.x1 - 0.35, x2 = camp.x2 + 0.35, z1 = camp.z1 - 0.35, z2 = camp.z2 + 0.35;
+    const post = (x, z, h) => fence.posts.push(addPost(x, z, h));
+    for (let x = x1; x <= x2 + 0.01; x += GAP) {
+      if (Math.abs(x - BACK_GATE_X) > 1.1) post(x, z1);
+      post(x, z2);
+    }
+    for (let z = z1 + GAP; z < z2 - 0.01; z += GAP) {
+      if (Math.abs(z - GATE_Z) > 1.1) post(x1, z);
+      post(x2, z);
+    }
+    post(x1, GATE_Z - 1.25, 1.7); // 入口の門柱
+    post(x1, GATE_Z + 1.25, 1.7);
+    post(BACK_GATE_X - 1.25, z1, 1.7); // 奥の出入口の門柱
+    post(BACK_GATE_X + 1.25, z1, 1.7);
+    // 柵の当たり判定(出入口だけあけておく)
     const T = 0.3, gap = 1.0;
-    const seg = (x1, z1, x2, z2) => boxes.push({ x: (x1 + x2) / 2, z: (z1 + z2) / 2, hx: Math.abs(x2 - x1) / 2 + T, hz: Math.abs(z2 - z1) / 2 + T });
-    seg(-FX, FZ, FX, FZ);                                  // 手前
-    seg(FX, -FZ, FX, FZ);                                  // 右
-    seg(-FX, -FZ, BACK_GATE_X - gap - T, -FZ);             // 奥(出入口の左)
-    seg(BACK_GATE_X + gap + T, -FZ, FX, -FZ);              // 奥(出入口の右)
-    seg(-FX, -FZ, -FX, GATE_Z - gap - T);                  // 左(入口の奥)
-    seg(-FX, GATE_Z + gap + T, -FX, FZ);                   // 左(入口の手前)
+    const seg = (ax, az, bx, bz) => {
+      const box = { x: (ax + bx) / 2, z: (az + bz) / 2, hx: Math.abs(bx - ax) / 2 + T, hz: Math.abs(bz - az) / 2 + T };
+      boxes.push(box);
+      fence.boxes.push(box);
+    };
+    seg(x1, z2, x2, z2);                            // 手前
+    seg(x2, z1, x2, z2);                            // 右
+    seg(x1, z1, BACK_GATE_X - gap - T, z1);         // 奥(出入口の左)
+    seg(BACK_GATE_X + gap + T, z1, x2, z1);         // 奥(出入口の右)
+    seg(x1, z1, x1, GATE_Z - gap - T);              // 左(入口の奥)
+    seg(x1, GATE_Z + gap + T, x1, z2);              // 左(入口の手前)
   }
+  buildFence();
   // 奥の出入口から森へ続く雪の道
   const backPath = mesh(new THREE.PlaneGeometry(2.2, 5), mat('#dfe8f2', { roughness: 1 }), BACK_GATE_X, 0.01, -FZ - 2.6);
   backPath.rotation.x = -Math.PI / 2;
@@ -416,10 +436,10 @@
   }
 
   // 焚き火(炎の大きさは火の強さで変わる)
-  const FIRE = { x: -2.2, z: -2.5 };
-  const flames = [];
-  let fireLight;
-  (function addCampfire() {
+  const fires = [];
+  function addCampfire(x, z, heat) {
+    const flames = [];
+    let fireLight;
     const g = new THREE.Group();
     const stoneMat = mat('#9aa3ad', { flatShading: true });
     for (let i = 0; i < 9; i++) {
@@ -441,10 +461,14 @@
     fireLight = new THREE.PointLight('#ff9a40', 6, 8, 1.6);
     fireLight.position.y = 1;
     g.add(fireLight);
-    g.position.set(FIRE.x, FLOOR, FIRE.z);
+    g.position.set(x, FLOOR, z);
     scene.add(g);
-    circles.push({ x: FIRE.x, z: FIRE.z, r: 0.95 });
-  })();
+    circles.push({ x, z, r: 0.95 });
+    const fire = { x, z, heat, pop: 0, flames, light: fireLight, warming: 0, dropZone: null };
+    fires.push(fire);
+    return fire;
+  }
+  const FIRE = addCampfire(-2.2, -2.5, HEAT_START);
 
   addBench(-2.2, -4.6, true);
   addBench(-4.6, -2.5, false);
@@ -463,10 +487,58 @@
     const flag = mesh(new THREE.PlaneGeometry(0.4, 0.25), mat('#ef6c3a', { side: THREE.DoubleSide }), 0.2, 2.25, 0, tent);
     flag.castShadow = false;
   }
-  tent.position.set(-4.4, FLOOR, 6.6);
+  tent.position.set(-1.2, FLOOR, 7.2);
   tent.visible = false;
   scene.add(tent);
-  const tentBox = { x: -4.4, z: 6.6, hx: 1.2, hz: 1.2, off: true };
+  const tentBox = { x: -1.2, z: 7.2, hx: 1.2, hz: 1.2, off: true };
+
+  // 受付の小屋(左の入口のそば)。窓口は広場の内側(右)を向いている
+  const HUT = { x: -5.4, z: 4.6 };
+  const PAY_SPOT = { x: -3.55, z: HUT.z };            // お客さんがお金を払う場所
+  const WINDOW = V(HUT.x + 1.05, FLOOR + 1.0, HUT.z);   // お金を投げ入れる窓口
+  {
+    const hut = new THREE.Group();
+    const plank = canvasTexture(128, (g, n) => {
+      g.fillStyle = '#c98a4b'; g.fillRect(0, 0, n, n);
+      g.fillStyle = 'rgba(90,50,20,.25)';
+      for (let i = 1; i < 6; i++) g.fillRect(0, i * n / 6 - 2, n, 3);
+    });
+    const wall = new THREE.MeshStandardMaterial({ map: plank, roughness: 0.9 });
+    const roofMat = mat('#a6452f', { flatShading: true });
+    // 壁(窓口のある右側は、窓のところをあけて組み立てる)
+    mesh(new THREE.BoxGeometry(2.0, 1.7, 0.12), wall, 0, 0.85, -0.74, hut);
+    mesh(new THREE.BoxGeometry(2.0, 1.7, 0.12), wall, 0, 0.85, 0.74, hut);
+    mesh(new THREE.BoxGeometry(0.12, 1.7, 1.6), wall, -0.94, 0.85, 0, hut);
+    mesh(new THREE.BoxGeometry(0.12, 0.75, 1.6), wall, 0.94, 0.375, 0, hut);  // 窓の下
+    mesh(new THREE.BoxGeometry(0.12, 0.35, 1.6), wall, 0.94, 1.53, 0, hut);   // 窓の上
+    mesh(new THREE.BoxGeometry(0.12, 0.6, 0.35), wall, 0.94, 1.05, -0.62, hut); // 窓の横
+    mesh(new THREE.BoxGeometry(0.12, 0.6, 0.35), wall, 0.94, 1.05, 0.62, hut);
+    mesh(new THREE.BoxGeometry(0.4, 0.08, 1.1), woodDark, 1.12, 0.78, 0, hut);  // 窓口の台
+    const inside = mesh(new THREE.BoxGeometry(1.7, 1.6, 1.4), mat('#3a2616'), 0, 0.8, 0, hut);
+    inside.castShadow = false;
+    // 屋根
+    for (const side of [-1, 1]) {
+      const r = mesh(new THREE.BoxGeometry(2.4, 0.12, 1.25), roofMat, 0, 1.98, side * 0.48, hut);
+      r.rotation.x = side * 0.5;
+    }
+    // 看板
+    const signTex = canvasTexture(256, (g, n) => {
+      g.fillStyle = '#7a4a26'; g.fillRect(0, 0, n, n / 2);
+      g.fillStyle = '#fff4dd';
+      g.font = '900 84px -apple-system, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('受付', n / 2, n / 4 + 4);
+    });
+    signTex.repeat.set(1, 0.5);
+    signTex.offset.set(0, 0.5);
+    const sign = mesh(new THREE.PlaneGeometry(1.2, 0.36), new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.9 }), 1.01, 1.53, 0, hut);
+    sign.rotation.y = Math.PI / 2;
+    sign.castShadow = false;
+    hut.position.set(HUT.x, FLOOR, HUT.z);
+    scene.add(hut);
+    boxes.push({ x: HUT.x, z: HUT.z, hx: 1.05, hz: 0.85 });
+  }
   boxes.push(tentBox);
 
   // ================================================================
@@ -536,8 +608,8 @@
     zone.mesh.scale.set(s, s, 1);
   }
 
-  const dropZone = addZone(-2.2, -0.35, 2.4, iconZone('🔥'));
-  const CASH = { x: 1.6, z: 1.2 };
+  FIRE.dropZone = addZone(-2.2, -0.35, 2.4, iconZone('🔥'));
+  const CASH = { x: -5.2, z: 7.4 }; // 受付の小屋の裏手。お金がここに溜まる
   const cashZone = addZone(CASH.x, CASH.z, 2.4, iconZone('💰'));
   function drawShopZone(g, n, u, paid) {
     if (!u) return;
@@ -767,11 +839,11 @@
     });
   }
   // 背中のいちばん上の薪を、焚き火へ飛ばす
-  function dropLog(carrier) {
+  function dropLog(carrier, fire) {
     const log = carrier.stack.pop();
     log.getWorldPosition(tmpA);
     carrier.stackRoot.remove(log);
-    fly(log, tmpA, () => tmpB.set(FIRE.x, FLOOR + 0.5, FIRE.z), feedFire, 1.6);
+    fly(log, tmpA, () => tmpB.set(fire.x, FLOOR + 0.5, fire.z), () => feedFire(fire), 1.6);
   }
   function swayStack(carrier, time) {
     const speed = Math.hypot(carrier.ch.vx, carrier.ch.vz) / carrier.ch.speedRef;
@@ -879,8 +951,8 @@
     '画面をなぞって歩こう',
     '落ちている枝を拾ったり、柵の外の森で木を切ろう',
     '🔥 の枠まで薪を運ぼう',
-    '火に当たって温まった人が、お金を置いていくよ',
-    '💰 の枠でお金を拾おう',
+    '温まった人は、入口の受付でお金を払って帰るよ',
+    '受付の裏の 💰 の枠でお金を拾おう',
     '光っている枠にお金を払おう',
   ];
   let tutorial = 0;
@@ -904,19 +976,21 @@
   // ================================================================
   //  焚き火
   // ================================================================
-  const fire = { heat: HEAT_START, pop: 0 };
-  function feedFire() {
+  function feedFire(fire) {
     fire.heat = Math.min(100, fire.heat + HEAT_PER_LOG);
     fire.pop = Math.min(0.5, fire.pop + 0.25);
-    burst(sparks, tmpA.set(FIRE.x, FLOOR + 0.6, FIRE.z), 5, 2.5, 4.5);
+    burst(sparks, tmpA.set(fire.x, FLOOR + 0.6, fire.z), 5, 2.5, 4.5);
     blip(300 + fire.heat * 4, 0.09, 'sine', 0.1);
     advanceHint(2);
   }
-  function updateFire(dt, time, guestsWarming) {
-    fire.heat = Math.max(0, fire.heat - (HEAT_DECAY + HEAT_DECAY_PER_GUEST * guestsWarming) * dt);
+  function updateFires(dt, time) {
+    for (const fire of fires) updateFire(fire, dt, time);
+  }
+  function updateFire(fire, dt, time) {
+    fire.heat = Math.max(0, fire.heat - (HEAT_DECAY + HEAT_DECAY_PER_GUEST * fire.warming) * dt);
     fire.pop = Math.max(0, fire.pop - dt * 3);
     const power = (0.35 + fire.heat / 100 * 1.05) * (1 + fire.pop);
-    for (const f of flames) {
+    for (const f of fire.flames) {
       const flick = 1 + Math.sin(time * 12 + f.phase) * 0.12 + Math.sin(time * 7.3 + f.phase) * 0.08;
       const s = power * flick;
       const w = Math.sqrt(power) / Math.sqrt(flick);
@@ -924,7 +998,7 @@
       f.mesh.position.y = 0.2 + f.h * s / 2;
       f.mesh.rotation.y += dt * 2;
     }
-    fireLight.intensity = (2 + fire.heat / 100 * 7) * (1 + fire.pop) + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6;
+    fire.light.intensity = (2 + fire.heat / 100 * 7) * (1 + fire.pop) + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6;
   }
 
   // ================================================================
@@ -951,7 +1025,8 @@
     stump.scale.setScalar(s);
     stump.visible = false;
     const t = { group, stump, x, z, s, r: 0.3 * s, hp: TREE_LOGS, grow: 1, regrow: 0, shake: 0 };
-    circles.push({ x, z, r: t.r });
+    t.circle = { x, z, r: t.r };
+    circles.push(t.circle);
     trees.push(t);
   }
   function nearestTree(p, reach) {
@@ -976,6 +1051,7 @@
   }
   function updateTrees(dt, time) {
     for (const t of trees) {
+      if (t.dead) continue; // キャンプを広げたときに無くなった木
       t.shake = Math.max(0, t.shake - dt * 4);
       if (t.hp <= 0) {
         t.grow = Math.max(0, t.grow - dt * 5); // 切り倒されて小さくなる
@@ -1012,14 +1088,14 @@
   function freeOutsideSpot() {
     for (let tries = 0; tries < 60; tries++) {
       const x = (Math.random() * 2 - 1) * 20, z = (Math.random() * 2 - 1) * 20;
-      if (Math.abs(x) < PX + 1.5 && Math.abs(z) < PZ + 1.5) continue;
+      if (x > camp.x1 - 1.5 && x < camp.x2 + 1.5 && z > camp.z1 - 1.5 && z < camp.z2 + 1.5) continue;
       if (circles.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 0.7)) continue;
       return [x, z];
     }
     return null;
   }
   // 最初は広場の中にも少し落ちている
-  for (const [x, z] of [[0.2, 7.3], [-2.8, 5.4], [-1.0, 3.0]]) placeBranch(x, z);
+  for (const [x, z] of [[1.6, 7.6], [-2.8, 5.4], [-1.0, 3.0]]) placeBranch(x, z);
   for (let i = 0; i < BRANCH_COUNT; i++) { const s = freeOutsideSpot(); if (s) placeBranch(...s); }
   function updateBranches(dt, time, carrier) {
     const p = carrier.ch.root.position;
@@ -1066,15 +1142,20 @@
     const coin = makeCoin();
     const index = pile.length + pilePending;
     pilePending++;
-    fly(coin, from, () => pileSlot(index, tmpB), () => {
-      pilePending--;
-      coin.rotation.set(0, 0, 0);
-      pileSlot(pile.length, coin.position);
-      scene.add(coin);
-      pile.push(coin);
+    // まず受付の窓口に投げ入れる
+    fly(coin, from, () => WINDOW, () => {
       blip(900, 0.05, 'sine', 0.04, 1.3);
-      advanceHint(3);
-    }, 1.0, 0.3);
+      // 窓口から、小屋の裏のお金置き場へ
+      fly(coin, WINDOW, () => pileSlot(index, tmpB), () => {
+        pilePending--;
+        coin.rotation.set(0, 0, 0);
+        pileSlot(pile.length, coin.position);
+        scene.add(coin);
+        pile.push(coin);
+        blip(1100, 0.04, 'sine', 0.03, 1.2);
+        advanceHint(3);
+      }, 1.6, 0.35);
+    }, 0.7, 0.25);
   }
 
   // ================================================================
@@ -1091,7 +1172,7 @@
     { x: -5.6, z: -5.3 }, { x: -3.4, z: -5.9, via: [{ x: -5.8, z: -5.1 }] },
     { x: 1.2, z: -3.9, via: [VIA_RIGHT] }, { x: -4.4, z: 0.8 },
   ];
-  let slots = SLOTS.map(s => ({ ...s, guest: null }));
+  let slots = SLOTS.map(s => ({ ...s, fire: FIRE, guest: null }));
   const GUEST_LOOKS = [
     ['#c94f4f', '#a63d3d', '#4a6fd6'], ['#7a5bd6', '#6247b3', '#ffd166'], ['#3fa58a', '#2f8a72', '#9b6bd6'],
     ['#d9a03a', '#b8842a', '#5b7bd6'], ['#5b7bd6', '#4762b3', '#e85d8a'], ['#8a8f99', '#6c717a', '#3fa58a'],
@@ -1102,8 +1183,9 @@
   const barsEl = $('bars');
 
   function spawnGuest() {
-    const slot = slots.find(s => !s.guest);
-    if (!slot) return;
+    const free = slots.filter(s => !s.guest);
+    if (!free.length) return;
+    const slot = free[Math.floor(Math.random() * free.length)];
     const [coat, coatDark, hat] = GUEST_LOOKS[Math.floor(Math.random() * GUEST_LOOKS.length)];
     const ch = makeCharacter({ coat, coatDark, hat, ownSkin: true });
     ch.speedRef = GUEST_SPEED;
@@ -1140,7 +1222,7 @@
 
   const frozenColor = new THREE.Color(FROZEN), skinColor = new THREE.Color(SKIN);
   function updateGuests(dt, time) {
-    let warming = 0;
+    for (const f of fires) f.warming = 0;
     guestTimer -= dt;
     if (guestTimer <= 0) { guestTimer = guestInterval; spawnGuest(); }
 
@@ -1148,9 +1230,10 @@
       const g = guests[i], ch = g.ch;
       if (g.state === 'arrive') {
         ch.shiver = 0.6;
-        if (walkPath(ch, g.path, GUEST_SPEED, dt)) { g.state = 'warm'; ch.face = FIRE; g.bar.style.display = 'block'; }
+        if (walkPath(ch, g.path, GUEST_SPEED, dt)) { g.state = 'warm'; ch.face = g.slot.fire; g.bar.style.display = 'block'; }
       } else if (g.state === 'warm') {
-        warming++;
+        const fire = g.slot.fire;
+        fire.warming++;
         ch.vx = ch.vz = 0;
         if (fire.heat > 0) g.warm = Math.min(1, g.warm + dt * WARM_RATE * (0.35 + fire.heat / 100));
         ch.skin.color.copy(frozenColor).lerp(skinColor, g.warm);
@@ -1165,17 +1248,28 @@
           blip(660, 0.12, 'sine', 0.06, 1.5);
         }
       } else if (g.state === 'happy') {
-        g.payTimer -= dt;
-        if (g.payLeft > 0 && g.payTimer <= 0) {
-          g.payTimer = 0.07;
-          g.payLeft--;
-          payToPile(V(ch.root.position.x, FLOOR + 1.6, ch.root.position.z));
-        }
-        if (g.payLeft === 0 && ch.hop <= 0) {
-          g.state = 'leave';
+        // 喜んだら、受付へ向かう(焚き火のまわりの場所は次の人にゆずる)
+        if (ch.hop <= 0) {
+          g.state = 'toPay';
           ch.face = null;
           g.slot.guest = null;
-          g.path = [...(g.slot.via || []).slice().reverse(), GATE_IN, { x: -13, z: GATE_Z }];
+          g.path = [...(g.slot.via || []).slice().reverse(), PAY_SPOT];
+        }
+      } else if (g.state === 'toPay') {
+        if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) { g.state = 'pay'; ch.face = WINDOW; }
+      } else if (g.state === 'pay') {
+        ch.vx = ch.vz = 0;
+        g.payTimer -= dt;
+        if (g.payLeft > 0 && g.payTimer <= 0) {
+          g.payTimer = 0.09;
+          g.payLeft--;
+          ch.chop = 0.6; // 腕を振ってお金を投げる
+          payToPile(V(ch.root.position.x + 0.3, ch.root.position.y + 1.1, ch.root.position.z));
+        }
+        if (g.payLeft === 0 && g.payTimer <= 0) {
+          g.state = 'leave';
+          ch.face = null;
+          g.path = [GATE_IN, { x: -13, z: GATE_Z }];
         }
       } else if (g.state === 'leave') {
         if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
@@ -1192,7 +1286,6 @@
         g.bar.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
       }
     }
-    return warming;
   }
 
   // ================================================================
@@ -1244,7 +1337,8 @@
           ch.face = null;
           if (h.carrier.stack.length > 0) {
             h.state = 'toFire';
-            h.path = route(p, { x: dropZone.x + 0.6, z: dropZone.z - 0.2 });
+            h.fire = fires.reduce((a, b) => (a.heat <= b.heat ? a : b)); // 火の弱いほうへ
+            h.path = route(p, { x: h.fire.dropZone.x + 0.6, z: h.fire.dropZone.z - 0.2 });
           } else {
             h.state = 'toTree';
             h.tree = null;
@@ -1252,13 +1346,13 @@
         }
       }
     } else if (h.state === 'toFire') {
-      if (walkPath(ch, h.path, HELPER_SPEED, dt)) { h.state = 'drop'; ch.face = FIRE; }
+      if (walkPath(ch, h.path, HELPER_SPEED, dt)) { h.state = 'drop'; ch.face = h.fire; }
     } else if (h.state === 'drop') {
       ch.vx = ch.vz = 0;
       h.timer -= dt;
       if (h.timer <= 0) {
         h.timer = DROP_INTERVAL * 2;
-        if (h.carrier.stack.length > 0) dropLog(h.carrier);
+        if (h.carrier.stack.length > 0) dropLog(h.carrier, h.fire);
         else { h.state = 'toTree'; h.tree = null; ch.face = null; }
       }
     }
@@ -1310,9 +1404,44 @@
     zone.redraw(list[0], 0);
     return shop;
   }
+  // ---- キャンプ拡張(柵の右の外に枠がある) ----
+  const EXPAND_ZONE = { x: 9.6, z: -5.2 };
+  function removeTreesIn(x1, x2, z1, z2) {
+    for (const t of trees) {
+      if (t.dead || t.x < x1 || t.x > x2 || t.z < z1 || t.z > z2) continue;
+      t.dead = true;
+      t.hp = 0;
+      t.group.visible = false;
+      t.stump.visible = false;
+      t.circle.off = true;
+    }
+  }
+  removeTreesIn(EXPAND_ZONE.x - 2.2, EXPAND_ZONE.x + 2.2, EXPAND_ZONE.z - 2.2, EXPAND_ZONE.z + 2.2); // 枠のまわりはあけておく
+  function expandCamp() {
+    camp.x2 = EXPAND_X2;
+    removeTreesIn(camp.x1 - 1, camp.x2 + 1.2, camp.z1 - 1, camp.z2 + 1.2);
+    buildPlaza();
+    buildFence();
+    // 広げた場所に2つ目の焚き火と、お客さんの立ち位置を作る
+    const fire = addCampfire(10.0, 0.0, 40);
+    fire.dropZone = addZone(fire.x, fire.z + 2.15, 2.4, iconZone('🔥'));
+    const hub = { x: fire.x - 3.2, z: fire.z };
+    const back = { x: fire.x, z: fire.z - 2.3 };
+    const R2 = 2.2;
+    const at = (deg) => ({ x: fire.x + Math.cos(deg * Math.PI / 180) * R2, z: fire.z + Math.sin(deg * Math.PI / 180) * R2 });
+    const newSlots = [
+      { ...at(180), via: [hub] }, { ...at(145), via: [hub] }, { ...at(-135), via: [hub] },
+      { ...at(-90), via: [hub] }, { ...at(-45), via: [hub, back] }, { ...at(0), via: [hub, back] },
+      { ...at(35), via: [hub, { x: fire.x - 1.5, z: fire.z + 1.9 }] },
+    ];
+    slots = slots.concat(newSlots.map(s => ({ ...s, fire, guest: null })));
+    burst(sparks, tmpA.set(fire.x, FLOOR + 0.5, fire.z), 20, 6, 6);
+  }
+
   const shops = [
-    makeShop(CAMP_UPGRADES, { x: 3.6, z: 4.6 }),   // キャンプを広げる
+    makeShop(CAMP_UPGRADES, { x: 3.6, z: 4.6 }),   // キャンプを充実させる
     makeShop(AXE_UPGRADES, { x: 5.6, z: -5.3 }),   // 斧を強くする(奥の出入口のそば)
+    makeShop([{ icon: '🏕️', label: 'キャンプ拡張', cost: EXPAND_COST, message: 'キャンプが広くなった! 焚き火も増えたよ', apply: expandCamp }], EXPAND_ZONE),
   ];
   const shopItem = (shop) => shop.list[shop.index];
   function payShop(shop) {
@@ -1444,11 +1573,14 @@
     }
 
     // 🔥 の枠で薪を入れる
-    const inDrop = inZone(dropZone, p);
     dropTimer -= dt;
-    if (inDrop && dropTimer <= 0 && carrier.stack.length > 0) {
-      dropTimer = DROP_INTERVAL;
-      dropLog(carrier);
+    for (const fire of fires) {
+      const inDrop = inZone(fire.dropZone, p);
+      setZoneActive(fire.dropZone, inDrop, time);
+      if (inDrop && dropTimer <= 0 && carrier.stack.length > 0) {
+        dropTimer = DROP_INTERVAL;
+        dropLog(carrier, fire);
+      }
     }
     // 💰 の枠でお金を拾う
     const inCash = inZone(cashZone, p);
@@ -1477,7 +1609,6 @@
       setZoneActive(shop.zone, inShop || money >= u.cost - shop.paid, time);
     }
 
-    setZoneActive(dropZone, inDrop, time);
     setZoneActive(cashZone, inCash, time);
     updateBranches(dt, time, carrier);
 
@@ -1491,7 +1622,9 @@
   const fireFill = $('fire-fill'), carryLabel = $('carry'), moneyLabel = $('money'), maxLabel = $('max');
   function updateHud(dt) {
     const c = player.carrier;
-    fireFill.style.width = fire.heat + '%';
+    const pp = player.ch.root.position;
+    const near = fires.reduce((a, b) => (flat(pp, a) <= flat(pp, b) ? a : b));
+    fireFill.style.width = near.heat + '%';
     carryLabel.textContent = c.stack.length + '/' + c.max;
     moneyLabel.textContent = money;
     if (c.stack.length >= c.max) {
@@ -1521,10 +1654,10 @@
 
     updatePlayer(dt, time);
     updateHelper(dt, time);
-    const warming = updateGuests(dt, time);
+    updateGuests(dt, time);
     updateTrees(dt, time);
     updateFlying(dt);
-    updateFire(dt, time, warming);
+    updateFires(dt, time);
     updateParticles(sparks, dt, 9);
     updateParticles(chips, dt, 12);
     updateDust(dt);
@@ -1552,7 +1685,8 @@
       return {
         x: player.ch.root.position.x, z: player.ch.root.position.z,
         carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pile.length,
-        heat: fire.heat, guests: guests.length, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
+        heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
+        guestStates: guests.map(g => g.state).join(','), shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
         treeSpots: trees.filter(t => t.hp > 0).map(t => [t.x, t.z]), helper: !!helper, hx: helper && helper.ch.root.position.x, hz: helper && helper.ch.root.position.z,
         helperState: helper && helper.state, slots: slots.length, tent: tent.visible,
