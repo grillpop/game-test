@@ -128,9 +128,12 @@
 
   const CARRY_START = 12;        // 最初に運べる薪の本数
   const CARRY_UPGRADED = 24;     // リュック拡張後に運べる本数
-  const CHOP_INTERVAL = 0.17;    // 斧を振る間隔(秒)。1回で薪1本
+  const AXE_INTERVALS = [0.17, 0.12, 0.085, 0.06]; // 斧のレベルごとの、振る間隔(秒)。1回で薪1本
   const TREE_LOGS = 6;           // 木1本からとれる薪の数
-  const TREE_REGROW = 8;         // 切った木が生え直すまでの時間(秒)
+  const TREE_REGROW = 10;        // 切った木が生え直すまでの時間(秒)
+  const BRANCH_COUNT = 14;       // 柵の外に落ちている枝の数
+  const BRANCH_RESPAWN = 3;      // 拾った枝が、別の場所にまた落ちるまでの時間(秒)
+  const WORLD = 30;              // 歩ける範囲(柵の外も含む)の半分の広さ
   const DROP_INTERVAL = 0.06;    // 薪を焚き火に1本入れる間隔(秒)
   const FLY_TIME = 0.22;         // 薪やお金が飛んでいく時間(秒)
 
@@ -148,11 +151,16 @@
   const HELPER_CARRY = 5;        // 仲間が一度に運ぶ本数
   const HELPER_CHOP_INTERVAL = 0.32; // 仲間が斧を振る間隔(秒)
 
-  // お金を払って解放するもの(上から順に出てきます)
-  const UPGRADES = [
-    { icon: '🎒', cost: 15, message: 'リュックが大きくなった!', apply: () => { player.carrier.max = CARRY_UPGRADED; } },
-    { icon: '🪓', cost: 40, message: '木こりの仲間が来た!', apply: () => spawnHelper() },
-    { icon: '⛺', cost: 60, message: 'テントができた! お客さんが増えるよ', apply: () => openTent() },
+  // お金を払って解放するもの(枠ごとに、上から順に出てきます)
+  const CAMP_UPGRADES = [
+    { icon: '🎒', label: 'リュック', cost: 15, message: 'リュックが大きくなった!', apply: () => { player.carrier.max = CARRY_UPGRADED; } },
+    { icon: '👷', label: '仲間', cost: 40, message: '木こりの仲間が来た!', apply: () => spawnHelper() },
+    { icon: '⛺', label: 'テント', cost: 60, message: 'テントができた! お客さんが増えるよ', apply: () => openTent() },
+  ];
+  const AXE_UPGRADES = [
+    { icon: '🪓', label: '斧 Lv2', cost: 20, message: '斧が軽くなった! 速く切れる', apply: () => setAxeLevel(2) },
+    { icon: '🪓', label: '斧 Lv3', cost: 50, message: '金の斧! もっと速く切れる', apply: () => setAxeLevel(3) },
+    { icon: '🪓', label: '斧 Lv4', cost: 100, message: '伝説の斧! 最速で切れる', apply: () => setAxeLevel(4) },
   ];
 
   const CAM_YAW = Math.PI / 4;   // カメラを45度回して、ステージを斜めに見せる
@@ -253,10 +261,14 @@
       if (d < R && d > 1e-4) { p.x = cx + dx / d * R; p.z = cz + dz / d * R; }
     }
   }
-  function keepInside(p, R) {
-    p.x = Math.max(-PX + R, Math.min(PX - R, p.x));
-    p.z = Math.max(-PZ + R, Math.min(PZ - R, p.z));
+  function keepInWorld(p, R) {
+    p.x = Math.max(-WORLD + R, Math.min(WORLD - R, p.x));
+    p.z = Math.max(-WORLD + R, Math.min(WORLD - R, p.z));
   }
+  // 広場の中は床が少し高い
+  const insidePlaza = (x, z) => Math.abs(x) < PX + 0.7 && Math.abs(z) < PZ + 0.7;
+  const groundY = (x, z) => insidePlaza(x, z) ? 0.2 : 0;
+  function followGround(p, dt) { p.y += (groundY(p.x, p.z) - p.y) * Math.min(1, dt * 15); }
 
   // ================================================================
   //  ステージ
@@ -316,13 +328,37 @@
     scene.add(post);
   }
   const FX = PX + 0.35, FZ = PZ + 0.35, GAP = 0.58;
-  for (let x = -FX; x <= FX + 0.01; x += GAP) { addPost(x, -FZ); addPost(x, FZ); }
+  const BACK_GATE_X = 4.0; // 奥の出入口(森へ行く道)
+  for (let x = -FX; x <= FX + 0.01; x += GAP) {
+    if (Math.abs(x - BACK_GATE_X) > 1.1) addPost(x, -FZ);
+    addPost(x, FZ);
+  }
   for (let z = -FZ + GAP; z < FZ - 0.01; z += GAP) {
     if (Math.abs(z - GATE_Z) > 1.1) addPost(-FX, z);
     addPost(FX, z);
   }
   addPost(-FX, GATE_Z - 1.25, 1.7); // 入口の門柱
   addPost(-FX, GATE_Z + 1.25, 1.7);
+  addPost(BACK_GATE_X - 1.25, -FZ, 1.7); // 奥の出入口の門柱
+  addPost(BACK_GATE_X + 1.25, -FZ, 1.7);
+  // 柵の当たり判定(出入口だけあけておく)
+  {
+    const T = 0.3, gap = 1.0;
+    const seg = (x1, z1, x2, z2) => boxes.push({ x: (x1 + x2) / 2, z: (z1 + z2) / 2, hx: Math.abs(x2 - x1) / 2 + T, hz: Math.abs(z2 - z1) / 2 + T });
+    seg(-FX, FZ, FX, FZ);                                  // 手前
+    seg(FX, -FZ, FX, FZ);                                  // 右
+    seg(-FX, -FZ, BACK_GATE_X - gap - T, -FZ);             // 奥(出入口の左)
+    seg(BACK_GATE_X + gap + T, -FZ, FX, -FZ);              // 奥(出入口の右)
+    seg(-FX, -FZ, -FX, GATE_Z - gap - T);                  // 左(入口の奥)
+    seg(-FX, GATE_Z + gap + T, -FX, FZ);                   // 左(入口の手前)
+  }
+  // 奥の出入口から森へ続く雪の道
+  const backPath = mesh(new THREE.PlaneGeometry(2.2, 5), mat('#dfe8f2', { roughness: 1 }), BACK_GATE_X, 0.01, -FZ - 2.6);
+  backPath.rotation.x = -Math.PI / 2;
+  backPath.castShadow = false;
+  // 森の場所(ここに切れる木が生える)
+  const FOREST = { x1: -3, x2: 12, z1: -20.5, z2: -11.2 };
+  const inForest = (x, z, m = 0) => x > FOREST.x1 - m && x < FOREST.x2 + m && z > FOREST.z1 - m && z < FOREST.z2 + m;
 
   // 雪の木(柵の外の飾り)
   const trunkMat = mat('#7a4e2d', { flatShading: true });
@@ -347,10 +383,13 @@
     const x = (rand() * 2 - 1) * 36, z = (rand() * 2 - 1) * 36;
     if (Math.abs(x) < PX + 2.2 && Math.abs(z) < PZ + 2.2) continue;
     if (x < -PX && Math.abs(z - GATE_Z) < 2.5) continue;
+    if (inForest(x, z, 1.5)) continue;
+    const s = 1 + rand() * 0.6;
     const t = makePine();
     t.position.set(x, 0, z);
-    t.scale.setScalar(1 + rand() * 0.6);
+    t.scale.setScalar(s);
     scene.add(t);
+    circles.push({ x, z, r: 0.3 * s });
   }
 
   // ---- キャンプの小物 ----
@@ -503,8 +542,7 @@
   const dropZone = addZone(-2.2, -0.35, 2.4, iconZone('🔥'));
   const CASH = { x: 1.6, z: 1.2 };
   const cashZone = addZone(CASH.x, CASH.z, 2.4, iconZone('💰'));
-  const UPG = { x: 3.6, z: 4.6 };
-  const upgradeZone = addZone(UPG.x, UPG.z, 2.6, (g, n, u, paid) => {
+  function drawShopZone(g, n, u, paid) {
     if (!u) return;
     zoneFrame(g, n, 'rgba(60,40,30,.35)');
     // 払った分だけ下から金色で埋まっていく
@@ -516,9 +554,10 @@
     g.fillStyle = 'rgba(255,200,60,.75)';
     g.fillRect(0, n - (n - 28) * k - 14, n, n);
     g.restore();
-    zoneText(g, n, u.icon, 92, -28);
-    zoneText(g, n, '💰' + (u.cost - paid), 54, 58);
-  });
+    zoneText(g, n, u.icon, 80, -42);
+    zoneText(g, n, u.label, 38, 14);
+    zoneText(g, n, '💰' + (u.cost - paid), 48, 62);
+  }
 
   // ================================================================
   //  キャラクター(頭の大きいちびキャラ)を作る
@@ -613,16 +652,17 @@
     addLimb(root, 0.15, 0.36, true, 1);
     addLimb(body, -0.4, 0.82, false, -1);
     const rightArm = addLimb(body, 0.4, 0.82, false, 1);
+    let axeHead = null;
     if (axe) {
       // 斧は前に向けて持つ。振るときは腕ごと振り下ろす
       const a = new THREE.Group();
       a.position.set(0, -0.3, 0);
       mesh(GEO.axeHandle, common.axeWood, 0, 0, 0.2, a).rotation.x = Math.PI / 2;
-      mesh(GEO.axeHead, common.axeMetal, 0, 0.08, 0.42, a);
+      axeHead = mesh(GEO.axeHead, common.axeMetal, 0, 0.08, 0.42, a);
       rightArm.add(a);
     }
     return {
-      root, body, head, limbs, rightArm, skin,
+      root, body, head, limbs, rightArm, skin, axeHead,
       vx: 0, vz: 0, angle: 0, walk: 0,
       chop: 0, shiver: 0, hop: 0, face: null, speedRef: SPEED,
     };
@@ -793,10 +833,10 @@
     dustPool.push({ mesh: m, life: 0, max: 1 });
   }
   let dustIndex = 0;
-  function puff(x, z) {
+  function puff(x, y, z) {
     const d = dustPool[dustIndex++ % dustPool.length];
     d.life = d.max = 0.45;
-    d.mesh.position.set(x + (Math.random() - 0.5) * 0.2, FLOOR + 0.1, z + (Math.random() - 0.5) * 0.2);
+    d.mesh.position.set(x + (Math.random() - 0.5) * 0.2, y + 0.1, z + (Math.random() - 0.5) * 0.2);
     d.mesh.visible = true;
   }
   function updateDust(dt) {
@@ -840,7 +880,7 @@
   // ================================================================
   const HINTS = [
     '画面をなぞって歩こう',
-    '木に近づくと、薪がとれるよ',
+    '落ちている枝を拾ったり、柵の外の森で木を切ろう',
     '🔥 の枠まで薪を運ぼう',
     '火に当たって温まった人が、お金を置いていくよ',
     '💰 の枠でお金を拾おう',
@@ -895,13 +935,21 @@
   // ================================================================
   const trees = [];
   const stumpGeo = new THREE.CylinderGeometry(0.24, 0.3, 0.3, 8);
-  for (const [x, z] of [[2.3, -7.6], [4.3, -7.8], [6.2, -7.5], [3.3, -5.9], [5.3, -6.0], [6.3, -4.2], [2.0, -4.3]]) {
-    const s = 0.75 + rand() * 0.15;
+  const forestSpots = [];
+  for (let gx = FOREST.x1 + 0.8; gx < FOREST.x2; gx += 2.5) {
+    for (let gz = FOREST.z2 - 0.6; gz > FOREST.z1; gz -= 2.4) {
+      const x = gx + (rand() - 0.5) * 1.0, z = gz + (rand() - 0.5) * 0.8;
+      if (Math.abs(x - BACK_GATE_X) < 1.7 && z > -14.2) continue; // 出入口の前はあけておく
+      forestSpots.push([x, z]);
+    }
+  }
+  for (const [x, z] of forestSpots) {
+    const s = 0.8 + rand() * 0.25;
     const group = makePine();
-    group.position.set(x, FLOOR, z);
+    group.position.set(x, 0, z);
     group.scale.setScalar(s);
     scene.add(group);
-    const stump = mesh(stumpGeo, [logSide, logTop, logTop], x, FLOOR + 0.15, z);
+    const stump = mesh(stumpGeo, [logSide, logTop, logTop], x, 0.15, z);
     stump.visible = false;
     const t = { group, stump, x, z, s, r: 0.32, hp: TREE_LOGS, grow: 1, regrow: 0, shake: 0 };
     circles.push({ x, z, r: t.r });
@@ -919,8 +967,8 @@
   function hitTree(tree, carrier, onLand) {
     tree.hp--;
     tree.shake = 1;
-    burst(chips, tmpA.set(tree.x, FLOOR + 0.8, tree.z), 4, 3, 3.5);
-    addLog(carrier, V(tree.x, FLOOR + 1.4, tree.z), onLand);
+    burst(chips, tmpA.set(tree.x, 0.8, tree.z), 4, 3, 3.5);
+    addLog(carrier, V(tree.x, 1.4, tree.z), onLand);
     blip(180 + Math.random() * 40, 0.06, 'square', 0.04, 0.6);
     if (tree.hp <= 0) {
       tree.regrow = TREE_REGROW;
@@ -941,6 +989,58 @@
       t.group.scale.setScalar(t.s * Math.max(0.001, t.grow + pop));
       t.group.visible = t.grow > 0.01;
       t.group.rotation.z = Math.sin(time * 40) * 0.1 * t.shake;
+    }
+  }
+
+  // ================================================================
+  //  落ちている枝(歩いて通ると拾える。薪1本になる)
+  // ================================================================
+  const branchMat = mat('#8a5a32');
+  const branchGeo = new THREE.CylinderGeometry(0.07, 0.1, 1.05, 6);
+  const twigGeo = new THREE.CylinderGeometry(0.035, 0.05, 0.42, 5);
+  const branches = [];
+  let branchRespawns = [];
+  function placeBranch(x, z) {
+    const g = new THREE.Group();
+    mesh(branchGeo, branchMat, 0, 0.07, 0, g).rotation.z = Math.PI / 2;
+    const twig = mesh(twigGeo, branchMat, 0.12, 0.1, 0.1, g);
+    twig.rotation.set(Math.PI / 2, 0, 0.7);
+    g.position.set(x, groundY(x, z), z);
+    g.rotation.y = Math.random() * Math.PI;
+    scene.add(g);
+    branches.push({ g, x, z });
+  }
+  function freeOutsideSpot() {
+    for (let tries = 0; tries < 60; tries++) {
+      const x = (Math.random() * 2 - 1) * 20, z = (Math.random() * 2 - 1) * 20;
+      if (Math.abs(x) < PX + 1.5 && Math.abs(z) < PZ + 1.5) continue;
+      if (circles.some(c => Math.hypot(c.x - x, c.z - z) < c.r + 0.7)) continue;
+      return [x, z];
+    }
+    return null;
+  }
+  // 最初は広場の中にも少し落ちている
+  for (const [x, z] of [[0.2, 7.3], [-2.8, 5.4], [-1.0, 3.0]]) placeBranch(x, z);
+  for (let i = 0; i < BRANCH_COUNT; i++) { const s = freeOutsideSpot(); if (s) placeBranch(...s); }
+  function updateBranches(dt, time, carrier) {
+    const p = carrier.ch.root.position;
+    for (let i = branches.length - 1; i >= 0; i--) {
+      const b = branches[i];
+      b.g.position.y = groundY(b.x, b.z) + Math.max(0, Math.sin(time * 3 + i)) * 0.04; // 目立つように少しはねる
+      if (carrierFull(carrier) || Math.hypot(p.x - b.x, p.z - b.z) > 0.9) continue;
+      scene.remove(b.g);
+      branches.splice(i, 1);
+      addLog(carrier, V(b.x, b.g.position.y + 0.2, b.z), () => {
+        blip(520 + carrier.stack.length * 30);
+        advanceHint(1);
+      });
+      branchRespawns.push(BRANCH_RESPAWN);
+    }
+    branchRespawns = branchRespawns.map(t => t - dt);
+    while (branchRespawns.length && branchRespawns[0] <= 0) {
+      branchRespawns.shift();
+      const s = freeOutsideSpot();
+      if (s) placeBranch(...s);
     }
   }
 
@@ -1009,7 +1109,7 @@
     const ch = makeCharacter({ coat, coatDark, hat, ownSkin: true });
     ch.speedRef = GUEST_SPEED;
     ch.skin.color.set(FROZEN);
-    ch.root.position.set(-12, FLOOR, GATE_Z + (Math.random() - 0.5) * 0.8);
+    ch.root.position.set(-12, 0, GATE_Z + (Math.random() - 0.5) * 0.8);
     ch.angle = Math.PI / 2;
     scene.add(ch.root);
     const bar = document.createElement('div');
@@ -1034,6 +1134,7 @@
     ch.vz += (tvz - ch.vz) * k;
     const step = Math.min(d, Math.hypot(ch.vx, ch.vz) * dt);
     if (d > 1e-4) { p.x += dx / d * step; p.z += dz / d * step; }
+    followGround(p, dt);
     if (d < 0.12) { pathList.shift(); }
     return pathList.length === 0;
   }
@@ -1099,23 +1200,35 @@
   //  木こりの仲間
   // ================================================================
   let helper = null;
+  const BACK_IN = { x: BACK_GATE_X, z: -PZ + 0.6 };
+  const BACK_OUT = { x: BACK_GATE_X, z: -FZ - 1.4 };
+  // 柵の中と外を行き来するときは、奥の出入口を通る
+  function route(from, to) {
+    const a = insidePlaza(from.x, from.z), b = insidePlaza(to.x, to.z);
+    if (a === b) return [to];
+    return a ? [BACK_IN, BACK_OUT, to] : [BACK_OUT, BACK_IN, to];
+  }
   function spawnHelper() {
     const ch = makeCharacter({ coat: '#3fa55c', coatDark: '#2f8a4a', hat: '#ffd166', pack: true, axe: true });
     ch.speedRef = HELPER_SPEED;
-    ch.root.position.set(UPG.x, FLOOR, UPG.z);
+    const pos = shops[0].pos;
+    ch.root.position.set(pos.x, FLOOR, pos.z);
     ch.hop = 0.5;
+    setAxeLook(ch, axeLevel);
     scene.add(ch.root);
-    helper = { ch, carrier: makeCarrier(ch, HELPER_CARRY), state: 'toTree', tree: null, timer: 0, path: [] };
+    helper = { ch, carrier: makeCarrier(ch, HELPER_CARRY), state: 'toTree', tree: null, timer: 0, path: [], stuck: 0, last: V() };
   }
   function updateHelper(dt, time) {
     if (!helper) return;
     const h = helper, ch = h.ch, p = ch.root.position;
     if (h.state === 'toTree') {
       if (!h.tree || h.tree.hp <= 0) {
-        h.tree = nearestTree(p, 100);
+        // 出入口から近い木を選ぶ
+        h.tree = nearestTree(insidePlaza(p.x, p.z) ? BACK_OUT : p, 100);
         if (h.tree) {
-          const dx = p.x - h.tree.x, dz = p.z - h.tree.z, d = Math.hypot(dx, dz) || 1;
-          h.path = [{ x: h.tree.x + dx / d * 1.0, z: h.tree.z + dz / d * 1.0 }];
+          const from = insidePlaza(p.x, p.z) ? BACK_OUT : p;
+          const dx = from.x - h.tree.x, dz = from.z - h.tree.z, d = Math.hypot(dx, dz) || 1;
+          h.path = route(p, { x: h.tree.x + dx / d * 1.0, z: h.tree.z + dz / d * 1.0 });
         }
       }
       if (h.tree && walkPath(ch, h.path, HELPER_SPEED, dt)) { h.state = 'chop'; ch.face = h.tree; }
@@ -1124,7 +1237,7 @@
       ch.vx = ch.vz = 0;
       h.timer -= dt;
       if (h.timer <= 0) {
-        h.timer = HELPER_CHOP_INTERVAL;
+        h.timer = HELPER_CHOP_INTERVAL * AXE_INTERVALS[axeLevel - 1] / AXE_INTERVALS[0];
         if (h.tree.hp > 0 && !carrierFull(h.carrier)) {
           hitTree(h.tree, h.carrier);
           ch.chop = 1;
@@ -1132,7 +1245,7 @@
           ch.face = null;
           if (h.carrier.stack.length > 0) {
             h.state = 'toFire';
-            h.path = [{ x: dropZone.x + 0.6, z: dropZone.z - 0.2 }];
+            h.path = route(p, { x: dropZone.x + 0.6, z: dropZone.z - 0.2 });
           } else {
             h.state = 'toTree';
             h.tree = null;
@@ -1151,7 +1264,19 @@
       }
     }
     pushOut(p, 0.35);
-    keepInside(p, 0.35);
+    keepInWorld(p, 0.35);
+    // 木や柵に引っかかって進めないときは、横にずれてから行き直す
+    if ((h.state === 'toTree' || h.state === 'toFire') && h.path.length) {
+      const moved = flat(p, h.last);
+      h.stuck = moved < HELPER_SPEED * dt * 0.3 ? h.stuck + dt : 0;
+      if (h.stuck > 0.6) {
+        const t = h.path[0], dx = t.x - p.x, dz = t.z - p.z, d = Math.hypot(dx, dz) || 1;
+        const side = Math.random() < 0.5 ? 1 : -1;
+        h.path.unshift({ x: p.x - dz / d * 1.2 * side, z: p.z + dx / d * 1.2 * side });
+        h.stuck = 0;
+      }
+    }
+    h.last.copy(p);
     animateCharacter(ch, dt, time);
     swayStack(h.carrier, time);
   }
@@ -1159,40 +1284,63 @@
   // ================================================================
   //  解放(お金を払う)
   // ================================================================
-  let upgradeIndex = 0;
-  let upgradePaid = 0, upgradePending = 0;
-  function currentUpgrade() { return UPGRADES[upgradeIndex]; }
-  upgradeZone.redraw(currentUpgrade(), 0);
+  let axeLevel = 1;
+  const axeMetal = common.axeMetal;
+  const axeGold = mat('#ffcf3a', { metalness: 0.7, roughness: 0.25 });
+  const axeLegend = mat('#ff9a3a', { metalness: 0.6, roughness: 0.2, emissive: '#ff5a1f', emissiveIntensity: 0.6 });
+  function setAxeLook(ch, level) {
+    if (!ch.axeHead) return;
+    ch.axeHead.material = level >= 4 ? axeLegend : level >= 3 ? axeGold : axeMetal;
+    ch.axeHead.scale.setScalar(1 + (level - 1) * 0.18);
+  }
+  function setAxeLevel(level) {
+    axeLevel = level;
+    setAxeLook(player.ch, level);
+    if (helper) setAxeLook(helper.ch, level);
+  }
   function openTent() {
     tent.visible = true;
     tentBox.off = false;
     guestInterval = GUEST_INTERVAL_TENT;
     slots = slots.concat(TENT_SLOTS.map(s => ({ ...s, guest: null })));
   }
-  function payUpgrade() {
-    const u = currentUpgrade();
+
+  function makeShop(list, pos) {
+    const zone = addZone(pos.x, pos.z, 2.6, drawShopZone);
+    const shop = { list, pos, zone, index: 0, paid: 0, pending: 0 };
+    zone.redraw(list[0], 0);
+    return shop;
+  }
+  const shops = [
+    makeShop(CAMP_UPGRADES, { x: 3.6, z: 4.6 }),   // キャンプを広げる
+    makeShop(AXE_UPGRADES, { x: 5.6, z: -5.3 }),   // 斧を強くする(奥の出入口のそば)
+  ];
+  const shopItem = (shop) => shop.list[shop.index];
+  function payShop(shop) {
+    const u = shopItem(shop);
+    const p = player.ch.root.position;
     money--;
-    upgradePending++;
+    shop.pending++;
     const coin = makeCoin();
-    fly(coin, V(player.ch.root.position.x, FLOOR + 1.2, player.ch.root.position.z), () => tmpB.set(UPG.x, FLOOR + 0.1, UPG.z), () => {
-      upgradePending--;
-      upgradePaid++;
-      blip(500 + upgradePaid / u.cost * 500, 0.05, 'sine', 0.05);
-      upgradeZone.redraw(u, upgradePaid);
-      if (upgradePaid >= u.cost) completeUpgrade();
+    fly(coin, V(p.x, p.y + 1.0, p.z), () => tmpB.set(shop.pos.x, FLOOR + 0.1, shop.pos.z), () => {
+      shop.pending--;
+      shop.paid++;
+      blip(500 + shop.paid / u.cost * 500, 0.05, 'sine', 0.05);
+      shop.zone.redraw(u, shop.paid);
+      if (shop.paid >= u.cost) completeShop(shop);
     }, 0.8, 0.2);
   }
-  function completeUpgrade() {
-    const u = currentUpgrade();
+  function completeShop(shop) {
+    const u = shopItem(shop);
     u.apply();
     toast(u.message);
-    burst(sparks, tmpA.set(UPG.x, FLOOR + 0.3, UPG.z), 16, 5, 5);
+    burst(sparks, tmpA.set(shop.pos.x, FLOOR + 0.3, shop.pos.z), 16, 5, 5);
     [523, 659, 784].forEach((f, i) => setTimeout(() => blip(f, 0.12, 'triangle', 0.07, 1.05), i * 90));
     advanceHint(5);
-    upgradeIndex++;
-    upgradePaid = 0;
-    if (currentUpgrade()) upgradeZone.redraw(currentUpgrade(), 0);
-    else upgradeZone.mesh.visible = false;
+    shop.index++;
+    shop.paid = 0;
+    if (shopItem(shop)) shop.zone.redraw(shopItem(shop), 0);
+    else shop.zone.mesh.visible = false;
   }
 
   // ================================================================
@@ -1273,12 +1421,13 @@
     p.x += ch.vx * dt;
     p.z += ch.vz * dt;
     pushOut(p, PLAYER_R);
-    keepInside(p, PLAYER_R);
+    keepInWorld(p, PLAYER_R);
+    followGround(p, dt);
 
     const moving = Math.hypot(ch.vx, ch.vz) > 0.5;
     if (moving) {
       dustTimer -= dt;
-      if (dustTimer <= 0) { dustTimer = 0.1; puff(p.x, p.z); }
+      if (dustTimer <= 0) { dustTimer = 0.1; puff(p.x, p.y, p.z); }
       advanceHint(0);
     }
 
@@ -1287,7 +1436,7 @@
     const tree = carrierFull(carrier) ? null : nearestTree(p, PLAYER_R + 0.9);
     ch.face = tree;
     if (tree && chopTimer <= 0) {
-      chopTimer = CHOP_INTERVAL;
+      chopTimer = AXE_INTERVALS[axeLevel - 1];
       ch.chop = 1;
       hitTree(tree, carrier, () => {
         blip(420 + carrier.stack.length * 30);
@@ -1310,24 +1459,28 @@
       const coin = pile.pop();
       coin.getWorldPosition(tmpA);
       scene.remove(coin);
-      fly(coin, tmpA, () => tmpB.set(p.x, FLOOR + 1.3, p.z), () => {
+      fly(coin, tmpA, () => tmpB.set(p.x, p.y + 1.1, p.z), () => {
         money++;
         blip(1000 + (money % 10) * 40, 0.04, 'sine', 0.04, 1.2);
         advanceHint(4);
       }, 0.8, 0.18);
     }
     // 光る枠でお金を払う
-    const u = currentUpgrade();
-    const inUpg = u && inZone(upgradeZone, p);
     payTimer -= dt;
-    if (inUpg && payTimer <= 0 && money > 0 && upgradePaid + upgradePending < u.cost) {
-      payTimer = 0.04;
-      payUpgrade();
+    for (const shop of shops) {
+      const u = shopItem(shop);
+      if (!u) continue;
+      const inShop = inZone(shop.zone, p);
+      if (inShop && payTimer <= 0 && money > 0 && shop.paid + shop.pending < u.cost) {
+        payTimer = 0.04;
+        payShop(shop);
+      }
+      setZoneActive(shop.zone, inShop || money >= u.cost - shop.paid, time);
     }
 
     setZoneActive(dropZone, inDrop, time);
     setZoneActive(cashZone, inCash, time);
-    if (u) setZoneActive(upgradeZone, inUpg || (money >= u.cost - upgradePaid), time);
+    updateBranches(dt, time, carrier);
 
     animateCharacter(ch, dt, time);
     swayStack(carrier, time);
@@ -1400,7 +1553,9 @@
       return {
         x: player.ch.root.position.x, z: player.ch.root.position.z,
         carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pile.length,
-        heat: fire.heat, guests: guests.length, upgradeIndex, upgradePaid, helper: !!helper,
+        heat: fire.heat, guests: guests.length, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
+        branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
+        treeSpots: trees.filter(t => t.hp > 0).map(t => [t.x, t.z]), helper: !!helper, hx: helper && helper.ch.root.position.x, hz: helper && helper.ch.root.position.z,
         helperState: helper && helper.state, slots: slots.length, tent: tent.visible,
       };
     },
