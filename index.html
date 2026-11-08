@@ -379,17 +379,14 @@
     tree.rotation.y = rand() * 6;
     return tree;
   }
+  const wildSpots = [];
   for (let i = 0; i < 150; i++) {
     const x = (rand() * 2 - 1) * 36, z = (rand() * 2 - 1) * 36;
     if (Math.abs(x) < PX + 2.2 && Math.abs(z) < PZ + 2.2) continue;
     if (x < -PX && Math.abs(z - GATE_Z) < 2.5) continue;
     if (inForest(x, z, 1.5)) continue;
-    const s = 1 + rand() * 0.6;
-    const t = makePine();
-    t.position.set(x, 0, z);
-    t.scale.setScalar(s);
-    scene.add(t);
-    circles.push({ x, z, r: 0.3 * s });
+    // 柵の外の木は、あとで「切れる木」としてまとめて作る
+    wildSpots.push([x, z, 1 + rand() * 0.6]);
   }
 
   // ---- キャンプの小物 ----
@@ -943,15 +940,17 @@
       forestSpots.push([x, z]);
     }
   }
-  for (const [x, z] of forestSpots) {
-    const s = 0.8 + rand() * 0.25;
+  // 森の木も、雪原に生えている木も、すべて切れる
+  const allTreeSpots = forestSpots.map(([x, z]) => [x, z, 0.8 + rand() * 0.25]).concat(wildSpots);
+  for (const [x, z, s] of allTreeSpots) {
     const group = makePine();
     group.position.set(x, 0, z);
     group.scale.setScalar(s);
     scene.add(group);
-    const stump = mesh(stumpGeo, [logSide, logTop, logTop], x, 0.15, z);
+    const stump = mesh(stumpGeo, [logSide, logTop, logTop], x, 0.15 * s, z);
+    stump.scale.setScalar(s);
     stump.visible = false;
-    const t = { group, stump, x, z, s, r: 0.32, hp: TREE_LOGS, grow: 1, regrow: 0, shake: 0 };
+    const t = { group, stump, x, z, s, r: 0.3 * s, hp: TREE_LOGS, grow: 1, regrow: 0, shake: 0 };
     circles.push({ x, z, r: t.r });
     trees.push(t);
   }
