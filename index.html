@@ -1436,7 +1436,7 @@
     tent.visible = true;
     tentBox.off = false;
     guestInterval = GUEST_INTERVAL_TENT;
-    slots = slots.concat(TENT_SLOTS.map(s => ({ ...s, guest: null })));
+    slots = slots.concat(TENT_SLOTS.map(s => ({ ...s, fire: FIRE, guest: null }))); // テントの人も1つ目の焚き火に当たる
   }
 
   function makeShop(list, pos) {
@@ -1695,7 +1695,17 @@
   // ================================================================
   const camTarget = player.ch.root.position.clone();
   let last = performance.now();
+  let errorShown = false;
   function frame(now) {
+    // 次のコマの予約を先にしておく(途中でエラーが起きても、ゲーム全体が止まらないように)
+    requestAnimationFrame(frame);
+    try {
+      step(now);
+    } catch (err) {
+      if (!errorShown) { errorShown = true; console.error(err); }
+    }
+  }
+  function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const time = now / 1000;
@@ -1724,7 +1734,6 @@
     updateHud(dt);
     renderer.render(scene, camera);
     adaptQuality(now);
-    requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
