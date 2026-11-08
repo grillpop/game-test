@@ -243,6 +243,9 @@
     return tex;
   }
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  // 同じ形の物をまとめて描く(InstancedMesh)ときの計算用
+  const _m4 = new THREE.Matrix4(), _local = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
+  const _pos = new THREE.Vector3(), _scl = new THREE.Vector3();
   const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
   // ---- 当たり判定(丸と四角) ----
@@ -326,25 +329,17 @@
   const logTop = mat('#f1c890');
   const postGeo = new THREE.CylinderGeometry(0.28, 0.3, 1, 10);
   const GATE_Z = 2.5;
-  function addPost(x, z, h = 1.0 + Math.random() * 0.35) {
-    const post = new THREE.Mesh(postGeo, [logSide, logTop, logSide]);
-    post.position.set(x, FLOOR + h / 2, z);
-    post.scale.y = h;
-    post.rotation.y = Math.random() * 6;
-    post.castShadow = post.receiveShadow = true;
-    scene.add(post);
-    return post;
-  }
   const FX = PX + 0.35, FZ = PZ + 0.35, GAP = 0.58;
   const BACK_GATE_X = 4.0; // 奥の出入口(森へ行く道)
-  const fence = { posts: [], boxes: [] };
+  // 柵の丸太は数が多いので、1つの InstancedMesh にまとめて描く(軽くするため)
+  const fence = { mesh: null, boxes: [] };
   function buildFence() {
-    for (const m of fence.posts) scene.remove(m);
+    if (fence.mesh) { scene.remove(fence.mesh); fence.mesh.dispose(); }
     for (const b of fence.boxes) boxes.splice(boxes.indexOf(b), 1);
-    fence.posts = [];
     fence.boxes = [];
     const x1 = camp.x1 - 0.35, x2 = camp.x2 + 0.35, z1 = camp.z1 - 0.35, z2 = camp.z2 + 0.35;
-    const post = (x, z, h) => fence.posts.push(addPost(x, z, h));
+    const posts = [];
+    const post = (x, z, h = 1.0 + Math.random() * 0.35) => posts.push([x, z, h]);
     for (let x = x1; x <= x2 + 0.01; x += GAP) {
       if (Math.abs(x - BACK_GATE_X) > 1.1) post(x, z1);
       post(x, z2);
@@ -357,6 +352,14 @@
     post(x1, GATE_Z + 1.25, 1.7);
     post(BACK_GATE_X - 1.25, z1, 1.7); // 奥の出入口の門柱
     post(BACK_GATE_X + 1.25, z1, 1.7);
+    fence.mesh = new THREE.InstancedMesh(postGeo, [logSide, logTop, logSide], posts.length);
+    posts.forEach(([x, z, h], i) => {
+      _q.setFromEuler(_e.set(0, Math.random() * 6, 0));
+      fence.mesh.setMatrixAt(i, _m4.compose(_pos.set(x, FLOOR + h / 2, z), _q, _scl.set(1, h, 1)));
+    });
+    fence.mesh.castShadow = fence.mesh.receiveShadow = true;
+    fence.mesh.frustumCulled = false;
+    scene.add(fence.mesh);
     // 柵の当たり判定(出入口だけあけておく)
     const T = 0.3, gap = 1.0;
     const seg = (ax, az, bx, bz) => {
@@ -382,22 +385,17 @@
 
   // 雪の木(柵の外の飾り)
   const trunkMat = mat('#7a4e2d', { flatShading: true });
-  const pineMats = [mat('#2e7d55', { flatShading: true }), mat('#2a6e4c', { flatShading: true })];
   const snowCap = mat('#ffffff', { flatShading: true, roughness: 1 });
   const TRUNK_GEO = new THREE.CylinderGeometry(0.2, 0.28, 1, 6);
   const PINE_GEOS = [0, 1, 2].map(i => new THREE.ConeGeometry(1.15 - i * 0.28, 1.2, 7));
   const CAP_GEOS = [0, 1, 2].map(i => new THREE.ConeGeometry((1.15 - i * 0.28) * 0.55, 0.55, 7));
-  function makePine() {
-    const tree = new THREE.Group();
-    mesh(TRUNK_GEO, trunkMat, 0, 0.5, 0, tree);
-    const leaf = pineMats[Math.floor(rand() * pineMats.length)];
-    for (let i = 0; i < 3; i++) {
-      const y = 1.25 + i * 0.7;
-      mesh(PINE_GEOS[i], leaf, 0, y, 0, tree).rotation.y = rand() * 3;
-      mesh(CAP_GEOS[i], snowCap, 0, y + 0.36, 0, tree).rotation.y = rand() * 3;
-    }
-    tree.rotation.y = rand() * 6;
-    return tree;
+  // 木の部品(幹・葉3段・雪3段)。木は150本近くあるので、部品ごとに InstancedMesh でまとめて描く
+  const leafMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, flatShading: true });
+  const LEAF_COLORS = ['#2e7d55', '#2a6e4c'].map(c => new THREE.Color(c));
+  const TREE_PARTS = [{ geo: TRUNK_GEO, mat: trunkMat, y: 0.5 }];
+  for (let i = 0; i < 3; i++) {
+    const y = 1.25 + i * 0.7;
+    TREE_PARTS.push({ geo: PINE_GEOS[i], mat: leafMat, y, leaf: true }, { geo: CAP_GEOS[i], mat: snowCap, y: y + 0.36 });
   }
   const wildSpots = [];
   for (let i = 0; i < 150; i++) {
@@ -437,7 +435,7 @@
 
   // 焚き火(炎の大きさは火の強さで変わる)
   const fires = [];
-  function addCampfire(x, z, heat) {
+  function addCampfire(x, z, heat, light = null) {
     const flames = [];
     let fireLight;
     const g = new THREE.Group();
@@ -458,8 +456,8 @@
       g.add(f);
       flames.push({ mesh: f, h, phase: rand() * 6 });
     }
-    fireLight = new THREE.PointLight('#ff9a40', 6, 8, 1.6);
-    fireLight.position.y = 1;
+    fireLight = light || new THREE.PointLight('#ff9a40', 6, 8, 1.6);
+    fireLight.position.set(0, 1, 0);
     g.add(fireLight);
     g.position.set(x, FLOOR, z);
     scene.add(g);
@@ -469,6 +467,10 @@
     return fire;
   }
   const FIRE = addCampfire(-2.2, -2.5, HEAT_START);
+  // 拡張でできる2つ目の焚き火の光。最初から(明るさ0で)置いておく
+  const spareFireLight = new THREE.PointLight('#ff9a40', 0, 8, 1.6);
+  spareFireLight.position.set(0, -50, 0);
+  scene.add(spareFireLight);
 
   addBench(-2.2, -4.6, true);
   addBench(-4.6, -2.5, false);
@@ -676,9 +678,11 @@
     root.add(body);
     mesh(GEO.torso, M.coat, 0, 0.62, 0, body).scale.set(1, 1, 0.9);
     mesh(GEO.hem, M.coatDark, 0, 0.4, 0, body);
-    mesh(GEO.zip, common.knit, 0, 0.66, 0.31, body);
+    mesh(GEO.zip, common.knit, 0, 0.66, 0.31, body).castShadow = false;
     mesh(GEO.scarf, M.hat, 0, 0.92, 0, body).rotation.x = Math.PI / 2;
-    mesh(GEO.tail, M.hat, 0.14, 0.78, 0.3, body).rotation.z = 0.15;
+    const tail = mesh(GEO.tail, M.hat, 0.14, 0.78, 0.3, body);
+    tail.rotation.z = 0.15;
+    tail.castShadow = false;
     if (pack) {
       mesh(GEO.pack, common.pack, 0, 0.7, -0.34, body);
       mesh(GEO.packTop, common.packTop, 0, 0.97, -0.34, body);
@@ -693,13 +697,15 @@
     brim.rotation.x = Math.PI / 2 - 0.15;
     mesh(GEO.pom, common.knit, 0, 0.62, -0.06, head);
     for (const side of [-1, 1]) {
-      mesh(GEO.eye, common.eye, side * 0.17, -0.02, 0.45, head).scale.set(1, 1.35, 0.6);
+      const eye = mesh(GEO.eye, common.eye, side * 0.17, -0.02, 0.45, head);
+      eye.scale.set(1, 1.35, 0.6);
+      eye.castShadow = false;
       mesh(GEO.shine, common.knit, side * 0.17 + 0.02, 0.02, 0.49, head).castShadow = false;
       const cheek = mesh(GEO.cheek, common.cheek, side * 0.29, -0.15, 0.37, head);
       cheek.scale.set(1, 0.6, 0.4);
       cheek.castShadow = false;
     }
-    mesh(GEO.nose, common.nose, 0, -0.11, 0.48, head);
+    mesh(GEO.nose, common.nose, 0, -0.11, 0.48, head).castShadow = false;
 
     // 腕と足は付け根を軸にして振る
     const limbs = [];
@@ -1016,18 +1022,38 @@
   }
   // 森の木も、雪原に生えている木も、すべて切れる
   const allTreeSpots = forestSpots.map(([x, z]) => [x, z, 0.8 + rand() * 0.25]).concat(wildSpots);
+  let treesDirty = true;
+  const treeMeshes = TREE_PARTS.map(part => {
+    const im = new THREE.InstancedMesh(part.geo, part.mat, allTreeSpots.length);
+    im.castShadow = im.receiveShadow = true;
+    im.frustumCulled = false;
+    scene.add(im);
+    return im;
+  });
   for (const [x, z, s] of allTreeSpots) {
-    const group = makePine();
-    group.position.set(x, 0, z);
-    group.scale.setScalar(s);
-    scene.add(group);
+    const index = trees.length;
+    const rotY = rand() * 6;
+    const partRot = TREE_PARTS.map(() => rand() * 3);
+    const leafColor = LEAF_COLORS[Math.floor(rand() * LEAF_COLORS.length)];
+    TREE_PARTS.forEach((part, j) => { if (part.leaf) treeMeshes[j].setColorAt(index, leafColor); });
     const stump = mesh(stumpGeo, [logSide, logTop, logTop], x, 0.15 * s, z);
     stump.scale.setScalar(s);
     stump.visible = false;
-    const t = { group, stump, x, z, s, r: 0.3 * s, hp: TREE_LOGS, grow: 1, regrow: 0, shake: 0 };
+    const t = { index, rotY, partRot, stump, x, z, s, r: 0.3 * s, hp: TREE_LOGS, grow: 1, regrow: 0, shake: 0, drawn: -1 };
+    writeTree(t, s, 0);
     t.circle = { x, z, r: t.r };
     circles.push(t.circle);
     trees.push(t);
+  }
+  // 木1本の部品の位置・大きさ・ゆれを書きこむ
+  function writeTree(t, scale, shakeZ) {
+    _q.setFromEuler(_e.set(0, t.rotY, shakeZ, 'ZYX'));
+    const tm = _m4.compose(_pos.set(t.x, 0, t.z), _q, _scl.setScalar(scale)).clone();
+    TREE_PARTS.forEach((part, j) => {
+      _local.makeRotationY(t.partRot[j]).setPosition(0, part.y, 0);
+      treeMeshes[j].setMatrixAt(t.index, _m4.multiplyMatrices(tm, _local));
+    });
+    treesDirty = true;
   }
   function nearestTree(p, reach) {
     let best = null, bestD = Infinity;
@@ -1061,9 +1087,16 @@
         t.grow = Math.min(1, t.grow + dt * 1.6); // にょきっと生え直す
       }
       const pop = t.hp > 0 && t.grow < 1 ? Math.sin(t.grow * Math.PI) * 0.15 : 0;
-      t.group.scale.setScalar(t.s * Math.max(0.001, t.grow + pop));
-      t.group.visible = t.grow > 0.01;
-      t.group.rotation.z = Math.sin(time * 40) * 0.1 * t.shake;
+      const scale = t.grow > 0.01 ? t.s * (t.grow + pop) : 0;
+      // 変化があった木だけ書きかえる
+      if (scale !== t.drawn || t.shake > 0) {
+        writeTree(t, scale, Math.sin(time * 40) * 0.1 * t.shake);
+        t.drawn = scale;
+      }
+    }
+    if (treesDirty) {
+      for (const im of treeMeshes) im.instanceMatrix.needsUpdate = true;
+      treesDirty = false;
     }
   }
 
@@ -1138,9 +1171,12 @@
     const [x, z] = PILE_COLUMNS[i % 9];
     return out.set(x, FLOOR + 0.04 + Math.floor(i / 9) * 0.075, z);
   }
+  const PILE_MAX = 54;   // 見た目として積む枚数の上限。それより多い分は数だけ数える
+  let pileExtra = 0;
+  const pileTotal = () => pile.length + pileExtra;
   function payToPile(from) {
     const coin = makeCoin();
-    const index = pile.length + pilePending;
+    const index = Math.min(PILE_MAX - 1, pile.length + pilePending);
     pilePending++;
     // まず受付の窓口に投げ入れる
     fly(coin, from, () => WINDOW, () => {
@@ -1148,10 +1184,14 @@
       // 窓口から、小屋の裏のお金置き場へ
       fly(coin, WINDOW, () => pileSlot(index, tmpB), () => {
         pilePending--;
-        coin.rotation.set(0, 0, 0);
-        pileSlot(pile.length, coin.position);
-        scene.add(coin);
-        pile.push(coin);
+        if (pile.length >= PILE_MAX) {
+          pileExtra++;
+        } else {
+          coin.rotation.set(0, 0, 0);
+          pileSlot(pile.length, coin.position);
+          scene.add(coin);
+          pile.push(coin);
+        }
         blip(1100, 0.04, 'sine', 0.03, 1.2);
         advanceHint(3);
       }, 1.6, 0.35);
@@ -1275,6 +1315,7 @@
         if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
           scene.remove(ch.root);
           g.bar.remove();
+          ch.skin.dispose();
           guests.splice(i, 1);
           continue;
         }
@@ -1411,9 +1452,9 @@
       if (t.dead || t.x < x1 || t.x > x2 || t.z < z1 || t.z > z2) continue;
       t.dead = true;
       t.hp = 0;
-      t.group.visible = false;
       t.stump.visible = false;
       t.circle.off = true;
+      writeTree(t, 0, 0);
     }
   }
   removeTreesIn(EXPAND_ZONE.x - 2.2, EXPAND_ZONE.x + 2.2, EXPAND_ZONE.z - 2.2, EXPAND_ZONE.z + 2.2); // 枠のまわりはあけておく
@@ -1423,7 +1464,7 @@
     buildPlaza();
     buildFence();
     // 広げた場所に2つ目の焚き火と、お客さんの立ち位置を作る
-    const fire = addCampfire(10.0, 0.0, 40);
+    const fire = addCampfire(10.0, 0.0, 40, spareFireLight);
     fire.dropZone = addZone(fire.x, fire.z + 2.15, 2.4, iconZone('🔥'));
     const hub = { x: fire.x - 3.2, z: fire.z };
     const back = { x: fire.x, z: fire.z - 2.3 };
@@ -1585,11 +1626,18 @@
     // 💰 の枠でお金を拾う
     const inCash = inZone(cashZone, p);
     collectTimer -= dt;
-    if (inCash && collectTimer <= 0 && pile.length > 0) {
+    if (inCash && collectTimer <= 0 && pileTotal() > 0) {
       collectTimer = 0.03;
-      const coin = pile.pop();
-      coin.getWorldPosition(tmpA);
-      scene.remove(coin);
+      let coin;
+      if (pileExtra > 0) {
+        pileExtra--;
+        coin = makeCoin();
+        pileSlot(Math.max(0, pile.length - 1), tmpA);
+      } else {
+        coin = pile.pop();
+        coin.getWorldPosition(tmpA);
+        scene.remove(coin);
+      }
       fly(coin, tmpA, () => tmpB.set(p.x, p.y + 1.1, p.z), () => {
         money++;
         blip(1000 + (money % 10) * 40, 0.04, 'sine', 0.04, 1.2);
@@ -1675,16 +1723,44 @@
 
     updateHud(dt);
     renderer.render(scene, camera);
+    adaptQuality(now);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
+  // 3秒ごとに平均の速さを見て、遅い(1秒に40コマ未満)ときは画面の細かさを一段下げる
+  let qualityFrames = 0, qualityStart = performance.now();
+  let pixelRatio = renderer.getPixelRatio();
+  function adaptQuality(now) {
+    qualityFrames++;
+    const elapsed = now - qualityStart;
+    if (elapsed < 3000) return;
+    const fps = qualityFrames / (elapsed / 1000);
+    qualityFrames = 0;
+    qualityStart = now;
+    if (document.hidden) return;
+    if (fps < 40 && pixelRatio > 1) {
+      pixelRatio = Math.max(1, pixelRatio - 0.25);
+      renderer.setPixelRatio(pixelRatio);
+      resize();
+    }
+  }
+  // 一時停止から戻ったときに、時間が大きく飛ばないようにする
+  document.addEventListener('visibilitychange', () => { last = performance.now(); qualityStart = last; qualityFrames = 0; });
+  // iPhone でメモリが足りなくなると、3D の描画が止まることがある。そのときは再読み込みを案内する
+  renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    hint.textContent = '画面が止まりました。ページを再読み込みしてください';
+    hint.style.opacity = '1';
+  });
+
   // 自動テスト用(画面には影響しません)
+  window.__scene = scene; window.__renderer = renderer; // 自動テストで重さを測る用
   window.__game = {
     get state() {
       return {
         x: player.ch.root.position.x, z: player.ch.root.position.z,
-        carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pile.length,
+        carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pileTotal(), pileMeshes: pile.length,
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
