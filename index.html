@@ -88,6 +88,29 @@
     pointer-events: none;
   }
   .warm-bar div { height: 100%; width: 0; background: linear-gradient(90deg, #7cc8ff, #ffb02e); }
+  #version {
+    position: fixed;
+    right: 8px;
+    bottom: calc(env(safe-area-inset-bottom) + 6px);
+    color: rgba(60, 70, 90, .55);
+    font-size: 11px;
+    pointer-events: none;
+  }
+  #error {
+    position: fixed;
+    left: 8px; right: 8px;
+    bottom: calc(env(safe-area-inset-bottom) + 90px);
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(180, 30, 30, .9);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    display: none;
+    pointer-events: none;
+  }
   #max {
     position: fixed;
     transform: translate(-50%, -100%);
@@ -114,6 +137,8 @@
   <div id="bars"></div>
   <div id="max">MAX</div>
   <div id="hint">画面をなぞって歩こう</div>
+  <div id="version"></div>
+  <div id="error"></div>
 
 <script type="module">
   import * as THREE from './vendor/three.module.min.js';
@@ -175,6 +200,25 @@
   const SCREEN_DOWN = { x: Math.sin(CAM_YAW), z: Math.cos(CAM_YAW) };
 
   const $ = (id) => document.getElementById(id);
+
+  // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
+  const GAME_VERSION = '2026.11.08-3';
+  $('version').textContent = 'v' + GAME_VERSION;
+
+  // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
+  const errorsSeen = [];
+  function reportError(where, err) {
+    const text = where + ': ' + (err && err.message ? err.message : String(err));
+    if (errorsSeen.includes(text)) return;
+    errorsSeen.push(text);
+    console.error(where, err);
+    const box = $('error');
+    const stack = err && err.stack ? '\n' + String(err.stack).split('\n').slice(0, 3).join('\n') : '';
+    box.textContent = 'エラー(v' + GAME_VERSION + ') ' + text + stack;
+    box.style.display = 'block';
+  }
+  window.addEventListener('error', (e) => reportError('window', e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => reportError('promise', e.reason));
   const hint = $('hint');
 
   // ================================================================
@@ -1695,30 +1739,31 @@
   // ================================================================
   const camTarget = player.ch.root.position.clone();
   let last = performance.now();
-  let errorShown = false;
   function frame(now) {
     // 次のコマの予約を先にしておく(途中でエラーが起きても、ゲーム全体が止まらないように)
     requestAnimationFrame(frame);
-    try {
-      step(now);
-    } catch (err) {
-      if (!errorShown) { errorShown = true; console.error(err); }
-    }
+    step(now);
+  }
+  // 1つの処理でエラーが起きても、ほかの処理と画面の描画は続ける
+  function safe(name, fn) {
+    try { fn(); } catch (err) { reportError(name, err); }
   }
   function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const time = now / 1000;
 
-    updatePlayer(dt, time);
-    updateHelper(dt, time);
-    updateGuests(dt, time);
-    updateTrees(dt, time);
-    updateFlying(dt);
-    updateFires(dt, time);
-    updateParticles(sparks, dt, 9);
-    updateParticles(chips, dt, 12);
-    updateDust(dt);
+    safe('player', () => updatePlayer(dt, time));
+    safe('helper', () => updateHelper(dt, time));
+    safe('guests', () => updateGuests(dt, time));
+    safe('trees', () => updateTrees(dt, time));
+    safe('flying', () => updateFlying(dt));
+    safe('fires', () => updateFires(dt, time));
+    safe('effects', () => {
+      updateParticles(sparks, dt, 9);
+      updateParticles(chips, dt, 12);
+      updateDust(dt);
+    });
 
     // カメラは主人公を少し遅れて追いかける
     const p = player.ch.root.position;
@@ -1731,8 +1776,8 @@
     sun.position.copy(camTarget).add(SUN_OFFSET);
     sun.target.position.copy(camTarget);
 
-    updateHud(dt);
-    renderer.render(scene, camera);
+    safe('hud', () => updateHud(dt));
+    safe('render', () => renderer.render(scene, camera));
     adaptQuality(now);
   }
   requestAnimationFrame(frame);
@@ -1771,7 +1816,7 @@
         x: player.ch.root.position.x, z: player.ch.root.position.z,
         carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pileTotal(), pileMeshes: pile.length,
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
-        guestStates: guests.map(g => g.state).join(','), shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
+        guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(), shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
         treeSpots: trees.filter(t => t.hp > 0).map(t => [t.x, t.z]), helper: !!helper, hx: helper && helper.ch.root.position.x, hz: helper && helper.ch.root.position.z,
         helperState: helper && helper.state, slots: slots.length, tent: tent.visible,
