@@ -63,6 +63,31 @@
   #fire-pill { flex: 1; }
   #fire-bar { flex: 1; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, .25); overflow: hidden; }
   #fire-fill { height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, #ffb02e, #ff5a1f); transition: width .15s; }
+  #toast {
+    position: fixed;
+    left: 0; right: 0;
+    top: calc(env(safe-area-inset-top) + 72px);
+    text-align: center;
+    color: #fff;
+    font-size: 24px;
+    font-weight: 900;
+    text-shadow: 0 2px 0 #c2410c, 0 4px 8px rgba(0, 0, 0, .35);
+    pointer-events: none;
+    opacity: 0;
+    transform: scale(.8);
+    transition: opacity .25s, transform .25s;
+  }
+  #toast.show { opacity: 1; transform: scale(1); }
+  .warm-bar {
+    position: fixed;
+    width: 40px; height: 7px;
+    margin-left: -20px;
+    border-radius: 4px;
+    background: rgba(30, 50, 80, .55);
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .warm-bar div { height: 100%; width: 0; background: linear-gradient(90deg, #7cc8ff, #ffb02e); }
   #max {
     position: fixed;
     transform: translate(-50%, -100%);
@@ -83,18 +108,53 @@
   <div id="hud">
     <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div></div>
     <div class="pill">🪵 <span id="carry">0/12</span></div>
+    <div class="pill">💰 <span id="money">0</span></div>
   </div>
+  <div id="toast"></div>
+  <div id="bars"></div>
   <div id="max">MAX</div>
   <div id="hint">画面をなぞって歩こう</div>
 
 <script type="module">
   import * as THREE from './vendor/three.module.min.js';
 
-  // ---- 設定 ----
-  const PX = 7, PZ = 9;       // キャンプ(柵の内側)の半分の広さ
-  const SPEED = 6.5;          // 歩く速さ(単位/秒)
-  const STICK_RADIUS = 56;    // バーチャルスティックの半径(px)
-  const PLAYER_R = 0.4;       // キャラクターの当たり判定の半径
+  // ================================================================
+  //  設定(ここの数字を変えると、遊びやすさを調整できます)
+  // ================================================================
+  const PX = 7, PZ = 9;          // キャンプ(柵の内側)の半分の広さ
+  const SPEED = 6.5;             // 主人公の歩く速さ(単位/秒)
+  const STICK_RADIUS = 56;       // バーチャルスティックの半径(px)
+  const PLAYER_R = 0.4;          // 当たり判定の半径
+
+  const CARRY_START = 12;        // 最初に運べる薪の本数
+  const CARRY_UPGRADED = 24;     // リュック拡張後に運べる本数
+  const CHOP_INTERVAL = 0.17;    // 斧を振る間隔(秒)。1回で薪1本
+  const TREE_LOGS = 6;           // 木1本からとれる薪の数
+  const TREE_REGROW = 8;         // 切った木が生え直すまでの時間(秒)
+  const DROP_INTERVAL = 0.06;    // 薪を焚き火に1本入れる間隔(秒)
+  const FLY_TIME = 0.22;         // 薪やお金が飛んでいく時間(秒)
+
+  const HEAT_START = 35;         // 最初の火の強さ(0〜100)
+  const HEAT_PER_LOG = 4;        // 薪1本で増える火の強さ
+  const HEAT_DECAY = 1.0;        // 火が弱まる速さ(1秒あたり)
+  const HEAT_DECAY_PER_GUEST = 0.3; // 温まっている人1人あたり、さらに弱まる速さ
+
+  const WARM_RATE = 0.22;        // 人が温まる速さ
+  const COINS_PER_GUEST = 5;     // 温まった人が置いていくお金
+  const GUEST_INTERVAL = 2.4;    // 人がやってくる間隔(秒)
+  const GUEST_INTERVAL_TENT = 1.3; // テント解放後の間隔(秒)
+  const GUEST_SPEED = 3;         // 人の歩く速さ
+  const HELPER_SPEED = 4.2;      // 仲間の歩く速さ
+  const HELPER_CARRY = 5;        // 仲間が一度に運ぶ本数
+  const HELPER_CHOP_INTERVAL = 0.32; // 仲間が斧を振る間隔(秒)
+
+  // お金を払って解放するもの(上から順に出てきます)
+  const UPGRADES = [
+    { icon: '🎒', cost: 15, message: 'リュックが大きくなった!', apply: () => { player.carrier.max = CARRY_UPGRADED; } },
+    { icon: '🪓', cost: 40, message: '木こりの仲間が来た!', apply: () => spawnHelper() },
+    { icon: '⛺', cost: 60, message: 'テントができた! お客さんが増えるよ', apply: () => openTent() },
+  ];
+
   const CAM_YAW = Math.PI / 4;   // カメラを45度回して、ステージを斜めに見せる
   const CAM_DIST = 24;           // カメラまでの水平距離
   const CAM_HEIGHT = 25;         // カメラの高さ
@@ -103,11 +163,12 @@
   const SCREEN_RIGHT = { x: Math.cos(CAM_YAW), z: -Math.sin(CAM_YAW) };
   const SCREEN_DOWN = { x: Math.sin(CAM_YAW), z: Math.cos(CAM_YAW) };
 
-  const hint = document.getElementById('hint');
-  const stickBase = document.getElementById('stick-base');
-  const stickKnob = document.getElementById('stick-knob');
+  const $ = (id) => document.getElementById(id);
+  const hint = $('hint');
 
-  // ---- 3Dの土台 ----
+  // ================================================================
+  //  3Dの土台
+  // ================================================================
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
@@ -120,7 +181,6 @@
   scene.fog = new THREE.Fog(SKY, 50, 85);
 
   const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 120);
-
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h);
@@ -131,7 +191,6 @@
   window.addEventListener('resize', resize);
   resize();
 
-  // ---- 光 ----
   scene.add(new THREE.HemisphereLight('#e6f1ff', '#b08a6a', 1.5));
   const sun = new THREE.DirectionalLight('#ffe6c4', 2.1);
   sun.castShadow = true;
@@ -142,7 +201,9 @@
   scene.add(sun, sun.target);
   const SUN_OFFSET = new THREE.Vector3(-10, 22, 4);
 
-  // ---- 小さな道具 ----
+  // ================================================================
+  //  小さな道具
+  // ================================================================
   let seed = 11; // 毎回同じ配置にするための種つき乱数
   function rand() {
     seed = (seed * 16807) % 2147483647;
@@ -170,26 +231,36 @@
     tex.anisotropy = 4;
     return tex;
   }
+  const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
   // ---- 当たり判定(丸と四角) ----
   const circles = [];
   const boxes = [];
-  function pushOut(p) {
+  function pushOut(p, R) {
     for (const c of circles) {
+      if (c.off) continue;
       const dx = p.x - c.x, dz = p.z - c.z;
-      const d = Math.hypot(dx, dz), min = c.r + PLAYER_R;
+      const d = Math.hypot(dx, dz), min = c.r + R;
       if (d < min && d > 1e-4) { p.x = c.x + dx / d * min; p.z = c.z + dz / d * min; }
     }
     for (const b of boxes) {
+      if (b.off) continue;
       const cx = Math.max(b.x - b.hx, Math.min(b.x + b.hx, p.x));
       const cz = Math.max(b.z - b.hz, Math.min(b.z + b.hz, p.z));
       const dx = p.x - cx, dz = p.z - cz;
       const d = Math.hypot(dx, dz);
-      if (d < PLAYER_R && d > 1e-4) { p.x = cx + dx / d * PLAYER_R; p.z = cz + dz / d * PLAYER_R; }
+      if (d < R && d > 1e-4) { p.x = cx + dx / d * R; p.z = cz + dz / d * R; }
     }
   }
+  function keepInside(p, R) {
+    p.x = Math.max(-PX + R, Math.min(PX - R, p.x));
+    p.z = Math.max(-PZ + R, Math.min(PZ - R, p.z));
+  }
 
-  // ---- 地面:まわりの雪原 ----
+  // ================================================================
+  //  ステージ
+  // ================================================================
   const snow = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), mat('#eef4fb', { roughness: 1 }));
   snow.rotation.x = -Math.PI / 2;
   snow.receiveShadow = true;
@@ -197,13 +268,14 @@
   for (let i = 0; i < 40; i++) { // 雪のこんもり
     const x = (rand() * 2 - 1) * 30, z = (rand() * 2 - 1) * 30;
     if (Math.abs(x) < PX + 2 && Math.abs(z) < PZ + 2) continue;
+    if (x < -PX && Math.abs(z - 2.5) < 3) continue; // 入口までの道はあけておく
     const s = 0.6 + rand() * 1.2;
     const m = mesh(new THREE.SphereGeometry(1, 12, 8), mat('#f7fbff', { roughness: 1 }), x, 0, z);
     m.scale.set(s * 1.4, s * 0.35, s);
     m.castShadow = false;
   }
 
-  // ---- 地面:キャンプの土の広場 ----
+  // キャンプの土の広場
   const dirtTex = canvasTexture(256, (g, n) => {
     g.fillStyle = '#d8a47a'; g.fillRect(0, 0, n, n);
     for (let i = 0; i < 260; i++) {
@@ -225,12 +297,17 @@
   scene.add(plaza);
   const FLOOR = 0.2; // 広場の床の高さ
 
-  // ---- 丸太の柵 ----
+  // 入口から外へ続く雪の道
+  const path = mesh(new THREE.PlaneGeometry(6, 2.2), mat('#dfe8f2', { roughness: 1 }), -PX - 3.7, 0.01, 2.5);
+  path.rotation.x = -Math.PI / 2;
+  path.castShadow = false;
+
+  // 丸太の柵(左側に入口のすき間をあける)
   const logSide = mat('#b9733f');
   const logTop = mat('#f1c890');
   const postGeo = new THREE.CylinderGeometry(0.28, 0.3, 1, 10);
-  function addPost(x, z) {
-    const h = 1.0 + rand() * 0.35;
+  const GATE_Z = 2.5;
+  function addPost(x, z, h = 1.0 + rand() * 0.35) {
     const post = new THREE.Mesh(postGeo, [logSide, logTop, logSide]);
     post.position.set(x, FLOOR + h / 2, z);
     post.scale.y = h;
@@ -240,50 +317,55 @@
   }
   const FX = PX + 0.35, FZ = PZ + 0.35, GAP = 0.58;
   for (let x = -FX; x <= FX + 0.01; x += GAP) { addPost(x, -FZ); addPost(x, FZ); }
-  for (let z = -FZ + GAP; z < FZ - 0.01; z += GAP) { addPost(-FX, z); addPost(FX, z); }
+  for (let z = -FZ + GAP; z < FZ - 0.01; z += GAP) {
+    if (Math.abs(z - GATE_Z) > 1.1) addPost(-FX, z);
+    addPost(FX, z);
+  }
+  addPost(-FX, GATE_Z - 1.25, 1.7); // 入口の門柱
+  addPost(-FX, GATE_Z + 1.25, 1.7);
 
-  // ---- 雪の木(柵の外) ----
+  // 雪の木(柵の外の飾り)
   const trunkMat = mat('#7a4e2d', { flatShading: true });
   const pineMats = [mat('#2e7d55', { flatShading: true }), mat('#2a6e4c', { flatShading: true })];
   const snowCap = mat('#ffffff', { flatShading: true, roughness: 1 });
-  function addPine(x, z) {
-    const s = 1 + rand() * 0.6;
+  const TRUNK_GEO = new THREE.CylinderGeometry(0.2, 0.28, 1, 6);
+  const PINE_GEOS = [0, 1, 2].map(i => new THREE.ConeGeometry(1.15 - i * 0.28, 1.2, 7));
+  const CAP_GEOS = [0, 1, 2].map(i => new THREE.ConeGeometry((1.15 - i * 0.28) * 0.55, 0.55, 7));
+  function makePine() {
     const tree = new THREE.Group();
-    mesh(new THREE.CylinderGeometry(0.2, 0.28, 1, 6), trunkMat, 0, 0.5, 0, tree);
+    mesh(TRUNK_GEO, trunkMat, 0, 0.5, 0, tree);
     const leaf = pineMats[Math.floor(rand() * pineMats.length)];
     for (let i = 0; i < 3; i++) {
-      const r = 1.15 - i * 0.28, y = 1.25 + i * 0.7;
-      mesh(new THREE.ConeGeometry(r, 1.2, 7), leaf, 0, y, 0, tree).rotation.y = rand() * 3;
-      mesh(new THREE.ConeGeometry(r * 0.55, 0.55, 7), snowCap, 0, y + 0.36, 0, tree).rotation.y = rand() * 3;
+      const y = 1.25 + i * 0.7;
+      mesh(PINE_GEOS[i], leaf, 0, y, 0, tree).rotation.y = rand() * 3;
+      mesh(CAP_GEOS[i], snowCap, 0, y + 0.36, 0, tree).rotation.y = rand() * 3;
     }
-    tree.position.set(x, 0, z);
-    tree.scale.setScalar(s);
     tree.rotation.y = rand() * 6;
-    scene.add(tree);
+    return tree;
   }
   for (let i = 0; i < 150; i++) {
     const x = (rand() * 2 - 1) * 36, z = (rand() * 2 - 1) * 36;
     if (Math.abs(x) < PX + 2.2 && Math.abs(z) < PZ + 2.2) continue;
-    addPine(x, z);
+    if (x < -PX && Math.abs(z - GATE_Z) < 2.5) continue;
+    const t = makePine();
+    t.position.set(x, 0, z);
+    t.scale.setScalar(1 + rand() * 0.6);
+    scene.add(t);
   }
 
   // ---- キャンプの小物 ----
   const woodMat = mat('#d9894a');
   const woodDark = mat('#b06a35');
-
   function addBench(x, z, alongX) {
     const g = new THREE.Group();
     const len = 2.2;
     for (let i = -1; i <= 1; i++) mesh(new THREE.BoxGeometry(len, 0.1, 0.2), woodMat, 0, 0.5, i * 0.22, g);
-    for (const sx of [-1, 1]) {
-      mesh(new THREE.BoxGeometry(0.12, 0.45, 0.55), woodDark, sx * (len / 2 - 0.25), 0.23, 0, g);
-    }
+    for (const sx of [-1, 1]) mesh(new THREE.BoxGeometry(0.12, 0.45, 0.55), woodDark, sx * (len / 2 - 0.25), 0.23, 0, g);
     g.position.set(x, FLOOR, z);
     if (!alongX) g.rotation.y = Math.PI / 2;
     scene.add(g);
     boxes.push(alongX ? { x, z, hx: len / 2, hz: 0.33 } : { x, z, hx: 0.33, hz: len / 2 });
   }
-
   const crateTex = canvasTexture(128, (g, n) => {
     g.fillStyle = '#c98a4b'; g.fillRect(0, 0, n, n);
     g.fillStyle = 'rgba(0,0,0,.12)';
@@ -295,28 +377,13 @@
   function addCrate(x, z, y = FLOOR, s = 0.8) {
     const c = mesh(new THREE.BoxGeometry(s, s, s), crateMat, x, y + s / 2, z);
     c.rotation.y = (rand() - 0.5) * 0.4;
-    return c;
   }
 
-  function addLogPile(x, z) {
-    const g = new THREE.Group();
-    const geo = new THREE.CylinderGeometry(0.22, 0.22, 1.6, 10);
-    const rows = [3, 2, 1];
-    rows.forEach((count, row) => {
-      for (let i = 0; i < count; i++) {
-        const log = mesh(geo, [logSide, logTop, logTop], 0, 0.22 + row * 0.38, (i - (count - 1) / 2) * 0.45, g);
-        log.rotation.z = Math.PI / 2;
-      }
-    });
-    g.position.set(x, FLOOR, z);
-    scene.add(g);
-    boxes.push({ x, z, hx: 0.85, hz: 0.7 });
-  }
-
-  // 焚き火(炎はゆらゆら動かす)
+  // 焚き火(炎の大きさは火の強さで変わる)
+  const FIRE = { x: -2.2, z: -2.5 };
   const flames = [];
   let fireLight;
-  function addCampfire(x, z) {
+  (function addCampfire() {
     const g = new THREE.Group();
     const stoneMat = mat('#9aa3ad', { flatShading: true });
     for (let i = 0; i < 9; i++) {
@@ -330,135 +397,393 @@
       log.rotation.z = Math.PI / 2 - 0.2;
       log.rotation.y = i / 3 * Math.PI;
     }
-    const flameData = [['#ff7b29', 0.42, 1.0], ['#ffb02e', 0.3, 0.75], ['#ffe27a', 0.17, 0.5]];
-    for (const [color, r, h] of flameData) {
+    for (const [color, r, h] of [['#ff7b29', 0.42, 1.0], ['#ffb02e', 0.3, 0.75], ['#ffe27a', 0.17, 0.5]]) {
       const f = new THREE.Mesh(new THREE.ConeGeometry(r, h, 7), new THREE.MeshBasicMaterial({ color }));
-      f.position.y = 0.2 + h / 2;
       g.add(f);
       flames.push({ mesh: f, h, phase: rand() * 6 });
     }
-    fireLight = new THREE.PointLight('#ff9a40', 6, 7, 1.6);
+    fireLight = new THREE.PointLight('#ff9a40', 6, 8, 1.6);
     fireLight.position.y = 1;
     g.add(fireLight);
-    g.position.set(x, FLOOR, z);
+    g.position.set(FIRE.x, FLOOR, FIRE.z);
     scene.add(g);
-    circles.push({ x, z, r: 0.95 });
-  }
+    circles.push({ x: FIRE.x, z: FIRE.z, r: 0.95 });
+  })();
 
-  // 床の四角い枠(乗ると薪を拾う/置く場所)
-  function addZone(x, z, size, icon) {
-    const tex = canvasTexture(256, (g, n) => {
-      const r = 40, m = 14;
-      g.fillStyle = 'rgba(255,246,230,.3)';
-      g.strokeStyle = 'rgba(255,250,240,1)';
-      g.lineWidth = 10;
-      g.beginPath();
-      g.roundRect(m, m, n - m * 2, n - m * 2, r);
-      g.fill();
-      g.stroke();
-      // 斜めのカメラから見て、アイコンがまっすぐ立って見えるように回す
-      g.translate(n / 2, n / 2);
-      g.rotate(-CAM_YAW);
-      g.font = '120px sans-serif';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillText(icon, 0, 8);
-    });
+  addBench(-2.2, -4.6, true);
+  addBench(-4.6, -2.5, false);
+  addCrate(5.6, 7.6); addCrate(4.7, 7.8); addCrate(5.2, 7.7, FLOOR + 0.8, 0.7);
+  boxes.push({ x: 5.15, z: 7.7, hx: 0.95, hz: 0.5 });
+
+  // テント(解放すると出てくる)
+  const tent = new THREE.Group();
+  {
+    const cloth = mat('#e8c27a', { flatShading: true });
+    const roof = mesh(new THREE.ConeGeometry(1.7, 2.0, 4), cloth, 0, 1.0, 0, tent);
+    roof.rotation.y = Math.PI / 4;
+    const door = mesh(new THREE.PlaneGeometry(0.7, 1.0), mat('#5a3a22', { side: THREE.DoubleSide }), 0, 0.5, 1.21, tent);
+    door.castShadow = false;
+    mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), woodDark, 0, 2.1, 0, tent);
+    const flag = mesh(new THREE.PlaneGeometry(0.4, 0.25), mat('#ef6c3a', { side: THREE.DoubleSide }), 0.2, 2.25, 0, tent);
+    flag.castShadow = false;
+  }
+  tent.position.set(-4.4, FLOOR, 6.6);
+  tent.visible = false;
+  scene.add(tent);
+  const tentBox = { x: -4.4, z: 6.6, hx: 1.2, hz: 1.2, off: true };
+  boxes.push(tentBox);
+
+  // ================================================================
+  //  床の四角い枠
+  // ================================================================
+  function zoneCanvas(size, draw) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    const redraw = (...args) => {
+      const g = c.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, size, size);
+      draw(g, size, ...args);
+      tex.needsUpdate = true;
+    };
+    return { tex, redraw };
+  }
+  function zoneFrame(g, n, fill) {
+    const r = 40, m = 14;
+    g.fillStyle = fill;
+    g.strokeStyle = 'rgba(255,250,240,1)';
+    g.lineWidth = 10;
+    g.beginPath();
+    g.roundRect(m, m, n - m * 2, n - m * 2, r);
+    g.fill();
+    g.stroke();
+  }
+  // 斜めのカメラから見て、文字やアイコンがまっすぐ見えるように回す
+  function zoneText(g, n, text, size, y) {
+    g.save();
+    g.translate(n / 2, n / 2);
+    g.rotate(-CAM_YAW);
+    g.font = `900 ${size}px -apple-system, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineWidth = 8;
+    g.strokeStyle = 'rgba(60,35,20,.6)';
+    g.strokeText(text, 0, y);
+    g.fillStyle = '#fff';
+    g.fillText(text, 0, y);
+    g.restore();
+  }
+  function addZone(x, z, size, drawFn) {
+    const { tex, redraw } = zoneCanvas(256, drawFn);
+    redraw();
     const material = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 1, depthWrite: false });
     const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), material);
     m.rotation.x = -Math.PI / 2;
     m.position.set(x, FLOOR + 0.01, z);
     m.receiveShadow = true;
     scene.add(m);
-    return { x, z, half: size / 2, mesh: m, material };
+    return { x, z, half: size / 2, mesh: m, material, redraw };
+  }
+  function iconZone(icon) {
+    return (g, n) => { zoneFrame(g, n, 'rgba(255,246,230,.3)'); zoneText(g, n, icon, 110, 6); };
   }
   function inZone(zone, p) {
-    return Math.abs(p.x - zone.x) < zone.half && Math.abs(p.z - zone.z) < zone.half;
+    return zone.mesh.visible && Math.abs(p.x - zone.x) < zone.half && Math.abs(p.z - zone.z) < zone.half;
+  }
+  function setZoneActive(zone, active, time) {
+    zone.material.opacity = active ? 0.9 + Math.sin(time * 10) * 0.1 : 0.8;
+    zone.material.color.set(active ? '#fff3b0' : '#ffffff');
+    const s = active ? 1.06 : 1;
+    zone.mesh.scale.set(s, s, 1);
   }
 
-  const FIRE = { x: -2.2, z: -2.5 };
-  addCampfire(FIRE.x, FIRE.z);
-  addBench(-2.2, -4.6, true);
-  addBench(-4.6, -2.5, false);
-  addLogPile(4.8, -6.5);
-  addCrate(5.6, 7.6); addCrate(4.7, 7.8); addCrate(5.2, 7.7, FLOOR + 0.8, 0.7);
-  boxes.push({ x: 5.15, z: 7.7, hx: 0.95, hz: 0.5 });
-  addCrate(-6.1, 6.2);
-  circles.push({ x: -6.1, z: 6.2, r: 0.5 });
-  const pickupZone = addZone(4.8, -4.5, 2.4, '🪵');
-  const dropZone = addZone(-2.2, -0.35, 2.4, '🔥');
+  const dropZone = addZone(-2.2, -0.35, 2.4, iconZone('🔥'));
+  const CASH = { x: 1.6, z: 1.2 };
+  const cashZone = addZone(CASH.x, CASH.z, 2.4, iconZone('💰'));
+  const UPG = { x: 3.6, z: 4.6 };
+  const upgradeZone = addZone(UPG.x, UPG.z, 2.6, (g, n, u, paid) => {
+    if (!u) return;
+    zoneFrame(g, n, 'rgba(60,40,30,.35)');
+    // 払った分だけ下から金色で埋まっていく
+    const k = paid / u.cost;
+    g.save();
+    g.beginPath();
+    g.roundRect(14, 14, n - 28, n - 28, 40);
+    g.clip();
+    g.fillStyle = 'rgba(255,200,60,.75)';
+    g.fillRect(0, n - (n - 28) * k - 14, n, n);
+    g.restore();
+    zoneText(g, n, u.icon, 92, -28);
+    zoneText(g, n, '💰' + (u.cost - paid), 54, 58);
+  });
 
-  // ---- キャラクター(頭の大きいちびキャラ) ----
-  const C = {
-    coat: mat('#3f7fd6', { roughness: 0.75 }),
-    coatDark: mat('#2f66b3', { roughness: 0.75 }),
-    skin: mat('#ffdcbc', { roughness: 0.6 }),
-    hat: mat('#ef6c3a', { roughness: 0.9 }),
+  // ================================================================
+  //  キャラクター(頭の大きいちびキャラ)を作る
+  // ================================================================
+  const GEO = {
+    torso: new THREE.CapsuleGeometry(0.34, 0.22, 6, 16),
+    hem: new THREE.CylinderGeometry(0.36, 0.4, 0.12, 16),
+    zip: new THREE.BoxGeometry(0.06, 0.4, 0.04),
+    scarf: new THREE.TorusGeometry(0.27, 0.11, 10, 20),
+    tail: new THREE.BoxGeometry(0.14, 0.32, 0.08),
+    pack: new THREE.BoxGeometry(0.48, 0.5, 0.24),
+    packTop: new THREE.BoxGeometry(0.5, 0.12, 0.26),
+    head: new THREE.SphereGeometry(0.5, 24, 18),
+    hatTop: new THREE.SphereGeometry(0.53, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.42),
+    brim: new THREE.TorusGeometry(0.5, 0.1, 10, 24),
+    pom: new THREE.SphereGeometry(0.15, 12, 8),
+    eye: new THREE.SphereGeometry(0.065, 10, 8),
+    shine: new THREE.SphereGeometry(0.022, 6, 4),
+    cheek: new THREE.SphereGeometry(0.07, 8, 6),
+    nose: new THREE.SphereGeometry(0.05, 8, 6),
+    leg: new THREE.CapsuleGeometry(0.12, 0.12, 4, 10),
+    boot: new THREE.SphereGeometry(0.15, 10, 8),
+    arm: new THREE.CapsuleGeometry(0.1, 0.22, 4, 10),
+    mitten: new THREE.SphereGeometry(0.125, 10, 8),
+    axeHandle: new THREE.CylinderGeometry(0.035, 0.035, 0.55, 6),
+    axeHead: new THREE.BoxGeometry(0.05, 0.22, 0.17),
+  };
+  const SKIN = '#ffdcbc';
+  const FROZEN = '#9fcfff';
+  const common = {
     knit: mat('#fff3e2', { roughness: 1 }),
     boots: mat('#4a3b35'),
-    pack: mat('#8a5a34'),
     eye: mat('#1e1e28', { roughness: 0.3 }),
     cheek: mat('#ff9e9e', { roughness: 1 }),
+    nose: mat('#f5b896'),
+    pack: mat('#8a5a34'),
+    packTop: mat('#6e4527'),
+    axeWood: mat('#8a5a34'),
+    axeMetal: mat('#c7ced6', { metalness: 0.6, roughness: 0.35 }),
   };
 
-  const player = new THREE.Group();   // 位置と向き(前は +z)
-  const body = new THREE.Group();     // 上下に弾む部分
-  player.add(body);
+  function makeCharacter({ coat, coatDark, hat, pack = false, axe = false, ownSkin = false }) {
+    const M = { coat: mat(coat, { roughness: 0.75 }), coatDark: mat(coatDark, { roughness: 0.75 }), hat: mat(hat, { roughness: 0.9 }) };
+    const skin = ownSkin ? new THREE.MeshStandardMaterial({ color: SKIN, roughness: 0.6 }) : mat(SKIN, { roughness: 0.6 });
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+    mesh(GEO.torso, M.coat, 0, 0.62, 0, body).scale.set(1, 1, 0.9);
+    mesh(GEO.hem, M.coatDark, 0, 0.4, 0, body);
+    mesh(GEO.zip, common.knit, 0, 0.66, 0.31, body);
+    mesh(GEO.scarf, M.hat, 0, 0.92, 0, body).rotation.x = Math.PI / 2;
+    mesh(GEO.tail, M.hat, 0.14, 0.78, 0.3, body).rotation.z = 0.15;
+    if (pack) {
+      mesh(GEO.pack, common.pack, 0, 0.7, -0.34, body);
+      mesh(GEO.packTop, common.packTop, 0, 0.97, -0.34, body);
+    }
+    const head = new THREE.Group();
+    head.position.y = 1.38;
+    body.add(head);
+    mesh(GEO.head, skin, 0, 0, 0, head).scale.set(1, 0.94, 0.95);
+    mesh(GEO.hatTop, M.hat, 0, 0.06, -0.03, head).scale.set(1, 1.05, 1);
+    const brim = mesh(GEO.brim, common.knit, 0, 0.18, -0.04, head);
+    brim.scale.set(0.93, 0.93, 1);
+    brim.rotation.x = Math.PI / 2 - 0.15;
+    mesh(GEO.pom, common.knit, 0, 0.62, -0.06, head);
+    for (const side of [-1, 1]) {
+      mesh(GEO.eye, common.eye, side * 0.17, -0.02, 0.45, head).scale.set(1, 1.35, 0.6);
+      mesh(GEO.shine, common.knit, side * 0.17 + 0.02, 0.02, 0.49, head).castShadow = false;
+      const cheek = mesh(GEO.cheek, common.cheek, side * 0.29, -0.15, 0.37, head);
+      cheek.scale.set(1, 0.6, 0.4);
+      cheek.castShadow = false;
+    }
+    mesh(GEO.nose, common.nose, 0, -0.11, 0.48, head);
 
-  mesh(new THREE.CapsuleGeometry(0.34, 0.22, 6, 16), C.coat, 0, 0.62, 0, body).scale.set(1, 1, 0.9);
-  mesh(new THREE.CylinderGeometry(0.36, 0.4, 0.12, 16), C.coatDark, 0, 0.4, 0, body); // すそ
-  mesh(new THREE.BoxGeometry(0.06, 0.4, 0.04), C.knit, 0, 0.66, 0.31, body);          // 前のファスナー
-  const scarf = mesh(new THREE.TorusGeometry(0.27, 0.11, 10, 20), C.hat, 0, 0.92, 0, body);
-  scarf.rotation.x = Math.PI / 2;
-  mesh(new THREE.BoxGeometry(0.14, 0.32, 0.08), C.hat, 0.14, 0.78, 0.3, body).rotation.z = 0.15; // マフラーのたれ
-  // リュック(あとで荷物を積み上げる場所)
-  mesh(new THREE.BoxGeometry(0.48, 0.5, 0.24), C.pack, 0, 0.7, -0.34, body);
-  mesh(new THREE.BoxGeometry(0.5, 0.12, 0.26), mat('#6e4527'), 0, 0.97, -0.34, body);
-
-  const head = new THREE.Group();
-  head.position.y = 1.38;
-  body.add(head);
-  mesh(new THREE.SphereGeometry(0.5, 28, 20), C.skin, 0, 0, 0, head).scale.set(1, 0.94, 0.95);
-  const hatTop = mesh(new THREE.SphereGeometry(0.53, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.42), C.hat, 0, 0.06, -0.03, head);
-  hatTop.scale.set(1, 1.05, 1);
-  const brim = mesh(new THREE.TorusGeometry(0.5, 0.1, 10, 28), C.knit, 0, 0.18, -0.04, head);
-  brim.scale.set(0.93, 0.93, 1);
-  brim.rotation.x = Math.PI / 2 - 0.15;
-  mesh(new THREE.SphereGeometry(0.15, 14, 10), C.knit, 0, 0.62, -0.06, head);
-  for (const side of [-1, 1]) {
-    const eye = mesh(new THREE.SphereGeometry(0.065, 12, 10), C.eye, side * 0.17, -0.02, 0.45, head);
-    eye.scale.set(1, 1.35, 0.6);
-    const shine = mesh(new THREE.SphereGeometry(0.022, 8, 6), C.knit, side * 0.17 + 0.02, 0.02, 0.49, head);
-    shine.castShadow = false;
-    const cheek = mesh(new THREE.SphereGeometry(0.07, 10, 8), C.cheek, side * 0.29, -0.15, 0.37, head);
-    cheek.scale.set(1, 0.6, 0.4);
-    cheek.castShadow = false;
+    // 腕と足は付け根を軸にして振る
+    const limbs = [];
+    function addLimb(parent, x, y, isLeg, side) {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, y, 0);
+      if (isLeg) {
+        mesh(GEO.leg, M.coatDark, 0, -0.096, 0, pivot);
+        mesh(GEO.boot, common.boots, 0, -0.192, 0.05, pivot).scale.set(1, 0.85, 1.3);
+      } else {
+        mesh(GEO.arm, M.coat, 0, -0.14, 0, pivot);
+        mesh(GEO.mitten, M.hat, 0, -0.28, 0, pivot).scale.set(1, 0.85, 1);
+      }
+      parent.add(pivot);
+      limbs.push({ pivot, isLeg, side });
+      return pivot;
+    }
+    addLimb(root, -0.15, 0.36, true, -1);
+    addLimb(root, 0.15, 0.36, true, 1);
+    addLimb(body, -0.4, 0.82, false, -1);
+    const rightArm = addLimb(body, 0.4, 0.82, false, 1);
+    if (axe) {
+      // 斧は前に向けて持つ。振るときは腕ごと振り下ろす
+      const a = new THREE.Group();
+      a.position.set(0, -0.3, 0);
+      mesh(GEO.axeHandle, common.axeWood, 0, 0, 0.2, a).rotation.x = Math.PI / 2;
+      mesh(GEO.axeHead, common.axeMetal, 0, 0.08, 0.42, a);
+      rightArm.add(a);
+    }
+    return {
+      root, body, head, limbs, rightArm, skin,
+      vx: 0, vz: 0, angle: 0, walk: 0,
+      chop: 0, shiver: 0, hop: 0, face: null, speedRef: SPEED,
+    };
   }
-  mesh(new THREE.SphereGeometry(0.05, 10, 8), mat('#f5b896'), 0, -0.11, 0.48, head);
 
-  // 腕と足は付け根を軸にして振る
-  const limbs = [];
-  function addLimb(parent, x, y, len, radius, material, endMat, isLeg, side) {
-    const pivot = new THREE.Group();
-    pivot.position.set(x, y, 0);
-    mesh(new THREE.CapsuleGeometry(radius, len, 4, 10), material, 0, -len / 2 - radius * 0.3, 0, pivot);
-    mesh(new THREE.SphereGeometry(radius * 1.25, 12, 10), endMat, 0, -len - radius * 0.6, isLeg ? 0.05 : 0, pivot)
-      .scale.set(1, 0.85, isLeg ? 1.3 : 1);
-    parent.add(pivot);
-    limbs.push({ pivot, isLeg, side });
+  // 歩く・振る・ふるえる などの動き
+  function animateCharacter(ch, dt, time) {
+    const speed = Math.hypot(ch.vx, ch.vz);
+    const moving = speed > 0.4;
+    let target = null;
+    if (moving) target = Math.atan2(ch.vx, ch.vz);
+    else if (ch.face) target = Math.atan2(ch.face.x - ch.root.position.x, ch.face.z - ch.root.position.z);
+    if (target !== null) {
+      let diff = target - ch.angle;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      ch.angle += diff * Math.min(1, dt * 16);
+    }
+    ch.root.rotation.y = ch.angle;
+    if (moving) ch.walk += speed * dt * 2.6;
+    else ch.walk += (Math.round(ch.walk / Math.PI) * Math.PI - ch.walk) * Math.min(1, dt * 10);
+
+    const amount = Math.min(1, speed / ch.speedRef);
+    const swing = Math.sin(ch.walk);
+    for (const l of ch.limbs) {
+      l.pivot.rotation.x = swing * l.side * (l.isLeg ? 0.9 : -1.0) * amount;
+      if (!l.isLeg) l.pivot.rotation.z = -l.side * 0.3;
+    }
+    // 斧を振る(振り上げてから、すばやく振り下ろす)
+    if (ch.chop > 0) {
+      ch.chop = Math.max(0, ch.chop - dt * 6);
+      ch.rightArm.rotation.x = -2.4 * Math.sin(ch.chop * Math.PI * 0.5);
+    }
+    ch.hop = Math.max(0, ch.hop - dt);
+    const hopY = ch.hop > 0 ? Math.abs(Math.sin(ch.hop * Math.PI * 4)) * 0.35 : 0;
+    ch.body.position.y = (moving ? Math.abs(Math.cos(ch.walk)) * 0.08 * amount : Math.sin(time * 2.5) * 0.012) + hopY;
+    ch.body.rotation.x = 0.1 * amount;
+    ch.body.rotation.z = ch.shiver * Math.sin(time * 45) * 0.06;
+    ch.head.rotation.z = Math.sin(ch.walk) * 0.06 * amount;
   }
-  addLimb(player, -0.15, 0.36, 0.12, 0.12, C.coatDark, C.boots, true, -1);
-  addLimb(player, 0.15, 0.36, 0.12, 0.12, C.coatDark, C.boots, true, 1);
-  addLimb(body, -0.4, 0.82, 0.22, 0.1, C.coat, C.hat, false, -1);
-  addLimb(body, 0.4, 0.82, 0.22, 0.1, C.coat, C.hat, false, 1);
-  for (const l of limbs) if (!l.isLeg) l.pivot.rotation.z = -l.side * 0.3;
 
-  player.position.set(1.5, FLOOR, 4.5);
-  scene.add(player);
+  // 背中に薪を積むしくみ(主人公と仲間で共通)
+  function makeCarrier(ch, max) {
+    const stackRoot = new THREE.Group();
+    stackRoot.position.set(0, 0.6, -0.62);
+    ch.body.add(stackRoot);
+    return { ch, stackRoot, stack: [], pending: 0, max, lean: 0 };
+  }
+  const LOG_STEP = 0.27;
+  const slotLocal = (i, out) => out.set(0, i * LOG_STEP, 0);
+  const carrierFull = (c) => c.stack.length + c.pending >= c.max;
 
-  const state = { vx: 0, vz: 0, angle: Math.PI / 4, walk: 0 };
+  // ---- 主人公 ----
+  const player = { ch: makeCharacter({ coat: '#3f7fd6', coatDark: '#2f66b3', hat: '#ef6c3a', pack: true, axe: true }) };
+  player.carrier = makeCarrier(player.ch, CARRY_START);
+  player.ch.root.position.set(1.0, FLOOR, 5.5);
+  player.ch.angle = Math.PI / 4;
+  scene.add(player.ch.root);
 
-  // ---- 土ぼこり ----
+  // ================================================================
+  //  飛んでいく物(薪・お金)
+  // ================================================================
+  const flying = [];
+  function fly(obj, from, toFn, onLand, arc = 1.2, dur = FLY_TIME) {
+    obj.position.copy(from);
+    scene.add(obj);
+    flying.push({ obj, from: from.clone(), toFn, onLand, arc, dur, t: 0 });
+  }
+  function updateFlying(dt) {
+    for (let i = flying.length - 1; i >= 0; i--) {
+      const f = flying[i];
+      f.t += dt;
+      const k = Math.min(1, f.t / f.dur);
+      f.obj.position.lerpVectors(f.from, f.toFn(), k);
+      f.obj.position.y += Math.sin(Math.PI * k) * f.arc;
+      f.obj.rotation.x += dt * 14;
+      if (k >= 1) {
+        flying.splice(i, 1);
+        scene.remove(f.obj);
+        f.onLand();
+      }
+    }
+  }
+
+  const woodGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.85, 9);
+  function makeLog() {
+    const m = new THREE.Mesh(woodGeo, [logSide, logTop, logTop]);
+    m.castShadow = true;
+    return m;
+  }
+  const tmpA = V(), tmpB = V();
+
+  // 薪を1本、背中へ飛ばす
+  function addLog(carrier, from, onLand) {
+    const log = makeLog();
+    log.rotation.set(0, Math.random() * 3, Math.PI / 2);
+    const index = carrier.stack.length + carrier.pending;
+    carrier.pending++;
+    fly(log, from, () => carrier.stackRoot.localToWorld(slotLocal(index, tmpB)), () => {
+      carrier.pending--;
+      log.rotation.set(0, 0, Math.PI / 2);
+      slotLocal(carrier.stack.length, log.position);
+      carrier.stackRoot.add(log);
+      carrier.stack.push(log);
+      if (onLand) onLand();
+    });
+  }
+  // 背中のいちばん上の薪を、焚き火へ飛ばす
+  function dropLog(carrier) {
+    const log = carrier.stack.pop();
+    log.getWorldPosition(tmpA);
+    carrier.stackRoot.remove(log);
+    fly(log, tmpA, () => tmpB.set(FIRE.x, FLOOR + 0.5, FIRE.z), feedFire, 1.6);
+  }
+  function swayStack(carrier, time) {
+    const speed = Math.hypot(carrier.ch.vx, carrier.ch.vz) / carrier.ch.speedRef;
+    carrier.lean += (speed - carrier.lean) * 0.1;
+    carrier.stack.forEach((log, i) => {
+      log.position.z = -carrier.lean * i * i * 0.006;
+      log.position.x = Math.sin(time * 9 + i * 0.5) * 0.012 * i * carrier.lean;
+      log.rotation.y = ((i * 37) % 7 - 3) * 0.04;
+    });
+  }
+
+  // ================================================================
+  //  小さな粒(火の粉・木くず・土ぼこり)
+  // ================================================================
+  function makeParticles(geo, material, count) {
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      const m = new THREE.Mesh(geo, material);
+      m.visible = false;
+      scene.add(m);
+      list.push({ mesh: m, life: 0, vx: 0, vy: 0, vz: 0 });
+    }
+    return { list, i: 0 };
+  }
+  function burst(pool, pos, count, spread, up) {
+    for (let n = 0; n < count; n++) {
+      const s = pool.list[pool.i++ % pool.list.length];
+      s.life = 0.45 + Math.random() * 0.3;
+      s.vx = (Math.random() - 0.5) * spread;
+      s.vz = (Math.random() - 0.5) * spread;
+      s.vy = up * (0.6 + Math.random() * 0.6);
+      s.mesh.position.copy(pos);
+      s.mesh.visible = true;
+    }
+  }
+  function updateParticles(pool, dt, gravity) {
+    for (const s of pool.list) {
+      if (s.life <= 0) continue;
+      s.life -= dt;
+      s.vy -= gravity * dt;
+      s.mesh.position.x += s.vx * dt;
+      s.mesh.position.y += s.vy * dt;
+      s.mesh.position.z += s.vz * dt;
+      if (s.life <= 0) s.mesh.visible = false;
+    }
+  }
+  const sparks = makeParticles(new THREE.SphereGeometry(0.06, 6, 4), new THREE.MeshBasicMaterial({ color: '#ffcf4a' }), 40);
+  const chips = makeParticles(new THREE.BoxGeometry(0.1, 0.06, 0.1), mat('#e8b27a'), 40);
+
   const dustGeo = new THREE.SphereGeometry(0.16, 8, 6);
   const dustPool = [];
   for (let i = 0; i < 16; i++) {
@@ -474,22 +799,35 @@
     d.mesh.position.set(x + (Math.random() - 0.5) * 0.2, FLOOR + 0.1, z + (Math.random() - 0.5) * 0.2);
     d.mesh.visible = true;
   }
+  function updateDust(dt) {
+    for (const d of dustPool) {
+      if (d.life <= 0) continue;
+      d.life -= dt;
+      const a = Math.max(0, d.life / d.max);
+      d.mesh.material.opacity = a * 0.75;
+      d.mesh.scale.setScalar(1 + (1 - a) * 1.6);
+      d.mesh.position.y += dt * 0.4;
+      if (d.life <= 0) d.mesh.visible = false;
+    }
+  }
 
-  // ---- 効果音(ファイルを使わず、その場で音を作る) ----
+  // ================================================================
+  //  効果音(ファイルを使わず、その場で音を作る)
+  // ================================================================
   let audio = null;
   function unlockAudio() {
     if (audio) return;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (AC) audio = new AC();
   }
-  function blip(freq, dur = 0.07, type = 'triangle', vol = 0.08) {
+  function blip(freq, dur = 0.07, type = 'triangle', vol = 0.08, slide = 1.5) {
     if (!audio) return;
     const t = audio.currentTime;
     const o = audio.createOscillator();
     const g = audio.createGain();
     o.type = type;
     o.frequency.setValueAtTime(freq, t);
-    o.frequency.exponentialRampToValueAtTime(freq * 1.5, t + dur);
+    o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g).connect(audio.destination);
@@ -497,202 +835,373 @@
     o.stop(t + dur + 0.02);
   }
 
-  // ---- 説明の文字 ----
+  // ================================================================
+  //  説明の文字とお知らせ
+  // ================================================================
   const HINTS = [
     '画面をなぞって歩こう',
-    '🪵 の枠に入って、薪を拾おう',
-    '🔥 の枠まで運ぼう',
+    '木に近づくと、薪がとれるよ',
+    '🔥 の枠まで薪を運ぼう',
+    '火に当たって温まった人が、お金を置いていくよ',
+    '💰 の枠でお金を拾おう',
+    '光っている枠にお金を払おう',
   ];
   let tutorial = 0;
-  function setHint(step) {
-    tutorial = step;
-    if (step < HINTS.length) {
-      hint.textContent = HINTS[step];
+  function advanceHint(from) {
+    if (tutorial !== from) return;
+    tutorial = from + 1;
+    if (tutorial < HINTS.length) {
+      hint.textContent = HINTS[tutorial];
       hint.style.opacity = '1';
     } else {
       hint.style.opacity = '0';
     }
   }
+  let toastTimer = 0;
+  function toast(text) {
+    $('toast').textContent = text;
+    $('toast').classList.add('show');
+    toastTimer = 2.2;
+  }
 
-  // ---- 薪を拾って、背中に積んで、焚き火に運ぶ ----
-  const MAX_CARRY = 12;
-  const PICK_INTERVAL = 0.09;  // 薪を1本拾う間隔(秒)
-  const DROP_INTERVAL = 0.06;  // 薪を1本置く間隔(秒)
-  const FLY_TIME = 0.22;       // 薪が飛んでいく時間(秒)
-  const HEAT_PER_LOG = 5;      // 薪1本で増える火の強さ
-  const HEAT_DECAY = 1.5;      // 火が弱まる速さ(1秒あたり)
+  // ================================================================
+  //  焚き火
+  // ================================================================
+  const fire = { heat: HEAT_START, pop: 0 };
+  function feedFire() {
+    fire.heat = Math.min(100, fire.heat + HEAT_PER_LOG);
+    fire.pop = Math.min(0.5, fire.pop + 0.25);
+    burst(sparks, tmpA.set(FIRE.x, FLOOR + 0.6, FIRE.z), 5, 2.5, 4.5);
+    blip(300 + fire.heat * 4, 0.09, 'sine', 0.1);
+    advanceHint(2);
+  }
+  function updateFire(dt, time, guestsWarming) {
+    fire.heat = Math.max(0, fire.heat - (HEAT_DECAY + HEAT_DECAY_PER_GUEST * guestsWarming) * dt);
+    fire.pop = Math.max(0, fire.pop - dt * 3);
+    const power = (0.35 + fire.heat / 100 * 1.05) * (1 + fire.pop);
+    for (const f of flames) {
+      const flick = 1 + Math.sin(time * 12 + f.phase) * 0.12 + Math.sin(time * 7.3 + f.phase) * 0.08;
+      const s = power * flick;
+      const w = Math.sqrt(power) / Math.sqrt(flick);
+      f.mesh.scale.set(w, s, w);
+      f.mesh.position.y = 0.2 + f.h * s / 2;
+      f.mesh.rotation.y += dt * 2;
+    }
+    fireLight.intensity = (2 + fire.heat / 100 * 7) * (1 + fire.pop) + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6;
+  }
 
-  const fire = { heat: 30, pop: 0 };
-  const carryLabel = document.getElementById('carry');
-  const fireFill = document.getElementById('fire-fill');
-  const maxLabel = document.getElementById('max');
+  // ================================================================
+  //  切れる木(広場の奥の林)
+  // ================================================================
+  const trees = [];
+  const stumpGeo = new THREE.CylinderGeometry(0.24, 0.3, 0.3, 8);
+  for (const [x, z] of [[2.3, -7.6], [4.3, -7.8], [6.2, -7.5], [3.3, -5.9], [5.3, -6.0], [6.3, -4.2], [2.0, -4.3]]) {
+    const s = 0.75 + rand() * 0.15;
+    const group = makePine();
+    group.position.set(x, FLOOR, z);
+    group.scale.setScalar(s);
+    scene.add(group);
+    const stump = mesh(stumpGeo, [logSide, logTop, logTop], x, FLOOR + 0.15, z);
+    stump.visible = false;
+    const t = { group, stump, x, z, s, r: 0.32, hp: TREE_LOGS, grow: 1, regrow: 0, shake: 0 };
+    circles.push({ x, z, r: t.r });
+    trees.push(t);
+  }
+  function nearestTree(p, reach) {
+    let best = null, bestD = Infinity;
+    for (const t of trees) {
+      if (t.hp <= 0) continue;
+      const d = flat(p, t);
+      if (d < bestD && d < reach + t.r) { best = t; bestD = d; }
+    }
+    return best;
+  }
+  function hitTree(tree, carrier, onLand) {
+    tree.hp--;
+    tree.shake = 1;
+    burst(chips, tmpA.set(tree.x, FLOOR + 0.8, tree.z), 4, 3, 3.5);
+    addLog(carrier, V(tree.x, FLOOR + 1.4, tree.z), onLand);
+    blip(180 + Math.random() * 40, 0.06, 'square', 0.04, 0.6);
+    if (tree.hp <= 0) {
+      tree.regrow = TREE_REGROW;
+      tree.stump.visible = true;
+    }
+  }
+  function updateTrees(dt, time) {
+    for (const t of trees) {
+      t.shake = Math.max(0, t.shake - dt * 4);
+      if (t.hp <= 0) {
+        t.grow = Math.max(0, t.grow - dt * 5); // 切り倒されて小さくなる
+        t.regrow -= dt;
+        if (t.regrow <= 0) { t.hp = TREE_LOGS; t.grow = 0.01; t.stump.visible = false; }
+      } else if (t.grow < 1) {
+        t.grow = Math.min(1, t.grow + dt * 1.6); // にょきっと生え直す
+      }
+      const pop = t.hp > 0 && t.grow < 1 ? Math.sin(t.grow * Math.PI) * 0.15 : 0;
+      t.group.scale.setScalar(t.s * Math.max(0.001, t.grow + pop));
+      t.group.visible = t.grow > 0.01;
+      t.group.rotation.z = Math.sin(time * 40) * 0.1 * t.shake;
+    }
+  }
 
-  const woodGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.85, 9);
-  function makeLog() {
-    const m = new THREE.Mesh(woodGeo, [logSide, logTop, logTop]);
+  // ================================================================
+  //  お金
+  // ================================================================
+  const coinGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.07, 14);
+  const coinMat = new THREE.MeshStandardMaterial({ color: '#ffc93c', metalness: 0.5, roughness: 0.35 });
+  function makeCoin() {
+    const m = new THREE.Mesh(coinGeo, coinMat);
     m.castShadow = true;
     return m;
   }
-
-  // 背中の薪の山
-  const stackRoot = new THREE.Group();
-  stackRoot.position.set(0, 0.6, -0.62);
-  body.add(stackRoot);
-  const stack = [];
-  const LOG_STEP = 0.27; // 1本ごとの高さ
-  function slotLocal(i, out) {
-    return out.set(0, i * LOG_STEP, 0);
+  const pile = [];        // 💰 の枠に積まれているお金
+  let pilePending = 0;
+  let money = 0;
+  const PILE_COLUMNS = [];
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) PILE_COLUMNS.push([CASH.x + i * 0.48, CASH.z + j * 0.48]);
+  function pileSlot(i, out) {
+    const [x, z] = PILE_COLUMNS[i % 9];
+    return out.set(x, FLOOR + 0.04 + Math.floor(i / 9) * 0.075, z);
+  }
+  function payToPile(from) {
+    const coin = makeCoin();
+    const index = pile.length + pilePending;
+    pilePending++;
+    fly(coin, from, () => pileSlot(index, tmpB), () => {
+      pilePending--;
+      coin.rotation.set(0, 0, 0);
+      pileSlot(pile.length, coin.position);
+      scene.add(coin);
+      pile.push(coin);
+      blip(900, 0.05, 'sine', 0.04, 1.3);
+      advanceHint(3);
+    }, 1.0, 0.3);
   }
 
-  const flying = [];
-  let pendingPickups = 0;
-  let pickTimer = 0, dropTimer = 0;
-  let lean = 0;
-  const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+  // ================================================================
+  //  凍えた人たち(お客さん)
+  // ================================================================
+  const GATE_IN = { x: -6.0, z: GATE_Z };
+  const VIA_RIGHT = { x: -0.2, z: -1.6 };
+  // 焚き火のまわりの立ち位置(via は途中で通る場所)
+  const SLOTS = [
+    { x: -4.3, z: -0.6 }, { x: -0.3, z: -1.3 }, { x: -5.6, z: -3.6 },
+    { x: 0.1, z: -2.9, via: [VIA_RIGHT] }, { x: -5.5, z: -1.0 }, { x: -0.6, z: -4.3, via: [VIA_RIGHT] },
+  ];
+  const TENT_SLOTS = [
+    { x: -5.6, z: -5.3 }, { x: -3.4, z: -5.9, via: [{ x: -5.8, z: -5.1 }] },
+    { x: 1.2, z: -3.9, via: [VIA_RIGHT] }, { x: -4.4, z: 0.8 },
+  ];
+  let slots = SLOTS.map(s => ({ ...s, guest: null }));
+  const GUEST_LOOKS = [
+    ['#c94f4f', '#a63d3d', '#4a6fd6'], ['#7a5bd6', '#6247b3', '#ffd166'], ['#3fa58a', '#2f8a72', '#9b6bd6'],
+    ['#d9a03a', '#b8842a', '#5b7bd6'], ['#5b7bd6', '#4762b3', '#e85d8a'], ['#8a8f99', '#6c717a', '#3fa58a'],
+  ];
+  const guests = [];
+  let guestTimer = 1.0;
+  let guestInterval = GUEST_INTERVAL;
+  const barsEl = $('bars');
 
-  function fly(meshObj, from, toFn, onLand, arc) {
-    meshObj.position.copy(from);
-    scene.add(meshObj);
-    flying.push({ mesh: meshObj, from: from.clone(), toFn, onLand, arc, t: 0 });
+  function spawnGuest() {
+    const slot = slots.find(s => !s.guest);
+    if (!slot) return;
+    const [coat, coatDark, hat] = GUEST_LOOKS[Math.floor(Math.random() * GUEST_LOOKS.length)];
+    const ch = makeCharacter({ coat, coatDark, hat, ownSkin: true });
+    ch.speedRef = GUEST_SPEED;
+    ch.skin.color.set(FROZEN);
+    ch.root.position.set(-12, FLOOR, GATE_Z + (Math.random() - 0.5) * 0.8);
+    ch.angle = Math.PI / 2;
+    scene.add(ch.root);
+    const bar = document.createElement('div');
+    bar.className = 'warm-bar';
+    bar.innerHTML = '<div></div>';
+    bar.style.display = 'none';
+    barsEl.appendChild(bar);
+    const g = { ch, slot, state: 'arrive', warm: 0, path: [GATE_IN, ...(slot.via || []), slot], payLeft: 0, payTimer: 0, bar };
+    slot.guest = g;
+    guests.push(g);
   }
 
-  function pickOne() {
-    const log = makeLog();
-    log.rotation.set(0, Math.random() * 3, Math.PI / 2);
-    const index = stack.length + pendingPickups;
-    pendingPickups++;
-    const from = new THREE.Vector3(4.8 + (Math.random() - 0.5) * 0.8, FLOOR + 0.8, -6.5 + (Math.random() - 0.5) * 0.6);
-    fly(log, from, () => stackRoot.localToWorld(slotLocal(index, tmpB)), () => {
-      pendingPickups--;
-      log.position.set(0, 0, 0);
-      log.rotation.set(0, 0, Math.PI / 2);
-      slotLocal(stack.length, log.position);
-      stackRoot.add(log);
-      stack.push(log);
-      blip(420 + stack.length * 45);
-      if (tutorial === 1) setHint(2);
-    }, 1.2);
+  function walkPath(ch, pathList, speed, dt) {
+    const p = ch.root.position;
+    const target = pathList[0];
+    const dx = target.x - p.x, dz = target.z - p.z;
+    const d = Math.hypot(dx, dz);
+    let tvx = 0, tvz = 0;
+    if (d > 0.08) { tvx = dx / d * speed; tvz = dz / d * speed; }
+    const k = Math.min(1, dt * 10);
+    ch.vx += (tvx - ch.vx) * k;
+    ch.vz += (tvz - ch.vz) * k;
+    const step = Math.min(d, Math.hypot(ch.vx, ch.vz) * dt);
+    if (d > 1e-4) { p.x += dx / d * step; p.z += dz / d * step; }
+    if (d < 0.12) { pathList.shift(); }
+    return pathList.length === 0;
   }
 
-  function dropOne() {
-    const log = stack.pop();
-    log.getWorldPosition(tmpA);
-    stackRoot.remove(log);
-    const target = new THREE.Vector3(FIRE.x, FLOOR + 0.5, FIRE.z);
-    fly(log, tmpA, () => target, () => {
-      fire.heat = Math.min(100, fire.heat + HEAT_PER_LOG);
-      fire.pop = Math.min(0.5, fire.pop + 0.25);
-      sparkBurst();
-      blip(300 + fire.heat * 4, 0.09, 'sine', 0.1);
-      if (tutorial === 2 && stack.length === 0) setHint(3);
-    }, 1.6);
-  }
+  const frozenColor = new THREE.Color(FROZEN), skinColor = new THREE.Color(SKIN);
+  function updateGuests(dt, time) {
+    let warming = 0;
+    guestTimer -= dt;
+    if (guestTimer <= 0) { guestTimer = guestInterval; spawnGuest(); }
 
-  // 火の粉
-  const sparkGeo = new THREE.SphereGeometry(0.06, 6, 4);
-  const sparkMat = new THREE.MeshBasicMaterial({ color: '#ffcf4a' });
-  const sparks = [];
-  for (let i = 0; i < 40; i++) {
-    const m = new THREE.Mesh(sparkGeo, sparkMat);
-    m.visible = false;
-    scene.add(m);
-    sparks.push({ mesh: m, life: 0, vx: 0, vy: 0, vz: 0 });
-  }
-  let sparkIndex = 0;
-  function sparkBurst() {
-    for (let i = 0; i < 5; i++) {
-      const s = sparks[sparkIndex++ % sparks.length];
-      s.life = 0.5 + Math.random() * 0.3;
-      s.vx = (Math.random() - 0.5) * 2.5;
-      s.vz = (Math.random() - 0.5) * 2.5;
-      s.vy = 3 + Math.random() * 2.5;
-      s.mesh.position.set(FIRE.x, FLOOR + 0.6, FIRE.z);
-      s.mesh.visible = true;
-    }
-  }
-
-  function setZoneActive(zone, active, time) {
-    const pulse = active ? 0.9 + Math.sin(time * 10) * 0.1 : 0.8;
-    zone.material.opacity = pulse;
-    zone.material.color.set(active ? '#fff3b0' : '#ffffff');
-    const s = active ? 1.06 : 1;
-    zone.mesh.scale.set(s, s, 1);
-  }
-
-  function updateWood(dt, time) {
-    const p = player.position;
-    const inPick = inZone(pickupZone, p);
-    const inDrop = inZone(dropZone, p);
-    setZoneActive(pickupZone, inPick, time);
-    setZoneActive(dropZone, inDrop, time);
-
-    pickTimer -= dt;
-    if (inPick && pickTimer <= 0 && stack.length + pendingPickups < MAX_CARRY) {
-      pickTimer = PICK_INTERVAL;
-      pickOne();
-    }
-    dropTimer -= dt;
-    if (inDrop && dropTimer <= 0 && stack.length > 0) {
-      dropTimer = DROP_INTERVAL;
-      dropOne();
-    }
-
-    // 飛んでいる薪(放物線を描いて飛ぶ)
-    for (let i = flying.length - 1; i >= 0; i--) {
-      const f = flying[i];
-      f.t += dt;
-      const k = Math.min(1, f.t / FLY_TIME);
-      const to = f.toFn();
-      f.mesh.position.lerpVectors(f.from, to, k);
-      f.mesh.position.y += Math.sin(Math.PI * k) * f.arc;
-      f.mesh.rotation.x += dt * 14;
-      if (k >= 1) {
-        flying.splice(i, 1);
-        scene.remove(f.mesh);
-        f.onLand();
+    for (let i = guests.length - 1; i >= 0; i--) {
+      const g = guests[i], ch = g.ch;
+      if (g.state === 'arrive') {
+        ch.shiver = 0.6;
+        if (walkPath(ch, g.path, GUEST_SPEED, dt)) { g.state = 'warm'; ch.face = FIRE; g.bar.style.display = 'block'; }
+      } else if (g.state === 'warm') {
+        warming++;
+        ch.vx = ch.vz = 0;
+        if (fire.heat > 0) g.warm = Math.min(1, g.warm + dt * WARM_RATE * (0.35 + fire.heat / 100));
+        ch.skin.color.copy(frozenColor).lerp(skinColor, g.warm);
+        ch.shiver = fire.heat > 0 ? (1 - g.warm) * 0.8 : 1;
+        g.bar.firstChild.style.width = (g.warm * 100) + '%';
+        if (g.warm >= 1) {
+          g.state = 'happy';
+          ch.hop = 0.5;
+          ch.shiver = 0;
+          g.payLeft = COINS_PER_GUEST;
+          g.bar.style.display = 'none';
+          blip(660, 0.12, 'sine', 0.06, 1.5);
+        }
+      } else if (g.state === 'happy') {
+        g.payTimer -= dt;
+        if (g.payLeft > 0 && g.payTimer <= 0) {
+          g.payTimer = 0.07;
+          g.payLeft--;
+          payToPile(V(ch.root.position.x, FLOOR + 1.6, ch.root.position.z));
+        }
+        if (g.payLeft === 0 && ch.hop <= 0) {
+          g.state = 'leave';
+          ch.face = null;
+          g.slot.guest = null;
+          g.path = [...(g.slot.via || []).slice().reverse(), GATE_IN, { x: -13, z: GATE_Z }];
+        }
+      } else if (g.state === 'leave') {
+        if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
+          scene.remove(ch.root);
+          g.bar.remove();
+          guests.splice(i, 1);
+          continue;
+        }
+      }
+      animateCharacter(ch, dt, time);
+      if (g.state === 'warm') {
+        tmpA.set(ch.root.position.x, FLOOR + 2.4, ch.root.position.z).project(camera);
+        g.bar.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
+        g.bar.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
       }
     }
-
-    // 走ると背中の薪の山が後ろにしなる
-    const speed = Math.hypot(state.vx, state.vz) / SPEED;
-    lean += (speed - lean) * Math.min(1, dt * 6);
-    stack.forEach((log, i) => {
-      log.position.z = -lean * i * i * 0.006;
-      log.position.x = Math.sin(time * 9 + i * 0.5) * 0.012 * i * lean;
-      log.rotation.y = ((i * 37) % 7 - 3) * 0.04; // 少し不ぞろいに積む
-    });
-
-    for (const s of sparks) {
-      if (s.life <= 0) continue;
-      s.life -= dt;
-      s.vy -= 9 * dt;
-      s.mesh.position.x += s.vx * dt;
-      s.mesh.position.y += s.vy * dt;
-      s.mesh.position.z += s.vz * dt;
-      if (s.life <= 0) s.mesh.visible = false;
-    }
-
-    fire.heat = Math.max(0, fire.heat - HEAT_DECAY * dt);
-    fireFill.style.width = fire.heat + '%';
-    carryLabel.textContent = stack.length + '/' + MAX_CARRY;
-
-    // いっぱいのときは頭の上に MAX を出す
-    if (stack.length >= MAX_CARRY) {
-      stackRoot.localToWorld(slotLocal(stack.length + 1, tmpA));
-      tmpA.project(camera);
-      maxLabel.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
-      maxLabel.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
-      maxLabel.style.display = 'block';
-    } else {
-      maxLabel.style.display = 'none';
-    }
+    return warming;
   }
 
-  // ---- 入力(タッチ/マウス と キーボード) ----
+  // ================================================================
+  //  木こりの仲間
+  // ================================================================
+  let helper = null;
+  function spawnHelper() {
+    const ch = makeCharacter({ coat: '#3fa55c', coatDark: '#2f8a4a', hat: '#ffd166', pack: true, axe: true });
+    ch.speedRef = HELPER_SPEED;
+    ch.root.position.set(UPG.x, FLOOR, UPG.z);
+    ch.hop = 0.5;
+    scene.add(ch.root);
+    helper = { ch, carrier: makeCarrier(ch, HELPER_CARRY), state: 'toTree', tree: null, timer: 0, path: [] };
+  }
+  function updateHelper(dt, time) {
+    if (!helper) return;
+    const h = helper, ch = h.ch, p = ch.root.position;
+    if (h.state === 'toTree') {
+      if (!h.tree || h.tree.hp <= 0) {
+        h.tree = nearestTree(p, 100);
+        if (h.tree) {
+          const dx = p.x - h.tree.x, dz = p.z - h.tree.z, d = Math.hypot(dx, dz) || 1;
+          h.path = [{ x: h.tree.x + dx / d * 1.0, z: h.tree.z + dz / d * 1.0 }];
+        }
+      }
+      if (h.tree && walkPath(ch, h.path, HELPER_SPEED, dt)) { h.state = 'chop'; ch.face = h.tree; }
+      if (!h.tree) { ch.vx = ch.vz = 0; }
+    } else if (h.state === 'chop') {
+      ch.vx = ch.vz = 0;
+      h.timer -= dt;
+      if (h.timer <= 0) {
+        h.timer = HELPER_CHOP_INTERVAL;
+        if (h.tree.hp > 0 && !carrierFull(h.carrier)) {
+          hitTree(h.tree, h.carrier);
+          ch.chop = 1;
+        } else if (h.carrier.pending === 0) {
+          ch.face = null;
+          if (h.carrier.stack.length > 0) {
+            h.state = 'toFire';
+            h.path = [{ x: dropZone.x + 0.6, z: dropZone.z - 0.2 }];
+          } else {
+            h.state = 'toTree';
+            h.tree = null;
+          }
+        }
+      }
+    } else if (h.state === 'toFire') {
+      if (walkPath(ch, h.path, HELPER_SPEED, dt)) { h.state = 'drop'; ch.face = FIRE; }
+    } else if (h.state === 'drop') {
+      ch.vx = ch.vz = 0;
+      h.timer -= dt;
+      if (h.timer <= 0) {
+        h.timer = DROP_INTERVAL * 2;
+        if (h.carrier.stack.length > 0) dropLog(h.carrier);
+        else { h.state = 'toTree'; h.tree = null; ch.face = null; }
+      }
+    }
+    pushOut(p, 0.35);
+    keepInside(p, 0.35);
+    animateCharacter(ch, dt, time);
+    swayStack(h.carrier, time);
+  }
+
+  // ================================================================
+  //  解放(お金を払う)
+  // ================================================================
+  let upgradeIndex = 0;
+  let upgradePaid = 0, upgradePending = 0;
+  function currentUpgrade() { return UPGRADES[upgradeIndex]; }
+  upgradeZone.redraw(currentUpgrade(), 0);
+  function openTent() {
+    tent.visible = true;
+    tentBox.off = false;
+    guestInterval = GUEST_INTERVAL_TENT;
+    slots = slots.concat(TENT_SLOTS.map(s => ({ ...s, guest: null })));
+  }
+  function payUpgrade() {
+    const u = currentUpgrade();
+    money--;
+    upgradePending++;
+    const coin = makeCoin();
+    fly(coin, V(player.ch.root.position.x, FLOOR + 1.2, player.ch.root.position.z), () => tmpB.set(UPG.x, FLOOR + 0.1, UPG.z), () => {
+      upgradePending--;
+      upgradePaid++;
+      blip(500 + upgradePaid / u.cost * 500, 0.05, 'sine', 0.05);
+      upgradeZone.redraw(u, upgradePaid);
+      if (upgradePaid >= u.cost) completeUpgrade();
+    }, 0.8, 0.2);
+  }
+  function completeUpgrade() {
+    const u = currentUpgrade();
+    u.apply();
+    toast(u.message);
+    burst(sparks, tmpA.set(UPG.x, FLOOR + 0.3, UPG.z), 16, 5, 5);
+    [523, 659, 784].forEach((f, i) => setTimeout(() => blip(f, 0.12, 'triangle', 0.07, 1.05), i * 90));
+    advanceHint(5);
+    upgradeIndex++;
+    upgradePaid = 0;
+    if (currentUpgrade()) upgradeZone.redraw(currentUpgrade(), 0);
+    else upgradeZone.mesh.visible = false;
+  }
+
+  // ================================================================
+  //  入力(タッチ/マウス と キーボード)
+  // ================================================================
   const stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
   const keys = {};
   const canvas = renderer.domElement;
-
+  const stickBase = $('stick-base'), stickKnob = $('stick-knob');
   function showStick() {
     stickBase.style.display = stickKnob.style.display = stick.active ? 'block' : 'none';
     stickBase.style.left = stick.ox + 'px';
@@ -710,8 +1219,7 @@
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!stick.active || e.pointerId !== stick.id) return;
-    let dx = e.clientX - stick.ox;
-    let dy = e.clientY - stick.oy;
+    let dx = e.clientX - stick.ox, dy = e.clientY - stick.oy;
     const len = Math.hypot(dx, dy);
     if (len > STICK_RADIUS) {
       // 指が遠くまで行ったら、スティックの中心ごと引っぱってくる
@@ -735,7 +1243,6 @@
   window.addEventListener('keydown', (e) => { keys[e.key] = true; unlockAudio(); });
   window.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
-  // 画面上の向き(右・下)を返す
   function readInput() {
     let sx = 0, sy = 0;
     if (stick.active) {
@@ -750,106 +1257,156 @@
     const len = Math.hypot(sx, sy);
     if (len > 1) { sx /= len; sy /= len; }
     // 画面の向きを、45度回したステージの向きに直す
-    return {
-      ix: sx * SCREEN_RIGHT.x + sy * SCREEN_DOWN.x,
-      iz: sx * SCREEN_RIGHT.z + sy * SCREEN_DOWN.z,
-    };
+    return { ix: sx * SCREEN_RIGHT.x + sy * SCREEN_DOWN.x, iz: sx * SCREEN_RIGHT.z + sy * SCREEN_DOWN.z };
   }
 
-  // ---- 更新 ----
-  let dustTimer = 0;
-  const camTarget = player.position.clone();
-
-  function update(dt, time) {
+  // ================================================================
+  //  主人公の更新
+  // ================================================================
+  let chopTimer = 0, dropTimer = 0, collectTimer = 0, payTimer = 0, dustTimer = 0;
+  function updatePlayer(dt, time) {
+    const ch = player.ch, carrier = player.carrier, p = ch.root.position;
     const { ix, iz } = readInput();
+    const k = Math.min(1, dt * 14); // 目標の速さにすばやく近づける(キビキビ動く)
+    ch.vx += (ix * SPEED - ch.vx) * k;
+    ch.vz += (iz * SPEED - ch.vz) * k;
+    p.x += ch.vx * dt;
+    p.z += ch.vz * dt;
+    pushOut(p, PLAYER_R);
+    keepInside(p, PLAYER_R);
 
-    // 目標の速さにすばやく近づける(キビキビした動きのため強め)
-    const k = Math.min(1, dt * 14);
-    state.vx += (ix * SPEED - state.vx) * k;
-    state.vz += (iz * SPEED - state.vz) * k;
-    const p = player.position;
-    p.x += state.vx * dt;
-    p.z += state.vz * dt;
-    pushOut(p);
-    // 柵の外に出ない
-    p.x = Math.max(-PX + PLAYER_R, Math.min(PX - PLAYER_R, p.x));
-    p.z = Math.max(-PZ + PLAYER_R, Math.min(PZ - PLAYER_R, p.z));
-
-    const speed = Math.hypot(state.vx, state.vz);
-    const moving = speed > 0.5;
+    const moving = Math.hypot(ch.vx, ch.vz) > 0.5;
     if (moving) {
-      // 進む方向へなめらかに向きを変える
-      let diff = Math.atan2(state.vx, state.vz) - state.angle;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      state.angle += diff * Math.min(1, dt * 18);
-      state.walk += speed * dt * 2.6;
-
       dustTimer -= dt;
       if (dustTimer <= 0) { dustTimer = 0.1; puff(p.x, p.z); }
-      if (tutorial === 0) setHint(1);
+      advanceHint(0);
+    }
+
+    // 近くの木を自動で切る
+    chopTimer -= dt;
+    const tree = carrierFull(carrier) ? null : nearestTree(p, PLAYER_R + 0.9);
+    ch.face = tree;
+    if (tree && chopTimer <= 0) {
+      chopTimer = CHOP_INTERVAL;
+      ch.chop = 1;
+      hitTree(tree, carrier, () => {
+        blip(420 + carrier.stack.length * 30);
+        advanceHint(1);
+      });
+    }
+
+    // 🔥 の枠で薪を入れる
+    const inDrop = inZone(dropZone, p);
+    dropTimer -= dt;
+    if (inDrop && dropTimer <= 0 && carrier.stack.length > 0) {
+      dropTimer = DROP_INTERVAL;
+      dropLog(carrier);
+    }
+    // 💰 の枠でお金を拾う
+    const inCash = inZone(cashZone, p);
+    collectTimer -= dt;
+    if (inCash && collectTimer <= 0 && pile.length > 0) {
+      collectTimer = 0.03;
+      const coin = pile.pop();
+      coin.getWorldPosition(tmpA);
+      scene.remove(coin);
+      fly(coin, tmpA, () => tmpB.set(p.x, FLOOR + 1.3, p.z), () => {
+        money++;
+        blip(1000 + (money % 10) * 40, 0.04, 'sine', 0.04, 1.2);
+        advanceHint(4);
+      }, 0.8, 0.18);
+    }
+    // 光る枠でお金を払う
+    const u = currentUpgrade();
+    const inUpg = u && inZone(upgradeZone, p);
+    payTimer -= dt;
+    if (inUpg && payTimer <= 0 && money > 0 && upgradePaid + upgradePending < u.cost) {
+      payTimer = 0.04;
+      payUpgrade();
+    }
+
+    setZoneActive(dropZone, inDrop, time);
+    setZoneActive(cashZone, inCash, time);
+    if (u) setZoneActive(upgradeZone, inUpg || (money >= u.cost - upgradePaid), time);
+
+    animateCharacter(ch, dt, time);
+    swayStack(carrier, time);
+  }
+
+  // ================================================================
+  //  画面の文字(HUD)
+  // ================================================================
+  const fireFill = $('fire-fill'), carryLabel = $('carry'), moneyLabel = $('money'), maxLabel = $('max');
+  function updateHud(dt) {
+    const c = player.carrier;
+    fireFill.style.width = fire.heat + '%';
+    carryLabel.textContent = c.stack.length + '/' + c.max;
+    moneyLabel.textContent = money;
+    if (c.stack.length >= c.max) {
+      c.stackRoot.localToWorld(slotLocal(c.stack.length + 1, tmpA));
+      tmpA.project(camera);
+      maxLabel.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
+      maxLabel.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
+      maxLabel.style.display = 'block';
     } else {
-      // 止まったら足をそろえる
-      state.walk += (Math.round(state.walk / Math.PI) * Math.PI - state.walk) * Math.min(1, dt * 10);
+      maxLabel.style.display = 'none';
     }
-    player.rotation.y = state.angle;
-
-    // 手足を振る・体を弾ませる・止まっているときは呼吸
-    const amount = Math.min(1, speed / SPEED);
-    const swing = Math.sin(state.walk);
-    for (const l of limbs) l.pivot.rotation.x = swing * l.side * (l.isLeg ? 0.9 : -1.0) * amount;
-    body.position.y = moving
-      ? Math.abs(Math.cos(state.walk)) * 0.08 * amount
-      : Math.sin(time * 2.5) * 0.012;
-    body.rotation.x = 0.1 * amount;                 // 走るときは少し前のめり
-    head.rotation.z = Math.sin(state.walk) * 0.06 * amount; // 頭も少しゆれる
-
-    for (const d of dustPool) {
-      if (d.life <= 0) continue;
-      d.life -= dt;
-      const a = Math.max(0, d.life / d.max);
-      d.mesh.material.opacity = a * 0.75;
-      d.mesh.scale.setScalar(1 + (1 - a) * 1.6);
-      d.mesh.position.y += dt * 0.4;
-      if (d.life <= 0) d.mesh.visible = false;
+    if (toastTimer > 0) {
+      toastTimer -= dt;
+      if (toastTimer <= 0) $('toast').classList.remove('show');
     }
+  }
 
-    updateWood(dt, time);
+  // ================================================================
+  //  メインループ
+  // ================================================================
+  const camTarget = player.ch.root.position.clone();
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const time = now / 1000;
 
-    // 焚き火の炎をゆらす(火の強さで大きさが変わる)
-    fire.pop = Math.max(0, fire.pop - dt * 3);
-    const power = (0.4 + fire.heat / 100 * 1.0) * (1 + fire.pop);
-    for (const f of flames) {
-      const s = power * (1 + Math.sin(time * 12 + f.phase) * 0.12 + Math.sin(time * 7.3 + f.phase) * 0.08);
-      const w = Math.sqrt(power) / Math.sqrt(s / power);
-      f.mesh.scale.set(w, s, w);
-      f.mesh.position.y = 0.2 + f.h * s / 2;
-      f.mesh.rotation.y += dt * 2;
-    }
-    fireLight.intensity = (2 + fire.heat / 100 * 7) * (1 + fire.pop)
-      + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6;
+    updatePlayer(dt, time);
+    updateHelper(dt, time);
+    const warming = updateGuests(dt, time);
+    updateTrees(dt, time);
+    updateFlying(dt);
+    updateFire(dt, time, warming);
+    updateParticles(sparks, dt, 9);
+    updateParticles(chips, dt, 12);
+    updateDust(dt);
 
-    // カメラはキャラクターを少し遅れて追いかける
+    // カメラは主人公を少し遅れて追いかける
+    const p = player.ch.root.position;
     const ck = Math.min(1, dt * 6);
     camTarget.x += (p.x - camTarget.x) * ck;
     camTarget.z += (p.z - camTarget.z) * ck;
     camera.position.copy(camTarget).add(CAM_OFFSET);
     camera.lookAt(camTarget.x, 0.8, camTarget.z);
-
-    // 影はキャラクターのまわりだけ描けば十分なので、太陽ごとついてくる
+    // 影はカメラのまわりだけ描けば十分なので、太陽ごとついてくる
     sun.position.copy(camTarget).add(SUN_OFFSET);
     sun.target.position.copy(camTarget);
-  }
 
-  // ---- メインループ ----
-  let last = performance.now();
-  function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    update(dt, now / 1000);
+    updateHud(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // 自動テスト用(画面には影響しません)
+  window.__game = {
+    get state() {
+      return {
+        x: player.ch.root.position.x, z: player.ch.root.position.z,
+        carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pile.length,
+        heat: fire.heat, guests: guests.length, upgradeIndex, upgradePaid, helper: !!helper,
+        helperState: helper && helper.state, slots: slots.length, tent: tent.visible,
+      };
+    },
+    addMoney(n) { money += n; },
+  };
 </script>
+
 </body>
 </html>
