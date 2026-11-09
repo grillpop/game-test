@@ -53,7 +53,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
+    padding: 6px 10px;
     border-radius: 999px;
     background: rgba(40, 30, 25, .55);
     color: #fff;
@@ -162,6 +162,7 @@
     <div class="hud-row">
       <div class="pill">🪵 <span id="carry">0/12</span></div>
       <div class="pill">🍖 <span id="meat">0/6</span></div>
+      <div class="pill">👥 <span id="people">0/8</span></div>
       <div class="pill">💰 <span id="money">0</span></div>
     </div>
     <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div><span id="fire-pct">0%</span></div>
@@ -221,6 +222,10 @@
   const GUEST_INTERVAL = 3.6;    // 人がやってくる間隔(秒)。テントや焚き火が増えると短くなる
   const FIRE_SEATS = 10;         // 焚き火1つあたりの席の数(焚き火のまわりに輪に並べる)
   const ENTRY_QUEUE_LEN = 6;     // 入口の外で、席が空くのを待てる人数
+  // キャンプ場の定員(中にいられるお客さんの最大人数)。テントや焚き火が増えると少しずつ増える
+  const CAPACITY_BASE = 8;       // 最初の定員
+  const CAPACITY_PER_TENT = 2;   // テント1つで増える人数
+  const CAPACITY_PER_FIRE = 6;   // 焚き火が1つ増える(拡張する)と増える人数
   const CHECKOUT_QUEUE_LEN = 8;  // 帰りに受付でお会計を待てる人数
   // 待たされすぎると怒って帰る(秒)。6割をすぎると 💢 が出る
   const ENTRY_PATIENCE = 45;     // 入口の外で、入れてもらえるのを待つ
@@ -295,7 +300,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-2';
+  const GAME_VERSION = '2026.11.11-3';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -1778,6 +1783,11 @@
     el.style.top = top + 'px';
     el.style.visibility = top < hudBottom + 30 ? 'hidden' : 'visible'; // 画面上の表示と重なるときは隠す
   }
+  // キャンプ場の定員と、いま中にいる人数
+  function capacity() {
+    return CAPACITY_BASE + CAPACITY_PER_TENT * openTents().length + CAPACITY_PER_FIRE * (fires.length - 1);
+  }
+  const insideCount = () => guests.reduce((n, g) => n + (g.inside ? 1 : 0), 0);
   // テントや焚き火が増えるほど、お客さんが来る間隔が短くなる
   function guestInterval() {
     return GUEST_INTERVAL / (1 + 0.25 * openTents().length + 0.6 * (fires.length - 1));
@@ -1807,18 +1817,21 @@
     const slot = free[Math.floor(Math.random() * free.length)];
     slot.guest = g;
     g.slot = slot;
+    g.inside = true; // 中に入った(定員に数える)
     g.state = 'arrive';
     g.ch.face = null;
     g.path = [{ x: -11.6, z: ENTRY_ROW_Z }, { x: -8.8, z: ENTRY_ROW_Z }, GATE_OUT, GATE_IN, ...(slot.via || []), slot];
   }
   // 帰りに、受付のお会計の列に並ぶ
   function goCheckout(g, pathFirst) {
+    g.inside = false;
     g.state = 'toPay';
     g.path = [...pathFirst, GATE_IN, GATE_OUT];
     g.ch.face = null;
   }
   // 待たされすぎて、怒って帰る(お金は払わない)
   function angryLeave(g, path) {
+    g.inside = false;
     g.state = 'leave';
     g.angry = false;
     g.emote = '💢';
@@ -1835,6 +1848,7 @@
     g.emote = '🥶';
     g.emoteT = 2.5;
     g.ch.face = null;
+    g.inside = false;
     g.state = 'leave'; // お会計をせずに帰る
     g.path = [...(g.slot.via || []).slice().reverse(), GATE_IN, ...COLD_EXIT];
     blip(220, 0.15, 'triangle', 0.04, 0.6);
@@ -1866,6 +1880,7 @@
     guestTimer -= dt;
     if (guestTimer <= 0) { guestTimer = guestInterval(); spawnGuest(); }
     const seatFree = slots.some(t => !t.guest);
+    const roomLeft = insideCount() < capacity(); // 定員に空きがあるか
     let entryWaiting = null, payWaiting = null;
 
     for (let i = guests.length - 1; i >= 0; i--) {
@@ -1884,7 +1899,7 @@
           angryLeave(g, [{ x: ch.root.position.x - 2, z: 4.4 }, { x: -24, z: 4.4 }]);
         } else if (idx === 0 && arrived) {
           const bell = entryAttended || usher;
-          if (seatFree && bell && admitTimer <= 0) {
+          if (seatFree && roomLeft && bell && admitTimer <= 0) {
             admitTimer = 0.6;
             entryQueue.shift();
             admit(g);
@@ -2064,7 +2079,7 @@
     }
     fullBubble.style.display = entryWaiting ? 'block' : 'none';
     if (entryWaiting) {
-      fullBubble.textContent = (entryAttended || usher) ? '満席' : '🔔';
+      fullBubble.textContent = !(entryAttended || usher) ? '🔔' : !roomLeft ? '満員' : '満席';
       placeLabel(fullBubble, entryWaiting.ch.root.position.x, 2.3 + Math.abs(Math.sin(time * 5)) * 0.15, entryWaiting.ch.root.position.z);
     }
   }
@@ -2970,6 +2985,7 @@
     carryLabel.textContent = c.stack.length + '/' + c.max;
     $('meat').textContent = player.meatCarrier.stack.length + '/' + player.meatCarrier.max;
     moneyLabel.textContent = money;
+    $('people').textContent = insideCount() + '/' + capacity();
     if (c.stack.length >= c.max) {
       c.stackRoot.localToWorld(slotLocal(c.stack.length + 1, tmpA));
       tmpA.project(camera);
@@ -3179,7 +3195,7 @@
         woodPiles: fires.map(f => f.wood.stock),
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(),
-        usher: !!usher, angry: guests.filter(g => g.angry).length, queue: payQueue.length, entryQueue: entryQueue.length, meatQueue: meatQueue.length, seats: slots.length, seated: slots.filter(t => t.guest).length, sleepers: tents.reduce((n, t) => n + t.sleepers, 0), fires: fires.length, helpers: helpers.length, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
+        usher: !!usher, inside: insideCount(), capacity: capacity(), angry: guests.filter(g => g.angry).length, queue: payQueue.length, entryQueue: entryQueue.length, meatQueue: meatQueue.length, seats: slots.length, seated: slots.filter(t => t.guest).length, sleepers: tents.reduce((n, t) => n + t.sleepers, 0), fires: fires.length, helpers: helpers.length, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
         meat: { raw: countKind(player.meatCarrier, 'raw'), cooked: countKind(player.meatCarrier, 'cooked') }, counter: counterMeat.length,
         grill: grillSlots.map(s => s.item ? s.item.userData.kind[0] : '-').join(''), wanting: wantingGuests().length,
         hunterState: hunter && hunter.state, waiterState: waiter && waiter.state, boarSpots: boars.filter(b => b.alive).map(b => [b.root.position.x, b.root.position.z]), keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
