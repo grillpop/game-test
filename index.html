@@ -224,6 +224,26 @@
   const TENT_BEDS = 2;           // テントに同時に泊まれる人数
   const SLEEP_TIME = 6;          // テントで休む時間(秒)
   const SAVE_KEY = 'snow-camp-save-v1'; // 進み具合を保存する名前
+  // 狩り: 道具はパチンコ → 弓 → ボウガン
+  const WEAPONS = [
+    { name: 'パチンコ', range: 5.0, cool: 0.7, dmg: 1, kind: 'stone' },
+    { name: '弓', range: 6.5, cool: 0.55, dmg: 2, kind: 'arrow' },
+    { name: 'ボウガン', range: 8.0, cool: 0.4, dmg: 3, kind: 'bolt' },
+  ];
+  const BOAR_COUNT = 5;          // 狩り場にいるイノシシの数
+  const BOAR_SIZE = 1.3;         // イノシシの大きさ
+  const BOAR_HP = 4;             // イノシシの体力
+  const BOAR_MEAT = 2;           // 1頭からとれる肉の数
+  const BOAR_RESPAWN = 6;        // 倒したイノシシがまた現れるまでの時間(秒)
+  const COOK_TIME = 3;           // 肉が焼けるまでの時間(秒)
+  const MEAT_PRICE = 6;          // 焼いた肉をお客さんに渡したときにもらえるお金
+  const MEAT_WANT_RATE = 0.5;    // 肉をほしがるお客さんの割合
+  const HUNT_UPGRADES = [
+    { icon: '🏹', label: '弓', cost: 50, message: '弓を手に入れた! 遠くから強く撃てる', apply: () => setWeapon(2) },
+    { icon: '🐗', label: '猟師', cost: 90, message: '猟師が来た! 狩った肉を焼き台にのせてくれるよ', apply: () => hireHunter() },
+    { icon: '🎯', label: 'ボウガン', cost: 140, message: 'ボウガンを手に入れた! もっと遠く、もっと強く', apply: () => setWeapon(3) },
+    { icon: '🍽️', label: '配膳係', cost: 120, message: '配膳係が来た! 焼けた肉をお客さんに配ってくれるよ', apply: () => hireWaiter() },
+  ];
   const AXE_UPGRADES = [
     { icon: '🪓', label: '斧 Lv2', cost: 20, message: '斧が軽くなった! 速く切れる', apply: () => setAxeLevel(2) },
     { icon: '🪓', label: '斧 Lv3', cost: 50, message: '金の斧! もっと速く切れる', apply: () => setAxeLevel(3) },
@@ -242,7 +262,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.09-4';
+  const GAME_VERSION = '2026.11.09-5';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -415,6 +435,7 @@
   const GATE_Z = 2.5;
   const FX = PX + 0.35, FZ = PZ + 0.35, GAP = 0.58;
   const BACK_GATE_X = 4.0; // 奥の出入口(森へ行く道)
+  const FRONT_GATE_X = -3.0; // 手前の出入口(狩り場へ行く道)
   // 柵の丸太は数が多いので、1つの InstancedMesh にまとめて描く(軽くするため)
   const fence = { mesh: null, boxes: [] };
   function buildFence() {
@@ -426,7 +447,7 @@
     const post = (x, z, h = 1.0 + Math.random() * 0.35) => posts.push([x, z, h]);
     for (let x = x1; x <= x2 + 0.01; x += GAP) {
       if (Math.abs(x - BACK_GATE_X) > 1.1) post(x, z1);
-      post(x, z2);
+      if (Math.abs(x - FRONT_GATE_X) > 1.1) post(x, z2);
     }
     for (let z = z1 + GAP; z < z2 - 0.01; z += GAP) {
       if (Math.abs(z - GATE_Z) > 1.1) post(x1, z);
@@ -436,6 +457,8 @@
     post(x1, GATE_Z + 1.25, 1.7);
     post(BACK_GATE_X - 1.25, z1, 1.7); // 奥の出入口の門柱
     post(BACK_GATE_X + 1.25, z1, 1.7);
+    post(FRONT_GATE_X - 1.25, z2, 1.7); // 手前の出入口の門柱
+    post(FRONT_GATE_X + 1.25, z2, 1.7);
     fence.mesh = new THREE.InstancedMesh(postGeo, [logSide, logTop, logSide], posts.length);
     posts.forEach(([x, z, h], i) => {
       _q.setFromEuler(_e.set(0, Math.random() * 6, 0));
@@ -451,7 +474,8 @@
       boxes.push(box);
       fence.boxes.push(box);
     };
-    seg(x1, z2, x2, z2);                            // 手前
+    seg(x1, z2, FRONT_GATE_X - gap - T, z2);        // 手前(出入口の左)
+    seg(FRONT_GATE_X + gap + T, z2, x2, z2);        // 手前(出入口の右)
     seg(x2, z1, x2, z2);                            // 右
     seg(x1, z1, BACK_GATE_X - gap - T, z1);         // 奥(出入口の左)
     seg(BACK_GATE_X + gap + T, z1, x2, z1);         // 奥(出入口の右)
@@ -465,6 +489,7 @@
   backPath.castShadow = false;
   // 森の場所(ここに切れる木が生える)
   const FOREST = { x1: -3, x2: 12, z1: -20.5, z2: -11.2 };
+  const MEADOW = { x1: -13, x2: 5, z1: 12, z2: 23 }; // 狩り場(柵の手前の外。イノシシがいる)
   const inForest = (x, z, m = 0) => x > FOREST.x1 - m && x < FOREST.x2 + m && z > FOREST.z1 - m && z < FOREST.z2 + m;
 
   // 雪の木(柵の外の飾り)
@@ -1012,26 +1037,48 @@
   }
   const tmpA = V(), tmpB = V();
 
-  // 薪を1本、背中へ飛ばす
-  function addLog(carrier, from, onLand) {
-    const log = makeLog();
-    log.rotation.set(0, Math.random() * 3, Math.PI / 2);
+  // 背中に積む物: 薪(log)、生肉(raw)、焼いた肉(cooked)
+  function makeItem(kind) {
+    if (kind === 'log') { const m = makeLog(); m.userData.kind = 'log'; return m; }
+    return makeMeat(kind);
+  }
+  function itemRest(item) {
+    if (item.userData.kind === 'log') item.rotation.set(0, 0, Math.PI / 2);
+    else item.rotation.set(0, 0, 0);
+  }
+  // 物を1つ、背中へ飛ばす
+  function addItem(carrier, from, kind, onLand) {
+    const item = makeItem(kind);
+    if (kind === 'log') item.rotation.set(0, Math.random() * 3, Math.PI / 2);
     const index = carrier.stack.length + carrier.pending;
     carrier.pending++;
-    fly(log, from, () => carrier.stackRoot.localToWorld(slotLocal(index, tmpB)), () => {
+    fly(item, from, () => carrier.stackRoot.localToWorld(slotLocal(index, tmpB)), () => {
       carrier.pending--;
-      log.rotation.set(0, 0, Math.PI / 2);
-      slotLocal(carrier.stack.length, log.position);
-      carrier.stackRoot.add(log);
-      carrier.stack.push(log);
+      itemRest(item);
+      slotLocal(carrier.stack.length, item.position);
+      carrier.stackRoot.add(item);
+      carrier.stack.push(item);
       if (onLand) onLand();
     });
   }
+  function addLog(carrier, from, onLand) { addItem(carrier, from, 'log', onLand); }
+  const countKind = (carrier, kind) => carrier.stack.reduce((n, it) => n + (it.userData.kind === kind ? 1 : 0), 0);
+  // 背中から、いちばん上にある指定の種類の物を取り出す(場所はワールド座標で tmpA に入る)
+  function takeItem(carrier, kind) {
+    for (let i = carrier.stack.length - 1; i >= 0; i--) {
+      const item = carrier.stack[i];
+      if (item.userData.kind !== kind) continue;
+      item.getWorldPosition(tmpA);
+      carrier.stackRoot.remove(item);
+      carrier.stack.splice(i, 1);
+      return item;
+    }
+    return null;
+  }
   // 背中のいちばん上の薪を、焚き火の横の薪置き場へ飛ばす
   function dropLog(carrier, fire) {
-    const log = carrier.stack.pop();
-    log.getWorldPosition(tmpA);
-    carrier.stackRoot.remove(log);
+    const log = takeItem(carrier, 'log');
+    if (!log) return;
     const wood = fire.wood;
     const index = Math.min(WOOD_PILE_MAX - 1, wood.stock + wood.pending);
     wood.pending++;
@@ -1046,6 +1093,7 @@
     const speed = Math.hypot(carrier.ch.vx, carrier.ch.vz) / carrier.ch.speedRef;
     carrier.lean += (speed - carrier.lean) * 0.1;
     carrier.stack.forEach((log, i) => {
+      log.position.y = i * LOG_STEP; // 途中の物を取り出したら、上の物が下がる
       log.position.z = -carrier.lean * i * i * 0.006;
       log.position.x = Math.sin(time * 9 + i * 0.5) * 0.012 * i * carrier.lean;
       log.rotation.y = ((i * 37) % 7 - 3) * 0.04;
@@ -1151,6 +1199,9 @@
     '入口の外の受付に、お客さんが並ぶよ。🛎️ の枠に立って入場料を受け取ろう',
     '受付の横の 💰 の枠でお金を拾おう',
     '光っている枠にお金を払おう',
+    '柵の手前の出入口から外に出ると、イノシシがいるよ。近づくと自動でパチンコを撃つよ',
+    '肉を 🍖 の焼き台の枠に持っていこう',
+    '🍖 を出しているお客さんの近くに行くと、焼けた肉を渡せるよ',
   ];
   let tutorial = 0;
   function advanceHint(from) {
@@ -1607,7 +1658,12 @@
         }
       } else if (g.state === 'arrive') {
         ch.shiver = 0.6;
-        if (walkPath(ch, g.path, GUEST_SPEED, dt)) { g.state = 'warm'; ch.face = g.slot.fire; g.bar.style.display = 'block'; }
+        if (walkPath(ch, g.path, GUEST_SPEED, dt)) {
+          g.state = 'warm';
+          ch.face = g.slot.fire;
+          g.bar.style.display = 'block';
+          g.wantsMeat = Math.random() < MEAT_WANT_RATE; // おなかがすいている人は 🍖 を出す
+        }
       } else if (g.state === 'warm') {
         const fire = g.slot.fire;
         fire.warming++;
@@ -1816,6 +1872,7 @@
   }
   removeTreesIn(EXPAND_ZONE.x - 2.2, EXPAND_ZONE.x + 2.2, EXPAND_ZONE.z - 2.2, EXPAND_ZONE.z + 2.2); // 枠のまわりはあけておく
   removeTreesIn(-15.5, -7.6, -2.6, 5.5); // 受付の小屋とお金置き場のまわりもあける
+  removeTreesIn(MEADOW.x1 - 1, MEADOW.x2 + 1, camp.z2 + 0.5, MEADOW.z2 + 1); // 狩り場は見通しよく
   function expandCamp() {
     camp.x2 = EXPAND_X2;
     removeTreesIn(camp.x1 - 1, camp.x2 + 1.2, camp.z1 - 1, camp.z2 + 1.2);
@@ -1844,6 +1901,7 @@
       { icon: '🏕️', label: 'キャンプ拡張', cost: EXPAND_COST, message: 'キャンプが広くなった! 焚き火も増えたよ', apply: expandCamp },
       { icon: '🔥', label: '火の番(2)', cost: 40, message: '2つ目の焚き火にも火の番が来た!', apply: () => hireFireKeeper(fires[1]) },
     ], EXPAND_ZONE),
+    makeShop(HUNT_UPGRADES, { x: -5.2, z: 4.6 }),  // 狩りの道具と仲間(焼き台のそば)
   ];
   const shopItem = (shop) => shop.list[shop.index];
   function payShop(shop) {
@@ -1871,6 +1929,479 @@
     shop.paid = 0;
     if (shopItem(shop)) shop.zone.redraw(shopItem(shop), 0);
     else shop.zone.mesh.visible = false;
+  }
+
+  // ================================================================
+  //  狩り(イノシシ)・焼き台・肉を配る
+  // ================================================================
+  let weaponLevel = 1;
+  function setWeapon(level) { weaponLevel = level; }
+  const weapon = () => WEAPONS[weaponLevel - 1];
+
+  // ---- 肉 ----
+  const meatGeo = new THREE.BoxGeometry(0.42, 0.2, 0.3);
+  const boneGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.62, 6);
+  const boneEndGeo = new THREE.SphereGeometry(0.065, 8, 6);
+  const meatRaw = mat('#e5636b', { roughness: 0.6 });
+  const meatCooked = mat('#9a5229', { roughness: 0.55 });
+  const boneMat = mat('#f6efe2');
+  function makeMeat(kind) {
+    const g = new THREE.Group();
+    const body = mesh(meatGeo, kind === 'raw' ? meatRaw : meatCooked, 0, 0, 0, g);
+    const bone = mesh(boneGeo, boneMat, 0, 0, 0, g);
+    bone.rotation.z = Math.PI / 2;
+    bone.castShadow = false;
+    for (const sx of [-1, 1]) mesh(boneEndGeo, boneMat, sx * 0.31, 0, 0, g).castShadow = false;
+    g.userData.kind = kind;
+    g.userData.body = body;
+    return g;
+  }
+  function cookMeat(item) {
+    item.userData.kind = 'cooked';
+    item.userData.body.material = meatCooked;
+  }
+
+  // ---- 狩り場とイノシシ ----
+  const boarBody = mat('#8b5a3c', { roughness: 0.9 });
+  const boarDark = mat('#5e3a26', { roughness: 0.9 });
+  const boarSnout = mat('#d79a86', { roughness: 0.8 });
+  const tuskMat = mat('#fff6e6');
+  const BOAR_GEO = {
+    body: new THREE.SphereGeometry(0.5, 14, 10),
+    head: new THREE.SphereGeometry(0.32, 12, 10),
+    snout: new THREE.CylinderGeometry(0.13, 0.15, 0.18, 10),
+    tusk: new THREE.ConeGeometry(0.035, 0.16, 5),
+    ear: new THREE.ConeGeometry(0.09, 0.18, 4),
+    leg: new THREE.CylinderGeometry(0.07, 0.07, 0.28, 6),
+    eye: new THREE.SphereGeometry(0.04, 6, 5),
+    mane: new THREE.BoxGeometry(0.12, 0.12, 0.7),
+  };
+  function makeBoar() {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+    const torso = mesh(BOAR_GEO.body, boarBody, 0, 0.55, 0, body);
+    torso.scale.set(0.95, 0.8, 1.3);
+    mesh(BOAR_GEO.mane, boarDark, 0, 0.93, -0.05, body).castShadow = false;
+    const head = mesh(BOAR_GEO.head, boarBody, 0, 0.62, 0.62, body);
+    head.scale.set(1, 0.95, 1.05);
+    const snout = mesh(BOAR_GEO.snout, boarSnout, 0, 0.56, 0.94, body);
+    snout.rotation.x = Math.PI / 2;
+    snout.castShadow = false;
+    for (const sx of [-1, 1]) {
+      const tusk = mesh(BOAR_GEO.tusk, tuskMat, sx * 0.13, 0.5, 0.92, body);
+      tusk.rotation.set(-0.6, 0, sx * -0.5);
+      tusk.castShadow = false;
+      const ear = mesh(BOAR_GEO.ear, boarDark, sx * 0.17, 0.9, 0.55, body);
+      ear.rotation.z = sx * -0.4;
+      ear.castShadow = false;
+      mesh(BOAR_GEO.eye, common.eye, sx * 0.13, 0.7, 0.86, body).castShadow = false;
+    }
+    const legs = [];
+    for (const [lx, lz] of [[-0.25, 0.35], [0.25, 0.35], [-0.25, -0.35], [0.25, -0.35]]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(lx, 0.3, lz);
+      const leg = mesh(BOAR_GEO.leg, boarDark, 0, -0.14, 0, pivot);
+      leg.castShadow = false;
+      root.add(pivot);
+      legs.push(pivot);
+    }
+    return { root, body, legs };
+  }
+  const boars = [];
+  function randomMeadowSpot() {
+    return { x: MEADOW.x1 + Math.random() * (MEADOW.x2 - MEADOW.x1), z: MEADOW.z1 + Math.random() * (MEADOW.z2 - MEADOW.z1) };
+  }
+  for (let i = 0; i < BOAR_COUNT; i++) {
+    const m = makeBoar();
+    const spot = randomMeadowSpot();
+    m.root.position.set(spot.x, 0, spot.z);
+    m.root.rotation.y = Math.random() * 6;
+    m.root.scale.setScalar(BOAR_SIZE);
+    scene.add(m.root);
+    boars.push({ ...m, hp: BOAR_HP, alive: true, respawn: 0, target: randomMeadowSpot(), idle: 0, flee: 0, hit: 0, walk: 0, vx: 0, vz: 0 });
+  }
+  const smoke = makeParticles(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85 }), 30);
+  function hunters() {
+    const list = [];
+    if (!insidePlaza(player.ch.root.position.x, player.ch.root.position.z)) list.push(player.ch.root.position);
+    if (hunter) list.push(hunter.ch.root.position);
+    return list;
+  }
+  function updateBoars(dt, time) {
+    const hs = hunters();
+    for (const b of boars) {
+      const p = b.root.position;
+      if (!b.alive) {
+        b.respawn -= dt;
+        if (b.respawn <= 0) {
+          // 狩り場のはしから、また出てくる
+          const spot = randomMeadowSpot();
+          spot.z = MEADOW.z2;
+          p.set(spot.x, 0, spot.z);
+          b.hp = BOAR_HP;
+          b.alive = true;
+          b.root.visible = true;
+          b.root.scale.setScalar(0.01);
+        }
+        continue;
+      }
+      if (b.root.scale.x < BOAR_SIZE) b.root.scale.setScalar(Math.min(BOAR_SIZE, b.root.scale.x + dt * 3));
+      // 近くに人が来たら逃げる
+      let near = null, nearD = 3.2;
+      for (const h of hs) { const d = flat(p, h); if (d < nearD) { near = h; nearD = d; } }
+      let tvx = 0, tvz = 0;
+      if (b.hit > 0) {
+        b.hit -= dt;
+      } else if (near) {
+        const dx = p.x - near.x, dz = p.z - near.z, d = Math.hypot(dx, dz) || 1;
+        tvx = dx / d * 3.4; tvz = dz / d * 3.4;
+      } else if (b.idle > 0) {
+        b.idle -= dt;
+      } else {
+        const dx = b.target.x - p.x, dz = b.target.z - p.z, d = Math.hypot(dx, dz);
+        if (d < 0.3) { b.target = randomMeadowSpot(); b.idle = 1 + Math.random() * 2; }
+        else { tvx = dx / d * 1.3; tvz = dz / d * 1.3; }
+      }
+      const k = Math.min(1, dt * 6);
+      b.vx += (tvx - b.vx) * k;
+      b.vz += (tvz - b.vz) * k;
+      p.x = Math.max(MEADOW.x1, Math.min(MEADOW.x2, p.x + b.vx * dt));
+      p.z = Math.max(MEADOW.z1, Math.min(MEADOW.z2, p.z + b.vz * dt));
+      const speed = Math.hypot(b.vx, b.vz);
+      if (speed > 0.2) {
+        let diff = Math.atan2(b.vx, b.vz) - b.root.rotation.y;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        b.root.rotation.y += diff * Math.min(1, dt * 10);
+        b.walk += speed * dt * 5;
+      }
+      b.legs.forEach((leg, i) => { leg.rotation.x = Math.sin(b.walk + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI : 0)) * 0.6 * Math.min(1, speed); });
+      b.body.position.y = Math.abs(Math.sin(b.walk)) * 0.05 * Math.min(1, speed);
+      // 当たったときは、ぎゅっとつぶれる
+      const squash = b.hit > 0 ? 1 - Math.sin(b.hit * 20) * 0.12 : 1;
+      b.body.scale.set(1 / squash, squash, 1);
+    }
+  }
+  function nearestBoar(p, range) {
+    let best = null, bestD = range;
+    for (const b of boars) {
+      if (!b.alive || b.root.scale.x < BOAR_SIZE * 0.9) continue;
+      const d = flat(p, b.root.position);
+      if (d < bestD) { best = b; bestD = d; }
+    }
+    return best;
+  }
+
+  // ---- 弾(小石・矢) ----
+  const stoneGeo = new THREE.SphereGeometry(0.09, 8, 6);
+  const arrowGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.7, 5);
+  arrowGeo.rotateX(Math.PI / 2);
+  const projectiles = [];
+  function shoot(from, boar, w, carrier) {
+    let m;
+    if (w.kind === 'stone') m = new THREE.Mesh(stoneGeo, mat('#8a8f99'));
+    else m = new THREE.Mesh(arrowGeo, mat(w.kind === 'bolt' ? '#3d3f47' : '#a0703f'));
+    m.position.copy(from);
+    scene.add(m);
+    projectiles.push({ mesh: m, from: from.clone(), boar, dmg: w.dmg, t: 0, dur: 0.12 + flat(from, boar.root.position) * 0.035, carrier, arrow: w.kind !== 'stone' });
+    blip(w.kind === 'stone' ? 700 : 520, 0.05, 'triangle', 0.05, 0.6);
+  }
+  function updateProjectiles(dt) {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+      const pr = projectiles[i];
+      pr.t += dt;
+      const k = Math.min(1, pr.t / pr.dur);
+      const target = tmpB.set(pr.boar.root.position.x, 0.6, pr.boar.root.position.z);
+      pr.mesh.position.lerpVectors(pr.from, target, k);
+      pr.mesh.position.y += Math.sin(Math.PI * k) * (pr.arrow ? 0.4 : 0.8);
+      if (pr.arrow) pr.mesh.lookAt(target);
+      if (k >= 1) {
+        scene.remove(pr.mesh);
+        projectiles.splice(i, 1);
+        hitBoar(pr.boar, pr.dmg, pr.carrier);
+      }
+    }
+  }
+  function hitBoar(b, dmg, carrier) {
+    if (!b.alive) return;
+    b.hp -= dmg;
+    b.hit = 0.25;
+    burst(chips, tmpA.set(b.root.position.x, 0.7, b.root.position.z), 3, 2, 2);
+    blip(240, 0.07, 'square', 0.05, 0.6);
+    if (b.hp > 0) return;
+    // ポンッと煙が出て、肉に変わる
+    b.alive = false;
+    b.root.visible = false;
+    b.respawn = BOAR_RESPAWN;
+    const p = b.root.position;
+    burst(smoke, tmpA.set(p.x, 0.6, p.z), 10, 3, 2);
+    blip(880, 0.08, 'sine', 0.06, 0.5);
+    for (let i = 0; i < BOAR_MEAT; i++) {
+      if (carrierFull(carrier)) break;
+      addItem(carrier, V(p.x + (Math.random() - 0.5) * 0.5, 0.8 + i * 0.3, p.z), 'raw', () => {
+        blip(520, 0.05);
+        if (carrier === player.carrier) advanceHint(6);
+      });
+    }
+  }
+  let shootTimer = 0;
+  function updatePlayerHunting(dt) {
+    const ch = player.ch, p = ch.root.position;
+    shootTimer -= dt;
+    if (insidePlaza(p.x, p.z) || carrierFull(player.carrier)) return;
+    const w = weapon();
+    const b = nearestBoar(p, w.range);
+    if (!b) return;
+    if (Math.hypot(ch.vx, ch.vz) < 0.5) ch.face = b.root.position;
+    if (shootTimer <= 0) {
+      shootTimer = w.cool;
+      ch.chop = 0.6;
+      shoot(V(p.x, p.y + 1.1, p.z), b, w, player.carrier);
+    }
+  }
+
+  // ---- 焼き台 ----
+  const GRILL = { x: -6.1, z: 7.0 };
+  const grillZone = addZone(-4.4, 7.0, 1.8, iconZone('🍖'));
+  const grillSlots = [];
+  {
+    const g = new THREE.Group();
+    mesh(new THREE.BoxGeometry(0.95, 0.55, 1.15), mat('#8f949c', { flatShading: true }), 0, 0.275, 0, g);
+    const coals = mesh(new THREE.BoxGeometry(0.82, 0.04, 1.0), new THREE.MeshBasicMaterial({ color: '#ff7a2e' }), 0, 0.56, 0, g);
+    coals.castShadow = false;
+    for (let i = -2; i <= 2; i++) {
+      const bar = mesh(new THREE.BoxGeometry(0.03, 0.03, 1.1), mat('#2d2f36'), i * 0.2, 0.6, 0, g);
+      bar.castShadow = false;
+    }
+    g.position.set(GRILL.x, FLOOR, GRILL.z);
+    scene.add(g);
+    boxes.push({ x: GRILL.x, z: GRILL.z, hx: 0.55, hz: 0.65 });
+    for (const sx of [-0.2, 0.2]) for (const sz of [-0.34, 0, 0.34]) {
+      grillSlots.push({ x: GRILL.x + sx, z: GRILL.z + sz, item: null, reserved: false, t: 0 });
+    }
+  }
+  const grillPos = (slot, out) => out.set(slot.x, FLOOR + 0.68, slot.z);
+  // 生肉を焼き台にのせる(のせられたら true)
+  function loadGrill(carrier) {
+    const slot = grillSlots.find(s => !s.item && !s.reserved);
+    if (!slot || countKind(carrier, 'raw') === 0) return false;
+    const item = takeItem(carrier, 'raw');
+    slot.reserved = true;
+    fly(item, tmpA, () => grillPos(slot, tmpB), () => {
+      slot.reserved = false;
+      slot.item = item;
+      slot.t = 0;
+      item.rotation.set(0, Math.PI / 2, 0);
+      grillPos(slot, item.position);
+      scene.add(item);
+      blip(300, 0.08, 'sawtooth', 0.03, 0.8); // ジュッ
+    }, 0.8, 0.2);
+    return true;
+  }
+  // 焼けた肉を受け取る(受け取れたら true)
+  function unloadGrill(carrier) {
+    if (carrierFull(carrier)) return false;
+    const slot = grillSlots.find(s => s.item && s.item.userData.kind === 'cooked');
+    if (!slot) return false;
+    const item = slot.item;
+    slot.item = null;
+    item.getWorldPosition(tmpA);
+    scene.remove(item);
+    const index = carrier.stack.length + carrier.pending;
+    carrier.pending++;
+    fly(item, tmpA, () => carrier.stackRoot.localToWorld(slotLocal(index, tmpB)), () => {
+      carrier.pending--;
+      itemRest(item);
+      slotLocal(carrier.stack.length, item.position);
+      carrier.stackRoot.add(item);
+      carrier.stack.push(item);
+      blip(640, 0.05);
+      if (carrier === player.carrier) advanceHint(7);
+    }, 1.0, 0.25);
+    return true;
+  }
+  let smokeTimer = 0;
+  function updateGrill(dt) {
+    let cooking = false;
+    for (const s of grillSlots) {
+      if (!s.item || s.item.userData.kind !== 'raw') continue;
+      cooking = true;
+      s.t += dt;
+      if (s.t >= COOK_TIME) { cookMeat(s.item); blip(980, 0.06, 'sine', 0.04, 1.2); }
+    }
+    smokeTimer -= dt;
+    if (cooking && smokeTimer <= 0) {
+      smokeTimer = 0.35;
+      burst(smoke, tmpA.set(GRILL.x, FLOOR + 0.8, GRILL.z), 1, 0.4, 1.2);
+    }
+  }
+
+  // ---- お客さんに肉を渡す ----
+  const meatIcons = new Map();
+  function wantingGuests() { return guests.filter(g => g.state === 'warm' && g.wantsMeat); }
+  function serveMeat(fromCarrier, g, toPlayer) {
+    const item = takeItem(fromCarrier, 'cooked');
+    if (!item) return;
+    g.wantsMeat = false;
+    const gp = g.ch.root.position;
+    fly(item, tmpA, () => tmpB.set(gp.x, gp.y + 1.3, gp.z), () => {
+      g.warm = Math.min(1, g.warm + 0.25); // 食べて早く温まる
+      g.ch.hop = 0.4;
+      blip(760, 0.1, 'sine', 0.06, 1.4);
+      for (let i = 0; i < MEAT_PRICE; i++) {
+        if (toPlayer) {
+          // 主人公が渡したときは、お金がそのまま手元に来る
+          const coin = makeCoin();
+          const pp = player.ch.root.position;
+          fly(coin, V(gp.x + (Math.random() - 0.5) * 0.4, gp.y + 1.2 + i * 0.1, gp.z), () => tmpB.set(pp.x, pp.y + 1.1, pp.z), () => {
+            money++;
+            blip(1000 + (money % 10) * 40, 0.04, 'sine', 0.04, 1.2);
+          }, 0.8, 0.35 + i * 0.05);
+        } else {
+          payToPile(V(gp.x, gp.y + 1.2, gp.z)); // 配膳係が渡したときは受付のお金置き場へ
+        }
+      }
+      if (toPlayer) advanceHint(8);
+    }, 1.0, 0.3);
+  }
+  let serveTimer = 0, grillTimer = 0;
+  function updatePlayerMeat(dt, time) {
+    const p = player.ch.root.position, carrier = player.carrier;
+    // 🍖 の枠: 焼けた肉を受け取り、生肉をのせる
+    const inGrill = inZone(grillZone, p);
+    setZoneActive(grillZone, inGrill, time);
+    grillTimer -= dt;
+    if (inGrill && grillTimer <= 0) {
+      if (unloadGrill(carrier) || loadGrill(carrier)) grillTimer = 0.15;
+    }
+    // 近くの、肉をほしがっているお客さんに渡す
+    serveTimer -= dt;
+    if (serveTimer <= 0 && countKind(carrier, 'cooked') > 0) {
+      const g = wantingGuests().find(g => flat(g.ch.root.position, p) < 1.6);
+      if (g) { serveTimer = 0.25; serveMeat(carrier, g, true); }
+    }
+  }
+  function updateMeatIcons(time) {
+    for (const g of guests) {
+      let el = meatIcons.get(g);
+      const show = g.state === 'warm' && g.wantsMeat;
+      if (!el && show) {
+        el = document.createElement('div');
+        el.className = 'pile-label';
+        el.textContent = '🍖';
+        document.body.appendChild(el);
+        meatIcons.set(g, el);
+      }
+      if (!el) continue;
+      el.style.display = show ? 'block' : 'none';
+      if (show) placeLabel(el, g.ch.root.position.x, FLOOR + 2.9 + Math.sin(time * 4 + g.warm * 10) * 0.08, g.ch.root.position.z);
+    }
+    for (const [g, el] of meatIcons) {
+      if (!guests.includes(g)) { el.remove(); meatIcons.delete(g); }
+    }
+  }
+
+  // ---- 猟師(自動で狩って、焼き台に生肉をのせる) ----
+  let hunter = null;
+  const FRONT_IN = () => ({ x: FRONT_GATE_X, z: camp.z2 - 0.6 });
+  const FRONT_OUT = () => ({ x: FRONT_GATE_X, z: camp.z2 + 1.6 });
+  function routeFront(from, to) {
+    const a = insidePlaza(from.x, from.z), b = insidePlaza(to.x, to.z);
+    if (a === b) return [to];
+    return a ? [FRONT_IN(), FRONT_OUT(), to] : [FRONT_OUT(), FRONT_IN(), to];
+  }
+  function hireHunter() {
+    if (hunter) return;
+    const ch = makeCharacter({ coat: '#6b7a3a', coatDark: '#55622d', hat: '#c94f4f', pack: true });
+    ch.speedRef = HELPER_SPEED;
+    const pos = shops[3].pos;
+    ch.root.position.set(pos.x, FLOOR, pos.z);
+    ch.hop = 0.5;
+    scene.add(ch.root);
+    hunter = { ch, carrier: makeCarrier(ch, 6), state: 'out', path: [], timer: 0, boar: null };
+    hunter.path = routeFront(ch.root.position, randomMeadowSpot());
+  }
+  function updateHunter(dt, time) {
+    if (!hunter) return;
+    const h = hunter, ch = h.ch, p = ch.root.position;
+    h.timer -= dt;
+    if (h.state === 'out') {
+      if (walkPath(ch, h.path, HELPER_SPEED, dt)) h.state = 'hunt';
+    } else if (h.state === 'hunt') {
+      if (countKind(h.carrier, 'raw') >= 4 || carrierFull(h.carrier)) {
+        if (h.carrier.pending === 0) { h.state = 'back'; h.path = routeFront(p, { x: -4.4, z: 7.0 }); }
+      } else {
+        const w = weapon();
+        if (!h.boar || !h.boar.alive) h.boar = nearestBoar(p, 100);
+        if (h.boar) {
+          const bp = h.boar.root.position, d = flat(p, bp);
+          if (d > w.range * 0.8) {
+            walkPath(ch, [{ x: bp.x, z: bp.z }], HELPER_SPEED, dt);
+          } else {
+            ch.vx = ch.vz = 0;
+            ch.face = bp;
+            if (h.timer <= 0) { h.timer = w.cool * 1.3; ch.chop = 0.6; shoot(V(p.x, p.y + 1.1, p.z), h.boar, w, h.carrier); }
+          }
+        } else { ch.vx = ch.vz = 0; }
+      }
+    } else if (h.state === 'back') {
+      if (walkPath(ch, h.path, HELPER_SPEED, dt)) { h.state = 'load'; ch.face = GRILL; }
+    } else if (h.state === 'load') {
+      ch.vx = ch.vz = 0;
+      if (h.timer <= 0) {
+        if (countKind(h.carrier, 'raw') === 0) { h.state = 'out'; ch.face = null; h.path = routeFront(p, randomMeadowSpot()); }
+        else if (loadGrill(h.carrier)) h.timer = 0.25;
+        else h.timer = 0.5; // 焼き台がいっぱいのときは待つ
+      }
+    }
+    pushOut(p, 0.35);
+    keepInWorld(p, 0.35);
+    animateCharacter(ch, dt, time);
+    swayStack(h.carrier, time);
+  }
+
+  // ---- 配膳係(焼けた肉を、ほしがっているお客さんに配る) ----
+  let waiter = null;
+  function hireWaiter() {
+    if (waiter) return;
+    const ch = makeCharacter({ coat: '#f2f2f2', coatDark: '#d8d8d8', hat: '#ef6c3a', pack: true });
+    ch.speedRef = HELPER_SPEED;
+    const pos = shops[3].pos;
+    ch.root.position.set(pos.x, FLOOR, pos.z);
+    ch.hop = 0.5;
+    scene.add(ch.root);
+    waiter = { ch, carrier: makeCarrier(ch, 4), state: 'toGrill', timer: 0, target: null };
+  }
+  function updateWaiter(dt, time) {
+    if (!waiter) return;
+    const w = waiter, ch = w.ch, p = ch.root.position;
+    w.timer -= dt;
+    const has = countKind(w.carrier, 'cooked');
+    if (w.state === 'toGrill') {
+      if (walkPath(ch, [{ x: -4.4, z: 7.0 }], HELPER_SPEED, dt)) { w.state = 'take'; ch.face = GRILL; }
+    } else if (w.state === 'take') {
+      ch.vx = ch.vz = 0;
+      if (w.timer <= 0) {
+        if (!carrierFull(w.carrier) && unloadGrill(w.carrier)) w.timer = 0.2;
+        else if (has > 0 && w.carrier.pending === 0 && wantingGuests().length) { w.state = 'serve'; ch.face = null; }
+        else w.timer = 0.4;
+      }
+    } else if (w.state === 'serve') {
+      if (!w.target || !w.target.wantsMeat || w.target.state !== 'warm') {
+        const list = wantingGuests();
+        w.target = list.sort((a, b) => flat(a.ch.root.position, p) - flat(b.ch.root.position, p))[0] || null;
+      }
+      if (!w.target || has === 0) { w.state = 'toGrill'; w.target = null; }
+      else {
+        const gp = w.target.ch.root.position;
+        if (flat(p, gp) > 1.2) walkPath(ch, [{ x: gp.x, z: gp.z }], HELPER_SPEED, dt);
+        else { ch.vx = ch.vz = 0; serveMeat(w.carrier, w.target, false); w.target = null; }
+      }
+    }
+    pushOut(p, 0.35);
+    keepInWorld(p, 0.35);
+    animateCharacter(ch, dt, time);
+    swayStack(w.carrier, time);
   }
 
   // ================================================================
@@ -1980,7 +2511,7 @@
       const inDrop = inZone(fire.dropZone, p);
       fire.tendedByPlayer = inDrop; // 枠に立っているあいだは、薪置き場から火にくべる
       setZoneActive(fire.dropZone, inDrop, time);
-      if (inDrop && dropTimer <= 0 && carrier.stack.length > 0) {
+      if (inDrop && dropTimer <= 0 && countKind(carrier, 'log') > 0) {
         dropTimer = DROP_INTERVAL;
         dropLog(carrier, fire);
       }
@@ -2072,6 +2603,17 @@
 
     safe('player', () => updatePlayer(dt, time));
     safe('helper', () => updateHelper(dt, time));
+    safe('hunt', () => {
+      updatePlayerHunting(dt);
+      updatePlayerMeat(dt, time);
+      updateBoars(dt, time);
+      updateProjectiles(dt);
+      updateGrill(dt);
+      updateHunter(dt, time);
+      updateWaiter(dt, time);
+      updateParticles(smoke, dt, -1.5);
+      updateMeatIcons(time);
+    });
     safe('guests', () => updateGuests(dt, time));
     safe('trees', () => updateTrees(dt, time));
     safe('flying', () => updateFlying(dt));
@@ -2123,7 +2665,7 @@
       version: 1, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
       shops: shops.map(s => [s.index, s.paid]), axe: axeLevel,
       heats: fires.map(f => Math.round(f.heat)), wood: fires.map(f => f.wood.stock + f.wood.pending),
-      carry: player.carrier.stack.length + player.carrier.pending, tutorial, x: p.x, z: p.z,
+      carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z,
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない設定のときは何もしない */ }
   }
@@ -2205,7 +2747,10 @@
         woodPiles: fires.map(f => f.wood.stock),
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(),
-        queue: payQueue.length, sleepers, keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
+        queue: payQueue.length, sleepers, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
+        meat: { raw: countKind(player.carrier, 'raw'), cooked: countKind(player.carrier, 'cooked') },
+        grill: grillSlots.map(s => s.item ? s.item.userData.kind[0] : '-').join(''), wanting: wantingGuests().length,
+        hunterState: hunter && hunter.state, waiterState: waiter && waiter.state, boarSpots: boars.filter(b => b.alive).map(b => [b.root.position.x, b.root.position.z]), keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
         treeSpots: trees.filter(t => t.hp > 0).map(t => [t.x, t.z]), helper: !!helper, hx: helper && helper.ch.root.position.x, hz: helper && helper.ch.root.position.z,
         helperState: helper && helper.state, slots: slots.length, tent: tent.visible,
@@ -2213,6 +2758,7 @@
     },
     addMoney(n) { money += n; },
     setHeat(v) { for (const f of fires) f.heat = v; },
+    wantingSpots() { return wantingGuests().map(g => [g.ch.root.position.x, g.ch.root.position.z]); },
   };
 </script>
 
