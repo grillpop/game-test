@@ -222,6 +222,10 @@
   const FIRE_SEATS = 10;         // 焚き火1つあたりの席の数(焚き火のまわりに輪に並べる)
   const ENTRY_QUEUE_LEN = 6;     // 入口の外で、席が空くのを待てる人数
   const CHECKOUT_QUEUE_LEN = 8;  // 帰りに受付でお会計を待てる人数
+  // 待たされすぎると怒って帰る(秒)。6割をすぎると 💢 が出る
+  const ENTRY_PATIENCE = 45;     // 入口の外で、入れてもらえるのを待つ
+  const MEAT_PATIENCE = 30;      // 配膳台で肉を待つ(怒って帰るとお会計もしない)
+  const CHECKOUT_PATIENCE = 25;  // 帰りのお会計を待つ(怒って帰るとお金を払わない)
   const MEAT_QUEUE_LEN = 8;      // 🍽️ 配膳台に並べる人数
   const GUEST_SPEED = 3;         // 人の歩く速さ
   const HELPER_SPEED = 4.2;      // 仲間の歩く速さ
@@ -232,7 +236,8 @@
   const CAMP_UPGRADES = [
     { icon: '🎒', label: 'リュック', cost: 15, message: 'リュックが大きくなった!', apply: () => { player.carrier.max = CARRY_UPGRADED; } },
     { icon: '🔥', label: '火の番', cost: 20, message: '火の番が来た! 薪を自動でくべてくれるよ', apply: () => hireFireKeeper(fires[0]) },
-    { icon: '🛎️', label: '受付係', cost: 30, message: '受付係が来た! お金を自動で受け取ってくれるよ', apply: () => hireReceptionist() },
+    { icon: '🛎️', label: '受付係', cost: 30, message: '受付係が来た! お会計を自動で受け取ってくれるよ', apply: () => hireReceptionist() },
+    { icon: '🔔', label: '案内係', cost: 35, message: '案内係が来た! お客さんを自動で中に入れてくれるよ', apply: () => hireUsher() },
     { icon: '👷', label: '木こり', cost: 40, message: '木こりの仲間が来た!', apply: () => spawnHelper() },
     { icon: '⛺', label: 'テント', cost: 60, message: 'テントができた! 泊まるお客さんは宿泊代も払うよ', apply: () => openTent(0) },
     { icon: '⛺', label: 'テント2', cost: 100, message: 'テントが2つになった! 泊まれる人が増えたよ', apply: () => openTent(1) },
@@ -290,7 +295,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-1';
+  const GAME_VERSION = '2026.11.11-2';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -806,8 +811,13 @@
 
   FIRE.dropZone = addZone(FIRE.x, FIRE.z + 2.6, 2.4, iconZone('🔥'));
   const CASH = { x: -12.9, z: 0.4 }; // 受付の小屋の横。お金がここに溜まる
-  const DESK = { x: -8.75, z: 0.8 }; // 主人公が入場料を受け取るために立つ場所(受付の窓口のそば)
-  const deskZone = addZone(DESK.x, DESK.z, 1.7, iconZone('🛎️'));
+  const DESK = { x: -8.75, z: 0.8 }; // 退場ベル: 帰りのお会計を受け取るために立つ場所(受付の窓口のそば)
+  const ENTRY_DESK = { x: -9.0, z: 4.9 }; // 入場ベル: ここに立つと、入口の外で待つ人を中に入れる
+  function bellZone(icon, label) {
+    return (g, n) => { zoneFrame(g, n, 'rgba(255,246,230,.3)'); zoneText(g, n, icon, 92, -24); zoneText(g, n, label, 40, 60); };
+  }
+  const deskZone = addZone(DESK.x, DESK.z, 1.7, bellZone('🛎️', 'お会計'));
+  const entryDeskZone = addZone(ENTRY_DESK.x, ENTRY_DESK.z, 1.7, bellZone('🔔', '入場'));
   const cashZone = addZone(CASH.x, CASH.z, 2.4, iconZone('💰'));
   function drawShopZone(g, n, u, paid, cool = 0) {
     if (!u) return;
@@ -1320,7 +1330,8 @@
     '画面をなぞって歩こう',
     '落ちている枝を拾ったり、柵の外の森で木を切ろう',
     '🔥 の枠に立つと、薪を積んで火にくべられるよ',
-    '温まったお客さんは、帰りに受付でお金を払うよ。🛎️ の枠に立って受け取ろう',
+    '入口の外の 🔔 入場の枠に立つと、待っているお客さんが中に入るよ',
+    '温まったお客さんは、帰りに受付でお会計をするよ。🛎️ お会計の枠に立って受け取ろう',
     '受付の横の 💰 の枠でお金を拾おう',
     '光っている枠にお金を払おう',
     '柵の手前の出入口から外に出ると、イノシシがいるよ。近づくと自動でパチンコを撃つよ',
@@ -1614,7 +1625,7 @@
         pileCount++;
         drawCoinPile();
         blip(1100, 0.04, 'sine', 0.03, 1.2);
-        advanceHint(3);
+        advanceHint(4);
       }, 1.6, 0.35);
     }, 0.7, 0.25);
   }
@@ -1724,7 +1735,21 @@
   function queueSpot(i) {
     return i === 0 ? PAY_SPOT : { x: PAY_SPOT.x - 0.85 - (Math.min(i, CHECKOUT_QUEUE_LEN) - 1) * 0.8, z: PAY_SPOT.z };
   }
-  let deskAttended = false; // 主人公が 🛎️ の枠に立っているか
+  let deskAttended = false;      // 主人公が 🛎️(退場ベル)の枠に立っているか
+  let entryAttended = false;     // 主人公が 🔔(入場ベル)の枠に立っているか
+  let admitTimer = 0;
+  let usher = null;              // 案内係(入場ベルを自動でやってくれる)
+  function hireUsher() {
+    if (usher) return;
+    const ch = makeCharacter({ coat: '#4a8f6b', coatDark: '#3a7356', hat: '#fff3e2' });
+    ch.root.position.set(ENTRY_DESK.x, groundY(ENTRY_DESK.x, ENTRY_DESK.z), ENTRY_DESK.z);
+    ch.face = entrySpot(0);
+    ch.angle = Math.atan2(entrySpot(0).x - ENTRY_DESK.x, entrySpot(0).z - ENTRY_DESK.z);
+    ch.hop = 0.5;
+    scene.add(ch.root);
+    usher = { ch };
+    entryDeskZone.mesh.visible = false;
+  }
   let receptionist = null;
   function hireReceptionist() {
     if (receptionist) return;
@@ -1792,6 +1817,16 @@
     g.path = [...pathFirst, GATE_IN, GATE_OUT];
     g.ch.face = null;
   }
+  // 待たされすぎて、怒って帰る(お金は払わない)
+  function angryLeave(g, path) {
+    g.state = 'leave';
+    g.angry = false;
+    g.emote = '💢';
+    g.emoteT = 2.5;
+    g.ch.face = null;
+    g.path = path;
+    blip(160, 0.2, 'sawtooth', 0.05, 0.7);
+  }
   function leaveCold(g) {
     g.slot.guest = null;
     g.bar.style.display = 'none';
@@ -1826,6 +1861,8 @@
   function updateGuests(dt, time) {
     for (const f of fires) f.warming = 0;
     if (receptionist) animateCharacter(receptionist.ch, dt, time);
+    if (usher) animateCharacter(usher.ch, dt, time);
+    admitTimer -= dt;
     guestTimer -= dt;
     if (guestTimer <= 0) { guestTimer = guestInterval(); spawnGuest(); }
     const seatFree = slots.some(t => !t.guest);
@@ -1840,9 +1877,20 @@
         const spot = entrySpot(idx);
         const arrived = walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15;
         ch.face = { x: ch.root.position.x + 1, z: ch.root.position.z };
-        if (idx === 0 && arrived) {
-          if (seatFree) { entryQueue.shift(); admit(g); }
-          else entryWaiting = g;
+        g.wait = (g.wait || 0) + dt;
+        if (g.wait > ENTRY_PATIENCE) {
+          // 待ちきれずに帰る
+          entryQueue.splice(idx, 1);
+          angryLeave(g, [{ x: ch.root.position.x - 2, z: 4.4 }, { x: -24, z: 4.4 }]);
+        } else if (idx === 0 && arrived) {
+          const bell = entryAttended || usher;
+          if (seatFree && bell && admitTimer <= 0) {
+            admitTimer = 0.6;
+            entryQueue.shift();
+            admit(g);
+            if (usher) usher.ch.chop = 0.6;
+            if (entryAttended) { blip(880, 0.06, 'sine', 0.05, 1.2); advanceHint(3); }
+          } else entryWaiting = g;
         }
       } else if (g.state === 'arrive') {
         ch.shiver = 0.6;
@@ -1897,12 +1945,20 @@
           }
         }
       } else if (g.state === 'toMeat') {
-        if (!g.path.length || walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) g.state = 'meatQueue';
+        if (!g.path.length || walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) { g.state = 'meatQueue'; g.wait = 0; }
       } else if (g.state === 'meatQueue') {
         const idx = meatQueue.indexOf(g);
         const spot = meatSpot(idx);
         g.atCounter = (walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15) && idx === 0;
         ch.face = idx === 0 ? MEAT_COUNTER : { x: ch.root.position.x - 1, z: ch.root.position.z };
+        g.wait = (g.wait || 0) + dt;
+        g.angry = g.wait > MEAT_PATIENCE * 0.6;
+        if (g.wait > MEAT_PATIENCE) {
+          meatQueue.splice(idx, 1);
+          g.wantsMeat = false;
+          if (g.tent) { g.tent.reserved--; g.tent = null; }
+          angryLeave(g, [{ x: -1.0, z: 3.0 }, GATE_IN, ...COLD_EXIT]);
+        }
       } else if (g.state === 'eat') {
         // 肉を受け取って、少し喜んでから、テントかお会計へ
         ch.vx = ch.vz = 0;
@@ -1931,6 +1987,8 @@
       } else if (g.state === 'toPay') {
         if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
           g.state = 'checkout';
+          g.wait = 0;
+          g.angry = false;
           payQueue.push(g);
         }
       } else if (g.state === 'checkout') {
@@ -1961,6 +2019,14 @@
             }
           } else {
             payWaiting = g;
+          }
+        }
+        if (!g.paying) {
+          g.wait = (g.wait || 0) + dt;
+          g.angry = g.wait > CHECKOUT_PATIENCE * 0.6;
+          if (g.wait > CHECKOUT_PATIENCE) {
+            payQueue.splice(payQueue.indexOf(g), 1);
+            angryLeave(g, [{ x: ch.root.position.x - 0.5, z: 4.4 }, { x: -24, z: 4.4 }]);
           }
         }
       } else if (g.state === 'leave') {
@@ -1997,7 +2063,10 @@
       placeLabel(waitBubble, PAY_SPOT.x, 2.3 + Math.abs(Math.sin(time * 5)) * 0.2, PAY_SPOT.z);
     }
     fullBubble.style.display = entryWaiting ? 'block' : 'none';
-    if (entryWaiting) placeLabel(fullBubble, entryWaiting.ch.root.position.x, 2.3, entryWaiting.ch.root.position.z);
+    if (entryWaiting) {
+      fullBubble.textContent = (entryAttended || usher) ? '満席' : '🔔';
+      placeLabel(fullBubble, entryWaiting.ch.root.position.x, 2.3 + Math.abs(Math.sin(time * 5)) * 0.15, entryWaiting.ch.root.position.z);
+    }
   }
 
   // ================================================================
@@ -2202,7 +2271,7 @@
     toast(u.message);
     burst(sparks, tmpA.set(shop.pos.x, FLOOR + 0.3, shop.pos.z), 16, 5, 5);
     [523, 659, 784].forEach((f, i) => setTimeout(() => blip(f, 0.12, 'triangle', 0.07, 1.05), i * 90));
-    advanceHint(5);
+    advanceHint(6);
     shop.index++;
     shop.paid = 0;
     if (shopItem(shop)) {
@@ -2420,7 +2489,7 @@
       if (carrierFull(carrier)) break;
       addItem(carrier, V(p.x + (Math.random() - 0.5) * 0.5, 0.8 + i * 0.3, p.z), 'raw', () => {
         blip(520, 0.05);
-        if (carrier === player.meatCarrier) advanceHint(6);
+        if (carrier === player.meatCarrier) advanceHint(7);
       });
     }
   }
@@ -2496,7 +2565,7 @@
       carrier.stackRoot.add(item);
       carrier.stack.push(item);
       blip(640, 0.05);
-      if (carrier === player.meatCarrier) advanceHint(7);
+      if (carrier === player.meatCarrier) advanceHint(8);
     }, 1.0, 0.25);
     return true;
   }
@@ -2572,7 +2641,7 @@
           payToPile(V(gp.x, gp.y + 1.2, gp.z)); // 配膳係が渡したときは受付のお金置き場へ
         }
       }
-      if (toPlayer) advanceHint(8);
+      if (toPlayer) advanceHint(9);
     }, 1.0, 0.3);
     return true;
   }
@@ -2600,7 +2669,9 @@
     for (const g of guests) {
       let el = meatIcons.get(g);
       if (g.emoteT > 0) g.emoteT -= dt;
-      const text = g.emoteT > 0 ? g.emote : (g.wantsMeat && (g.state === 'warm' || g.state === 'toMeat' || g.state === 'meatQueue') ? '🍖' : '');
+      const text = g.emoteT > 0 ? g.emote
+        : g.angry ? '💢'
+        : (g.wantsMeat && (g.state === 'warm' || g.state === 'toMeat' || g.state === 'meatQueue') ? '🍖' : '');
       if (!el && text) {
         el = document.createElement('div');
         el.className = 'pile-label';
@@ -2838,6 +2909,8 @@
     // 🛎️ の枠に立つと、受付でお金を受け取れる
     deskAttended = inZone(deskZone, p);
     setZoneActive(deskZone, deskAttended, time);
+    entryAttended = inZone(entryDeskZone, p);
+    setZoneActive(entryDeskZone, entryAttended, time);
     // 💰 の枠でお金を拾う
     const inCash = inZone(cashZone, p);
     collectTimer -= dt;
@@ -2850,7 +2923,7 @@
       fly(coin, tmpA, () => tmpB.set(p.x, p.y + 1.1, p.z), () => {
         money++;
         blip(1000 + (money % 10) * 40, 0.04, 'sine', 0.04, 1.2);
-        advanceHint(4);
+        advanceHint(5);
       }, 0.8, 0.18);
     }
     // 光る枠でお金を払う
@@ -2887,11 +2960,13 @@
   const fireFill = $('fire-fill'), carryLabel = $('carry'), moneyLabel = $('money'), maxLabel = $('max');
   function updateHud(dt) {
     const c = player.carrier;
-    const pp = player.ch.root.position;
-    const near = fires.reduce((a, b) => (flat(pp, a) <= flat(pp, b) ? a : b));
-    fireFill.style.width = near.heat + '%';
-    $('fire-pct').textContent = Math.round(near.heat) + '%';
-    $('fire-pill').classList.toggle('low', near.heat < 25); // 火が弱いときは赤く点滅
+    // 焚き火が2つ以上のときは、全部の焚き火を合わせて100%として表示する
+    const total = fires.reduce((n, f) => n + f.heat, 0) / fires.length;
+    const weakest = Math.min(...fires.map(f => f.heat));
+    fireFill.style.width = total + '%';
+    $('fire-pct').textContent = Math.round(total) + '%';
+    // どれか1つでも消えそうなら赤く点滅(1つだけのときは25%未満)
+    $('fire-pill').classList.toggle('low', fires.length > 1 ? weakest < 15 : total < 25);
     carryLabel.textContent = c.stack.length + '/' + c.max;
     $('meat').textContent = player.meatCarrier.stack.length + '/' + player.meatCarrier.max;
     moneyLabel.textContent = money;
@@ -2997,7 +3072,7 @@
     if (saveDisabled) return;
     const p = player.ch.root.position;
     const data = {
-      version: 3, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
+      version: 4, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
       shops: shops.map(s => [s.index, s.paid]), axe: axeLevel,
       heats: fires.map(f => Math.round(f.heat)), wood: fires.map(f => f.wood.stock + f.wood.pending),
       carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z,
@@ -3007,7 +3082,12 @@
   function loadGame() {
     let data = null;
     try { data = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { data = null; }
-    if (!data || ![1, 2, 3].includes(data.version)) return false;
+    if (!data || ![1, 2, 3, 4].includes(data.version)) return false;
+    if (data.version <= 3) {
+      // 古いセーブ: キャンプの枠の4番目に案内係が入ったので、受付係より後まで買っていたら1つずらす(案内係はおまけで雇える)
+      if (data.shops && data.shops[0] && data.shops[0][0] >= 3) data.shops[0] = [data.shops[0][0] + 1, data.shops[0][1]];
+      if ((data.tutorial || 0) >= 3) data.tutorial = (data.tutorial || 0) + 1; // 説明文が1つ増えた
+    }
     if (data.version === 1 && data.shops && data.shops[3]) {
       // 古いセーブ: 狩りの枠を「狩りの仲間」と「武器屋」に分ける
       const old = data.shops[3][0];
@@ -3099,7 +3179,7 @@
         woodPiles: fires.map(f => f.wood.stock),
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(),
-        queue: payQueue.length, entryQueue: entryQueue.length, meatQueue: meatQueue.length, seats: slots.length, seated: slots.filter(t => t.guest).length, sleepers: tents.reduce((n, t) => n + t.sleepers, 0), fires: fires.length, helpers: helpers.length, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
+        usher: !!usher, angry: guests.filter(g => g.angry).length, queue: payQueue.length, entryQueue: entryQueue.length, meatQueue: meatQueue.length, seats: slots.length, seated: slots.filter(t => t.guest).length, sleepers: tents.reduce((n, t) => n + t.sleepers, 0), fires: fires.length, helpers: helpers.length, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
         meat: { raw: countKind(player.meatCarrier, 'raw'), cooked: countKind(player.meatCarrier, 'cooked') }, counter: counterMeat.length,
         grill: grillSlots.map(s => s.item ? s.item.userData.kind[0] : '-').join(''), wanting: wantingGuests().length,
         hunterState: hunter && hunter.state, waiterState: waiter && waiter.state, boarSpots: boars.filter(b => b.alive).map(b => [b.root.position.x, b.root.position.z]), keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
