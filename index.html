@@ -96,6 +96,18 @@
     font-size: 11px;
     pointer-events: none;
   }
+  #reset {
+    position: fixed;
+    left: 8px;
+    bottom: calc(env(safe-area-inset-bottom) + 4px);
+    padding: 3px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: rgba(60, 70, 90, .25);
+    color: rgba(40, 50, 70, .7);
+    font: inherit;
+    font-size: 11px;
+  }
   #error {
     position: fixed;
     left: 8px; right: 8px;
@@ -150,6 +162,7 @@
   <div id="max">MAX</div>
   <div id="hint">画面をなぞって歩こう</div>
   <div id="version"></div>
+  <button id="reset" type="button">はじめから</button>
   <div id="error"></div>
 
 <script type="module">
@@ -200,9 +213,15 @@
   // お金を払って解放するもの(枠ごとに、上から順に出てきます)
   const CAMP_UPGRADES = [
     { icon: '🎒', label: 'リュック', cost: 15, message: 'リュックが大きくなった!', apply: () => { player.carrier.max = CARRY_UPGRADED; } },
-    { icon: '👷', label: '仲間', cost: 40, message: '木こりの仲間が来た!', apply: () => spawnHelper() },
-    { icon: '⛺', label: 'テント', cost: 60, message: 'テントができた! お客さんが増えるよ', apply: () => openTent() },
+    { icon: '🔥', label: '火の番', cost: 20, message: '火の番が来た! 薪を自動でくべてくれるよ', apply: () => hireFireKeeper(fires[0]) },
+    { icon: '🛎️', label: '受付係', cost: 30, message: '受付係が来た! お金を自動で受け取ってくれるよ', apply: () => hireReceptionist() },
+    { icon: '👷', label: '木こり', cost: 40, message: '木こりの仲間が来た!', apply: () => spawnHelper() },
+    { icon: '⛺', label: 'テント', cost: 60, message: 'テントができた! 泊まるお客さんは宿泊代も払うよ', apply: () => openTent() },
   ];
+  const TENT_FEE = 8;            // テントに泊まったお客さんが上乗せして払うお金
+  const TENT_BEDS = 2;           // テントに同時に泊まれる人数
+  const SLEEP_TIME = 6;          // テントで休む時間(秒)
+  const SAVE_KEY = 'snow-camp-save-v1'; // 進み具合を保存する名前
   const AXE_UPGRADES = [
     { icon: '🪓', label: '斧 Lv2', cost: 20, message: '斧が軽くなった! 速く切れる', apply: () => setAxeLevel(2) },
     { icon: '🪓', label: '斧 Lv3', cost: 50, message: '金の斧! もっと速く切れる', apply: () => setAxeLevel(3) },
@@ -220,7 +239,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.09-1';
+  const GAME_VERSION = '2026.11.09-2';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -697,6 +716,8 @@
 
   FIRE.dropZone = addZone(FIRE.x, FIRE.z + 2.6, 2.4, iconZone('🔥'));
   const CASH = { x: -5.2, z: 7.4 }; // 受付の小屋の裏手。お金がここに溜まる
+  const DESK = { x: -3.1, z: 5.95 }; // 主人公がお金を受け取るために立つ場所(受付の窓口のそば)
+  const deskZone = addZone(DESK.x, DESK.z, 1.7, iconZone('🛎️'));
   const cashZone = addZone(CASH.x, CASH.z, 2.4, iconZone('💰'));
   function drawShopZone(g, n, u, paid) {
     if (!u) return;
@@ -979,7 +1000,6 @@
       wood.stock++;
       drawWoodPile(wood);
       blip(260 + Math.min(wood.stock, 30) * 12, 0.05, 'triangle', 0.06, 0.8);
-      advanceHint(2);
     }, 1.3);
   }
   function swayStack(carrier, time) {
@@ -1087,8 +1107,8 @@
   const HINTS = [
     '画面をなぞって歩こう',
     '落ちている枝を拾ったり、柵の外の森で木を切ろう',
-    '🔥 の枠に薪を運ぶと、焚き火の横に積まれるよ',
-    '温まった人は、入口の受付でお金を払って帰るよ',
+    '🔥 の枠に立つと、薪を積んで火にくべられるよ',
+    '温まった人が受付に並ぶよ。🛎️ の枠に立ってお金を受け取ろう',
     '受付の裏の 💰 の枠でお金を拾おう',
     '光っている枠にお金を払おう',
   ];
@@ -1118,6 +1138,20 @@
     fire.pop = Math.min(0.5, fire.pop + 0.25);
     burst(sparks, tmpA.set(fire.x, FLOOR + 0.6, fire.z), 5, 2.5, 4.5);
     blip(300 + fire.heat * 4, 0.09, 'sine', 0.1);
+    advanceHint(2);
+  }
+  // 火の番: 薪置き場のそばに立って、薪を火にくべてくれる
+  function hireFireKeeper(fire) {
+    if (!fire || fire.keeper) return;
+    const ch = makeCharacter({ coat: '#e07b39', coatDark: '#c4632a', hat: '#7a4a26' });
+    const x = fire.x + 0.85, z = fire.z + 2.05;
+    ch.root.position.set(x, FLOOR, z);
+    ch.face = fire.wood;
+    ch.angle = Math.atan2(fire.wood.x - x, fire.wood.z - z);
+    ch.hop = 0.5;
+    scene.add(ch.root);
+    circles.push({ x, z, r: 0.35 });
+    fire.keeper = { ch };
   }
   function updateFires(dt, time) {
     for (const fire of fires) updateFire(fire, dt, time);
@@ -1126,8 +1160,11 @@
     // 薪置き場から焚き火へ、1本ずつくべる(火がいっぱいのときは待つ)
     const wood = fire.wood;
     wood.feedTimer -= dt;
-    if (wood.feedTimer <= 0 && wood.stock > 0 && fire.heat <= 100 - HEAT_PER_LOG) {
+    if (fire.keeper) animateCharacter(fire.keeper.ch, dt, time);
+    const tended = fire.tendedByPlayer || fire.keeper;
+    if (tended && wood.feedTimer <= 0 && wood.stock > 0 && fire.heat <= 100 - HEAT_PER_LOG) {
       wood.feedTimer = FEED_INTERVAL;
+      if (fire.keeper) fire.keeper.ch.chop = 0.6; // 火の番が薪を放りこむ
       wood.stock--;
       woodSlot(wood, Math.min(wood.stock, WOOD_PILE_MAX - 1), tmpA);
       drawWoodPile(wood);
@@ -1431,8 +1468,48 @@
   }
 
   const frozenColor = new THREE.Color(FROZEN), skinColor = new THREE.Color(SKIN);
+  // 受付に並ぶ列。先頭の人が窓口の前でお金を払う
+  const payQueue = [];
+  const QUEUE_MAX_SPOTS = 8;
+  function queueSpot(i) { return { x: PAY_SPOT.x, z: PAY_SPOT.z - Math.min(i, QUEUE_MAX_SPOTS - 1) * 0.8 }; }
+  let deskAttended = false; // 主人公が 🛎️ の枠に立っているか
+  let receptionist = null;
+  function hireReceptionist() {
+    if (receptionist) return;
+    const ch = makeCharacter({ coat: '#d6457a', coatDark: '#b3365f', hat: '#fff3e2' });
+    ch.root.position.set(DESK.x, FLOOR, DESK.z);
+    ch.face = PAY_SPOT;
+    ch.angle = Math.atan2(PAY_SPOT.x - DESK.x, PAY_SPOT.z - DESK.z);
+    ch.hop = 0.5;
+    scene.add(ch.root);
+    receptionist = { ch };
+    deskZone.mesh.visible = false;
+  }
+  // テント
+  let tentOpen = false, sleepers = 0, tentReserved = 0; // tentReserved: テントへ向かっている人+寝ている人
+  const TENT_SIDE_A = { x: 0.6, z: 6.2 }, TENT_SIDE_B = { x: 0.6, z: 8.55 }, TENT_DOOR = { x: -1.2, z: 8.6 };
+  const sleepBubble = document.createElement('div');
+  sleepBubble.className = 'pile-label';
+  sleepBubble.textContent = '💤';
+  document.body.appendChild(sleepBubble);
+  const waitBubble = document.createElement('div');
+  waitBubble.className = 'pile-label';
+  waitBubble.textContent = '🛎️';
+  document.body.appendChild(waitBubble);
+  function placeLabel(el, x, y, z) {
+    tmpA.set(x, y, z).project(camera);
+    el.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
+    el.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
+  }
+  function joinQueue(g, pathFirst) {
+    g.state = 'queue';
+    g.path = pathFirst;
+    payQueue.push(g);
+  }
+
   function updateGuests(dt, time) {
     for (const f of fires) f.warming = 0;
+    if (receptionist) animateCharacter(receptionist.ch, dt, time);
     guestTimer -= dt;
     if (guestTimer <= 0) { guestTimer = guestInterval; spawnGuest(); }
 
@@ -1458,28 +1535,61 @@
           blip(660, 0.12, 'sine', 0.06, 1.5);
         }
       } else if (g.state === 'happy') {
-        // 喜んだら、受付へ向かう(焚き火のまわりの場所は次の人にゆずる)
+        // 喜んだら、テントで休むか、受付の列に並ぶ(焚き火のまわりの場所は次の人にゆずる)
         if (ch.hop <= 0) {
-          g.state = 'toPay';
           ch.face = null;
           g.slot.guest = null;
-          g.path = [...(g.slot.via || []).slice().reverse(), PAY_SPOT];
+          const back = (g.slot.via || []).slice().reverse();
+          if (tentOpen && tentReserved < TENT_BEDS && Math.random() < 0.6) {
+            tentReserved++;
+            g.state = 'toTent';
+            g.path = [...back, TENT_SIDE_A, TENT_SIDE_B, TENT_DOOR];
+          } else {
+            joinQueue(g, back);
+          }
         }
-      } else if (g.state === 'toPay') {
-        if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) { g.state = 'pay'; ch.face = WINDOW; }
-      } else if (g.state === 'pay') {
-        ch.vx = ch.vz = 0;
-        g.payTimer -= dt;
-        if (g.payLeft > 0 && g.payTimer <= 0) {
-          g.payTimer = 0.09;
-          g.payLeft--;
-          ch.chop = 0.6; // 腕を振ってお金を投げる
-          payToPile(V(ch.root.position.x + 0.3, ch.root.position.y + 1.1, ch.root.position.z));
+      } else if (g.state === 'toTent') {
+        if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
+          g.state = 'sleep';
+          g.sleep = SLEEP_TIME;
+          sleepers++;
+          ch.root.visible = false; // テントの中で休む
         }
-        if (g.payLeft === 0 && g.payTimer <= 0) {
-          g.state = 'leave';
-          ch.face = null;
-          g.path = [GATE_IN, { x: -13, z: GATE_Z }];
+      } else if (g.state === 'sleep') {
+        g.sleep -= dt;
+        if (g.sleep <= 0) {
+          sleepers--;
+          tentReserved--;
+          ch.root.visible = true;
+          ch.hop = 0.4;
+          g.payLeft += TENT_FEE; // 宿泊代を上乗せ
+          joinQueue(g, [TENT_SIDE_B, TENT_SIDE_A]);
+        }
+      } else if (g.state === 'queue') {
+        const idx = payQueue.indexOf(g);
+        if (g.path.length) {
+          walkPath(ch, g.path, GUEST_SPEED * 1.2, dt);
+        } else {
+          const spot = queueSpot(idx);
+          const arrived = walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15;
+          ch.face = idx === 0 ? WINDOW : { x: ch.root.position.x, z: ch.root.position.z + 1 };
+          // 列の先頭で、受付に人がいるときだけ払える
+          if (idx === 0 && arrived && (deskAttended || receptionist)) {
+            g.payTimer -= dt;
+            if (g.payLeft > 0 && g.payTimer <= 0) {
+              g.payTimer = 0.09;
+              g.payLeft--;
+              ch.chop = 0.6; // 腕を振ってお金を投げる
+              if (receptionist) receptionist.ch.chop = 0.6;
+              payToPile(V(ch.root.position.x + 0.3, ch.root.position.y + 1.1, ch.root.position.z));
+            }
+            if (g.payLeft === 0 && g.payTimer <= 0) {
+              g.state = 'leave';
+              ch.face = null;
+              payQueue.splice(idx, 1);
+              g.path = [{ x: -3.8, z: 3.2 }, GATE_IN, { x: -13, z: GATE_Z }]; // 小屋をよけて出口へ
+            }
+          }
         }
       } else if (g.state === 'leave') {
         if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
@@ -1490,13 +1600,20 @@
           continue;
         }
       }
-      animateCharacter(ch, dt, time);
+      if (ch.root.visible) animateCharacter(ch, dt, time);
       if (g.state === 'warm') {
         tmpA.set(ch.root.position.x, FLOOR + 2.4, ch.root.position.z).project(camera);
         g.bar.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
         g.bar.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
       }
     }
+    // テントで寝ている人がいるときは 💤、受付で待っている人がいるときは 🛎️ を出す
+    sleepBubble.style.display = sleepers > 0 ? 'block' : 'none';
+    if (sleepers > 0) placeLabel(sleepBubble, -1.2, FLOOR + 2.8 + Math.sin(time * 3) * 0.1, 7.2);
+    const head = payQueue[0];
+    const waiting = head && !head.path.length && !deskAttended && !receptionist && flat(head.ch.root.position, PAY_SPOT) < 0.3;
+    waitBubble.style.display = waiting ? 'block' : 'none';
+    if (waiting) placeLabel(waitBubble, PAY_SPOT.x, FLOOR + 2.5 + Math.abs(Math.sin(time * 5)) * 0.2, PAY_SPOT.z);
   }
 
   // ================================================================
@@ -1604,6 +1721,7 @@
     if (helper) setAxeLook(helper.ch, level);
   }
   function openTent() {
+    tentOpen = true;
     tent.visible = true;
     tentBox.off = false;
     guestInterval = GUEST_INTERVAL_TENT;
@@ -1653,7 +1771,10 @@
   const shops = [
     makeShop(CAMP_UPGRADES, { x: 3.6, z: 4.6 }),   // キャンプを充実させる
     makeShop(AXE_UPGRADES, { x: 5.6, z: -5.3 }),   // 斧を強くする(奥の出入口のそば)
-    makeShop([{ icon: '🏕️', label: 'キャンプ拡張', cost: EXPAND_COST, message: 'キャンプが広くなった! 焚き火も増えたよ', apply: expandCamp }], EXPAND_ZONE),
+    makeShop([
+      { icon: '🏕️', label: 'キャンプ拡張', cost: EXPAND_COST, message: 'キャンプが広くなった! 焚き火も増えたよ', apply: expandCamp },
+      { icon: '🔥', label: '火の番(2)', cost: 40, message: '2つ目の焚き火にも火の番が来た!', apply: () => hireFireKeeper(fires[1]) },
+    ], EXPAND_ZONE),
   ];
   const shopItem = (shop) => shop.list[shop.index];
   function payShop(shop) {
@@ -1788,12 +1909,16 @@
     dropTimer -= dt;
     for (const fire of fires) {
       const inDrop = inZone(fire.dropZone, p);
+      fire.tendedByPlayer = inDrop; // 枠に立っているあいだは、薪置き場から火にくべる
       setZoneActive(fire.dropZone, inDrop, time);
       if (inDrop && dropTimer <= 0 && carrier.stack.length > 0) {
         dropTimer = DROP_INTERVAL;
         dropLog(carrier, fire);
       }
     }
+    // 🛎️ の枠に立つと、受付でお金を受け取れる
+    deskAttended = inZone(deskZone, p);
+    setZoneActive(deskZone, deskAttended, time);
     // 💰 の枠でお金を拾う
     const inCash = inZone(cashZone, p);
     collectTimer -= dt;
@@ -1911,6 +2036,70 @@
   }
   requestAnimationFrame(frame);
 
+  // ================================================================
+  //  進み具合のセーブ(iPhone の中に保存する。サーバーには送らない)
+  // ================================================================
+  let saveDisabled = false;
+  function addLogInstant(carrier) {
+    const log = makeLog();
+    log.rotation.set(0, 0, Math.PI / 2);
+    slotLocal(carrier.stack.length, log.position);
+    carrier.stackRoot.add(log);
+    carrier.stack.push(log);
+  }
+  function saveGame() {
+    if (saveDisabled) return;
+    const p = player.ch.root.position;
+    const data = {
+      version: 1, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
+      shops: shops.map(s => [s.index, s.paid]), axe: axeLevel,
+      heats: fires.map(f => Math.round(f.heat)), wood: fires.map(f => f.wood.stock + f.wood.pending),
+      carry: player.carrier.stack.length + player.carrier.pending, tutorial, x: p.x, z: p.z,
+    };
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない設定のときは何もしない */ }
+  }
+  function loadGame() {
+    let data = null;
+    try { data = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { data = null; }
+    if (!data || data.version !== 1) return false;
+    // 解放済みのものを、音やお知らせなしで順に元に戻す
+    shops.forEach((shop, i) => {
+      const [index, paid] = data.shops[i] || [0, 0];
+      for (let j = 0; j < index && j < shop.list.length; j++) shop.list[j].apply();
+      shop.index = Math.min(index, shop.list.length);
+      shop.paid = shopItem(shop) ? Math.min(paid, shopItem(shop).cost - 1) : 0;
+      if (shopItem(shop)) shop.zone.redraw(shopItem(shop), shop.paid);
+      else shop.zone.mesh.visible = false;
+    });
+    setAxeLevel(data.axe || axeLevel);
+    money = data.money || 0;
+    pileCount = data.pile || 0;
+    drawCoinPile();
+    fires.forEach((f, i) => {
+      if (data.heats && data.heats[i] != null) f.heat = data.heats[i];
+      if (data.wood && data.wood[i] != null) { f.wood.stock = data.wood[i]; drawWoodPile(f.wood); }
+    });
+    for (let i = 0; i < Math.min(data.carry || 0, player.carrier.max); i++) addLogInstant(player.carrier);
+    if (typeof data.x === 'number' && typeof data.z === 'number') {
+      player.ch.root.position.set(data.x, groundY(data.x, data.z), data.z);
+      camTarget.copy(player.ch.root.position);
+    }
+    tutorial = data.tutorial || 0;
+    if (tutorial < HINTS.length) hint.textContent = HINTS[tutorial];
+    else hint.style.opacity = '0';
+    return true;
+  }
+  safe('load', () => { if (loadGame()) toast('つづきから'); });
+  setInterval(() => safe('save', saveGame), 5000);
+  window.addEventListener('pagehide', () => safe('save', saveGame));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) safe('save', saveGame); });
+  $('reset').addEventListener('click', () => {
+    if (!confirm('最初からやり直しますか?(今の進み具合は消えます)')) return;
+    saveDisabled = true;
+    try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 何もしない */ }
+    location.reload();
+  });
+
   // 3秒ごとに平均の速さを見て、遅い(1秒に40コマ未満)ときは画面の細かさを一段下げる
   let qualityFrames = 0, qualityStart = performance.now();
   let pixelRatio = renderer.getPixelRatio();
@@ -1946,13 +2135,15 @@
         carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pileCount,
         woodPiles: fires.map(f => f.wood.stock),
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
-        guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(), shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
+        guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(),
+        queue: payQueue.length, sleepers, keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
         treeSpots: trees.filter(t => t.hp > 0).map(t => [t.x, t.z]), helper: !!helper, hx: helper && helper.ch.root.position.x, hz: helper && helper.ch.root.position.z,
         helperState: helper && helper.state, slots: slots.length, tent: tent.visible,
       };
     },
     addMoney(n) { money += n; },
+    setHeat(v) { for (const f of fires) f.heat = v; },
   };
 </script>
 
