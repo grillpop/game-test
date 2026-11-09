@@ -155,6 +155,7 @@
   <div id="hud">
     <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div></div>
     <div class="pill">🪵 <span id="carry">0/12</span></div>
+    <div class="pill">🍖 <span id="meat">0/6</span></div>
     <div class="pill">💰 <span id="money">0</span></div>
   </div>
   <div id="toast"></div>
@@ -236,6 +237,7 @@
   const BOAR_MEAT = 2;           // 1頭からとれる肉の数
   const BOAR_RESPAWN = 6;        // 倒したイノシシがまた現れるまでの時間(秒)
   const COOK_TIME = 3;           // 肉が焼けるまでの時間(秒)
+  const MEAT_CARRY = 6;          // 両手で抱えて運べる肉の数(薪とは別)
   const MEAT_PRICE = 6;          // 焼いた肉をお客さんに渡したときにもらえるお金
   const MEAT_WANT_RATE = 0.5;    // 肉をほしがるお客さんの割合
   const HUNT_UPGRADES = [
@@ -262,7 +264,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.09-5';
+  const GAME_VERSION = '2026.11.09-6';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -935,6 +937,13 @@
     ch.body.rotation.z = ch.shiver * Math.sin(time * 45) * 0.06;
     ch.head.rotation.z = Math.sin(ch.walk) * 0.06 * amount;
 
+    // 肉を抱えているときは、両腕を前に出す(斧を振るときと、物を投げるときは除く)
+    if (ch.holding && !ch.swing && !(ch.chop > 0)) {
+      ch.rightArm.rotation.x = -1.15;
+      ch.leftArm.rotation.x = -1.15;
+      ch.rightArm.rotation.z = 0.25;
+      ch.leftArm.rotation.z = -0.25;
+    }
     // 斧を振る: 両手で頭の上まで振りかぶって(前半)、一気に振り下ろし(70%の時点で木に当たる)、戻す
     if (ch.swing && ch.tool === 'saw') {
       const sw = ch.swing;
@@ -987,9 +996,11 @@
   }
 
   // 背中に薪を積むしくみ(主人公と仲間で共通)
-  function makeCarrier(ch, max) {
+  function makeCarrier(ch, max, front = false) {
     const stackRoot = new THREE.Group();
-    stackRoot.position.set(0, 0.6, -0.62);
+    // 背中に積む(薪)か、胸の前で抱える(肉)
+    if (front) stackRoot.position.set(0, 0.72, 0.55);
+    else stackRoot.position.set(0, 0.6, -0.62);
     ch.body.add(stackRoot);
     return { ch, stackRoot, stack: [], pending: 0, max, lean: 0 };
   }
@@ -999,7 +1010,8 @@
 
   // ---- 主人公 ----
   const player = { ch: makeCharacter({ coat: '#3f7fd6', coatDark: '#2f66b3', hat: '#ef6c3a', pack: true, axe: true }) };
-  player.carrier = makeCarrier(player.ch, CARRY_START);
+  player.carrier = makeCarrier(player.ch, CARRY_START);          // 背中のリュック(薪だけ)
+  player.meatCarrier = makeCarrier(player.ch, MEAT_CARRY, true); // 両手で抱える(肉だけ)
   player.ch.root.position.set(1.0, FLOOR, 5.5);
   player.ch.angle = Math.PI / 4;
   scene.add(player.ch.root);
@@ -2140,7 +2152,7 @@
       if (carrierFull(carrier)) break;
       addItem(carrier, V(p.x + (Math.random() - 0.5) * 0.5, 0.8 + i * 0.3, p.z), 'raw', () => {
         blip(520, 0.05);
-        if (carrier === player.carrier) advanceHint(6);
+        if (carrier === player.meatCarrier) advanceHint(6);
       });
     }
   }
@@ -2148,7 +2160,7 @@
   function updatePlayerHunting(dt) {
     const ch = player.ch, p = ch.root.position;
     shootTimer -= dt;
-    if (insidePlaza(p.x, p.z) || carrierFull(player.carrier)) return;
+    if (insidePlaza(p.x, p.z) || carrierFull(player.meatCarrier)) return;
     const w = weapon();
     const b = nearestBoar(p, w.range);
     if (!b) return;
@@ -2156,7 +2168,7 @@
     if (shootTimer <= 0) {
       shootTimer = w.cool;
       ch.chop = 0.6;
-      shoot(V(p.x, p.y + 1.1, p.z), b, w, player.carrier);
+      shoot(V(p.x, p.y + 1.1, p.z), b, w, player.meatCarrier);
     }
   }
 
@@ -2216,7 +2228,7 @@
       carrier.stackRoot.add(item);
       carrier.stack.push(item);
       blip(640, 0.05);
-      if (carrier === player.carrier) advanceHint(7);
+      if (carrier === player.meatCarrier) advanceHint(7);
     }, 1.0, 0.25);
     return true;
   }
@@ -2266,7 +2278,7 @@
   }
   let serveTimer = 0, grillTimer = 0;
   function updatePlayerMeat(dt, time) {
-    const p = player.ch.root.position, carrier = player.carrier;
+    const p = player.ch.root.position, carrier = player.meatCarrier;
     // 🍖 の枠: 焼けた肉を受け取り、生肉をのせる
     const inGrill = inZone(grillZone, p);
     setZoneActive(grillZone, inGrill, time);
@@ -2550,8 +2562,10 @@
     setZoneActive(cashZone, inCash, time);
     updateBranches(dt, time, carrier);
 
+    ch.holding = player.meatCarrier.stack.length > 0;
     animateCharacter(ch, dt, time);
     swayStack(carrier, time);
+    swayStack(player.meatCarrier, time);
   }
 
   // ================================================================
@@ -2564,6 +2578,7 @@
     const near = fires.reduce((a, b) => (flat(pp, a) <= flat(pp, b) ? a : b));
     fireFill.style.width = near.heat + '%';
     carryLabel.textContent = c.stack.length + '/' + c.max;
+    $('meat').textContent = player.meatCarrier.stack.length + '/' + player.meatCarrier.max;
     moneyLabel.textContent = money;
     if (c.stack.length >= c.max) {
       c.stackRoot.localToWorld(slotLocal(c.stack.length + 1, tmpA));
@@ -2748,7 +2763,7 @@
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(),
         queue: payQueue.length, sleepers, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
-        meat: { raw: countKind(player.carrier, 'raw'), cooked: countKind(player.carrier, 'cooked') },
+        meat: { raw: countKind(player.meatCarrier, 'raw'), cooked: countKind(player.meatCarrier, 'cooked') },
         grill: grillSlots.map(s => s.item ? s.item.userData.kind[0] : '-').join(''), wanting: wantingGuests().length,
         hunterState: hunter && hunter.state, waiterState: waiter && waiter.state, boarSpots: boars.filter(b => b.alive).map(b => [b.root.position.x, b.root.position.z]), keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
