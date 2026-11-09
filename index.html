@@ -111,6 +111,18 @@
     display: none;
     pointer-events: none;
   }
+  .pile-label {
+    position: fixed;
+    transform: translate(-50%, -100%);
+    padding: 2px 10px;
+    border-radius: 10px;
+    background: rgba(40, 30, 25, .6);
+    color: #ffd76a;
+    font-size: 16px;
+    font-weight: 900;
+    pointer-events: none;
+    display: none;
+  }
   #max {
     position: fixed;
     transform: translate(-50%, -100%);
@@ -156,8 +168,14 @@
 
   const CARRY_START = 12;        // 最初に運べる薪の本数
   const CARRY_UPGRADED = 24;     // リュック拡張後に運べる本数
-  const AXE_INTERVALS = [0.17, 0.12, 0.085, 0.06]; // 斧のレベルごとの、振る間隔(秒)。1回で薪1本
-  const TREE_LOGS = 6;           // 木1本からとれる薪の数
+  const AXE_INTERVALS = [0.34, 0.28, 0.22, 0.17]; // 斧のレベルごとの、1回振る時間(秒)
+  const AXE_LOGS = [2, 2, 3, 3];                   // 斧のレベルごとの、1回でとれる薪の数
+  const HELPER_AXE_LOGS = [1, 1, 2, 2];            // 仲間が1回でとれる薪の数
+  const TREE_LOGS = 8;           // 木1本からとれる薪の数
+  const WOOD_PILE_MAX = 30;      // 焚き火の横の薪置き場に、見た目として積む本数の上限
+  const FEED_INTERVAL = 0.3;     // 薪置き場から焚き火へ、1本くべる間隔(秒)
+  const COIN_COLUMNS = 4;        // お金置き場の硬貨の柱の数
+  const COIN_PILE_MAX = 160;     // お金置き場に、見た目として積む枚数の上限(柱1本あたり40枚)
   const TREE_REGROW = 10;        // 切った木が生え直すまでの時間(秒)
   const BRANCH_COUNT = 14;       // 柵の外に落ちている枝の数
   const BRANCH_RESPAWN = 3;      // 拾った枝が、別の場所にまた落ちるまでの時間(秒)
@@ -177,7 +195,7 @@
   const GUEST_SPEED = 3;         // 人の歩く速さ
   const HELPER_SPEED = 4.2;      // 仲間の歩く速さ
   const HELPER_CARRY = 5;        // 仲間が一度に運ぶ本数
-  const HELPER_CHOP_INTERVAL = 0.32; // 仲間が斧を振る間隔(秒)
+  const HELPER_CHOP_INTERVAL = 0.45; // 仲間が斧を1回振る時間(秒)
 
   // お金を払って解放するもの(枠ごとに、上から順に出てきます)
   const CAMP_UPGRADES = [
@@ -202,7 +220,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.08-3';
+  const GAME_VERSION = '2026.11.09-1';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -479,6 +497,7 @@
 
   // 焚き火(炎の大きさは火の強さで変わる)
   const fires = [];
+  const PILE_LOG_GEO = new THREE.CylinderGeometry(0.15, 0.15, 0.85, 9);
   function addCampfire(x, z, heat, light = null) {
     const flames = [];
     let fireLight;
@@ -507,8 +526,30 @@
     scene.add(g);
     circles.push({ x, z, r: 0.95 });
     const fire = { x, z, heat, pop: 0, flames, light: fireLight, warming: 0, dropZone: null };
+    // 焚き火の手前の薪置き場。運んだ薪はいったんここに積まれ、焚き火が少しずつ使う
+    const pileMesh = new THREE.InstancedMesh(PILE_LOG_GEO, [logSide, logTop, logTop], WOOD_PILE_MAX);
+    pileMesh.count = 0;
+    pileMesh.castShadow = pileMesh.receiveShadow = true;
+    pileMesh.frustumCulled = false;
+    scene.add(pileMesh);
+    fire.wood = { x, z: z + 1.35, stock: 0, pending: 0, mesh: pileMesh, feedTimer: 0 };
+    boxes.push({ x, z: z + 1.35, hx: 0.5, hz: 0.5 });
     fires.push(fire);
     return fire;
+  }
+  // 薪置き場の i 本目の位置(3本ずつ横に並べて、上へ積む。段ごとに少しずらす)
+  function woodSlot(wood, i, out) {
+    const layer = Math.floor(i / 3), k = i % 3;
+    return out.set(wood.x + (layer % 2 ? 0.06 : -0.06), FLOOR + 0.15 + layer * 0.27, wood.z + (k - 1) * 0.3);
+  }
+  function drawWoodPile(wood) {
+    const n = Math.min(wood.stock, WOOD_PILE_MAX);
+    for (let i = 0; i < n; i++) {
+      _q.setFromEuler(_e.set(0, 0, Math.PI / 2));
+      wood.mesh.setMatrixAt(i, _m4.compose(woodSlot(wood, i, _pos), _q, _scl.set(1, 1, 1)));
+    }
+    wood.mesh.count = n;
+    wood.mesh.instanceMatrix.needsUpdate = true;
   }
   const FIRE = addCampfire(-2.2, -2.5, HEAT_START);
   // 拡張でできる2つ目の焚き火の光。最初から(明るさ0で)置いておく
@@ -654,7 +695,7 @@
     zone.mesh.scale.set(s, s, 1);
   }
 
-  FIRE.dropZone = addZone(-2.2, -0.35, 2.4, iconZone('🔥'));
+  FIRE.dropZone = addZone(FIRE.x, FIRE.z + 2.6, 2.4, iconZone('🔥'));
   const CASH = { x: -5.2, z: 7.4 }; // 受付の小屋の裏手。お金がここに溜まる
   const cashZone = addZone(CASH.x, CASH.z, 2.4, iconZone('💰'));
   function drawShopZone(g, n, u, paid) {
@@ -697,8 +738,8 @@
     boot: new THREE.SphereGeometry(0.15, 10, 8),
     arm: new THREE.CapsuleGeometry(0.1, 0.22, 4, 10),
     mitten: new THREE.SphereGeometry(0.125, 10, 8),
-    axeHandle: new THREE.CylinderGeometry(0.035, 0.035, 0.55, 6),
-    axeHead: new THREE.BoxGeometry(0.05, 0.22, 0.17),
+    axeHandle: new THREE.CylinderGeometry(0.04, 0.045, 0.7, 6),
+    axeHead: new THREE.BoxGeometry(0.07, 0.28, 0.26),
   };
   const SKIN = '#ffdcbc';
   const FROZEN = '#9fcfff';
@@ -769,19 +810,22 @@
     }
     addLimb(root, -0.15, 0.36, true, -1);
     addLimb(root, 0.15, 0.36, true, 1);
-    addLimb(body, -0.4, 0.82, false, -1);
+    const leftArm = addLimb(body, -0.4, 0.82, false, -1);
     const rightArm = addLimb(body, 0.4, 0.82, false, 1);
     let axeHead = null;
     if (axe) {
       // 斧は前に向けて持つ。振るときは腕ごと振り下ろす
       const a = new THREE.Group();
       a.position.set(0, -0.3, 0);
-      mesh(GEO.axeHandle, common.axeWood, 0, 0, 0.2, a).rotation.x = Math.PI / 2;
-      axeHead = mesh(GEO.axeHead, common.axeMetal, 0, 0.08, 0.42, a);
+      // 斧は腕の先に続くように、少し前に傾けて持つ
+      a.rotation.x = -0.7;
+      a.scale.setScalar(1.35); // 遠くからでも振っているのがわかるように大きめ
+      mesh(GEO.axeHandle, common.axeWood, 0, -0.3, 0, a);
+      axeHead = mesh(GEO.axeHead, common.axeMetal, 0, -0.56, -0.14, a);
       rightArm.add(a);
     }
     return {
-      root, body, head, limbs, rightArm, skin, axeHead,
+      root, body, head, limbs, leftArm, rightArm, skin, axeHead, swing: null,
       vx: 0, vz: 0, angle: 0, walk: 0,
       chop: 0, shiver: 0, hop: 0, face: null, speedRef: SPEED,
     };
@@ -820,6 +864,40 @@
     ch.body.rotation.x = 0.1 * amount;
     ch.body.rotation.z = ch.shiver * Math.sin(time * 45) * 0.06;
     ch.head.rotation.z = Math.sin(ch.walk) * 0.06 * amount;
+
+    // 斧を振る: 両手で頭の上まで振りかぶって(前半)、一気に振り下ろし(70%の時点で木に当たる)、戻す
+    if (ch.swing) {
+      const sw = ch.swing;
+      sw.t += dt;
+      const k = Math.min(1, sw.t / sw.dur);
+      let arm, lean;
+      if (k < 0.5) {
+        const e = k / 0.5;
+        arm = -3.0 * (1 - (1 - e) * (1 - e));
+        lean = -0.2 * e;
+      } else if (k < 0.7) {
+        const e = (k - 0.5) / 0.2;
+        arm = -3.0 + 1.9 * e * e;
+        lean = -0.2 + 0.55 * e;
+      } else {
+        const e = (k - 0.7) / 0.3;
+        arm = -1.1 * (1 - e);
+        lean = 0.35 * (1 - e);
+      }
+      ch.rightArm.rotation.x = arm;
+      ch.rightArm.rotation.z = -0.1;
+      ch.leftArm.rotation.x = arm * 0.95;
+      ch.leftArm.rotation.z = 0.35; // 左手も斧の柄にそえる
+      ch.body.rotation.x += lean;
+      if (!sw.hit && k >= 0.7) {
+        sw.hit = true;
+        if (sw.onHit) sw.onHit();
+      }
+      if (k >= 1) ch.swing = null;
+    }
+  }
+  function startSwing(ch, dur, onHit) {
+    ch.swing = { t: 0, dur, hit: false, onHit };
   }
 
   // 背中に薪を積むしくみ(主人公と仲間で共通)
@@ -888,12 +966,21 @@
       if (onLand) onLand();
     });
   }
-  // 背中のいちばん上の薪を、焚き火へ飛ばす
+  // 背中のいちばん上の薪を、焚き火の横の薪置き場へ飛ばす
   function dropLog(carrier, fire) {
     const log = carrier.stack.pop();
     log.getWorldPosition(tmpA);
     carrier.stackRoot.remove(log);
-    fly(log, tmpA, () => tmpB.set(fire.x, FLOOR + 0.5, fire.z), () => feedFire(fire), 1.6);
+    const wood = fire.wood;
+    const index = Math.min(WOOD_PILE_MAX - 1, wood.stock + wood.pending);
+    wood.pending++;
+    fly(log, tmpA, () => woodSlot(wood, index, tmpB), () => {
+      wood.pending--;
+      wood.stock++;
+      drawWoodPile(wood);
+      blip(260 + Math.min(wood.stock, 30) * 12, 0.05, 'triangle', 0.06, 0.8);
+      advanceHint(2);
+    }, 1.3);
   }
   function swayStack(carrier, time) {
     const speed = Math.hypot(carrier.ch.vx, carrier.ch.vz) / carrier.ch.speedRef;
@@ -1000,7 +1087,7 @@
   const HINTS = [
     '画面をなぞって歩こう',
     '落ちている枝を拾ったり、柵の外の森で木を切ろう',
-    '🔥 の枠まで薪を運ぼう',
+    '🔥 の枠に薪を運ぶと、焚き火の横に積まれるよ',
     '温まった人は、入口の受付でお金を払って帰るよ',
     '受付の裏の 💰 の枠でお金を拾おう',
     '光っている枠にお金を払おう',
@@ -1031,12 +1118,23 @@
     fire.pop = Math.min(0.5, fire.pop + 0.25);
     burst(sparks, tmpA.set(fire.x, FLOOR + 0.6, fire.z), 5, 2.5, 4.5);
     blip(300 + fire.heat * 4, 0.09, 'sine', 0.1);
-    advanceHint(2);
   }
   function updateFires(dt, time) {
     for (const fire of fires) updateFire(fire, dt, time);
   }
   function updateFire(fire, dt, time) {
+    // 薪置き場から焚き火へ、1本ずつくべる(火がいっぱいのときは待つ)
+    const wood = fire.wood;
+    wood.feedTimer -= dt;
+    if (wood.feedTimer <= 0 && wood.stock > 0 && fire.heat <= 100 - HEAT_PER_LOG) {
+      wood.feedTimer = FEED_INTERVAL;
+      wood.stock--;
+      woodSlot(wood, Math.min(wood.stock, WOOD_PILE_MAX - 1), tmpA);
+      drawWoodPile(wood);
+      const log = makeLog();
+      log.rotation.z = Math.PI / 2;
+      fly(log, tmpA, () => tmpB.set(fire.x, FLOOR + 0.4, fire.z), () => feedFire(fire), 0.9, 0.3);
+    }
     fire.heat = Math.max(0, fire.heat - (HEAT_DECAY + HEAT_DECAY_PER_GUEST * fire.warming) * dt);
     fire.pop = Math.max(0, fire.pop - dt * 3);
     const power = (0.35 + fire.heat / 100 * 1.05) * (1 + fire.pop);
@@ -1108,15 +1206,22 @@
     }
     return best;
   }
-  function hitTree(tree, carrier, onLand) {
-    tree.hp--;
+  function hitTree(tree, carrier, count, onLand) {
+    if (tree.hp <= 0) return;
+    const space = carrier.max - carrier.stack.length - carrier.pending;
+    const n = Math.max(0, Math.min(count, tree.hp, space));
+    tree.hp -= n;
     tree.shake = 1;
-    burst(chips, tmpA.set(tree.x, 0.8, tree.z), 4, 3, 3.5);
-    addLog(carrier, V(tree.x, 1.4, tree.z), onLand);
-    blip(180 + Math.random() * 40, 0.06, 'square', 0.04, 0.6);
+    burst(chips, tmpA.set(tree.x, 0.8, tree.z), 8, 4, 4);
+    for (let i = 0; i < n; i++) addLog(carrier, V(tree.x + (Math.random() - 0.5) * 0.4, 1.0 + i * 0.3, tree.z + (Math.random() - 0.5) * 0.4), onLand);
+    // コーンという手応えのある音
+    blip(150 + Math.random() * 30, 0.09, 'square', 0.07, 0.45);
+    blip(420, 0.04, 'triangle', 0.04, 0.7);
     if (tree.hp <= 0) {
       tree.regrow = TREE_REGROW;
       tree.stump.visible = true;
+      if (carrier === player.carrier) shakeCamera(0.25);
+      blip(90, 0.25, 'sawtooth', 0.05, 0.5); // 倒れる音
     }
   }
   function updateTrees(dt, time) {
@@ -1199,28 +1304,41 @@
   // ================================================================
   //  お金
   // ================================================================
-  const coinGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.07, 14);
+  const coinGeo = new THREE.CylinderGeometry(0.26, 0.26, 0.1, 16);
   const coinMat = new THREE.MeshStandardMaterial({ color: '#ffc93c', metalness: 0.5, roughness: 0.35 });
   function makeCoin() {
     const m = new THREE.Mesh(coinGeo, coinMat);
     m.castShadow = true;
     return m;
   }
-  const pile = [];        // 💰 の枠に積まれているお金
+  // 💰 の枠に積まれているお金。4本の柱に、上へ上へと積む(数が多いので1つにまとめて描く)
+  let pileCount = 0;
   let pilePending = 0;
   let money = 0;
-  const PILE_COLUMNS = [];
-  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) PILE_COLUMNS.push([CASH.x + i * 0.48, CASH.z + j * 0.48]);
+  const pileTotal = () => pileCount;
+  const coinPile = new THREE.InstancedMesh(coinGeo, coinMat, COIN_PILE_MAX);
+  coinPile.count = 0;
+  coinPile.castShadow = coinPile.receiveShadow = true;
+  coinPile.frustumCulled = false;
+  scene.add(coinPile);
+  const COIN_COLS = [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]].slice(0, COIN_COLUMNS);
   function pileSlot(i, out) {
-    const [x, z] = PILE_COLUMNS[i % 9];
-    return out.set(x, FLOOR + 0.04 + Math.floor(i / 9) * 0.075, z);
+    const [cx, cz] = COIN_COLS[i % COIN_COLUMNS];
+    const jitter = ((i * 7919) % 13) / 13 - 0.5; // 少しだけ不ぞろいに積む
+    return out.set(CASH.x + cx + jitter * 0.05, FLOOR + 0.06 + Math.floor(i / COIN_COLUMNS) * 0.1, CASH.z + cz - jitter * 0.04);
   }
-  const PILE_MAX = 54;   // 見た目として積む枚数の上限。それより多い分は数だけ数える
-  let pileExtra = 0;
-  const pileTotal = () => pile.length + pileExtra;
+  function drawCoinPile() {
+    const n = Math.min(pileCount, COIN_PILE_MAX);
+    for (let i = coinPile.count; i < n; i++) {
+      _q.setFromEuler(_e.set(0, i * 0.7, 0));
+      coinPile.setMatrixAt(i, _m4.compose(pileSlot(i, _pos), _q, _scl.set(1, 1, 1)));
+    }
+    coinPile.count = n;
+    coinPile.instanceMatrix.needsUpdate = true;
+  }
   function payToPile(from) {
     const coin = makeCoin();
-    const index = Math.min(PILE_MAX - 1, pile.length + pilePending);
+    const index = Math.min(COIN_PILE_MAX - 1, pileCount + pilePending);
     pilePending++;
     // まず受付の窓口に投げ入れる
     fly(coin, from, () => WINDOW, () => {
@@ -1228,18 +1346,26 @@
       // 窓口から、小屋の裏のお金置き場へ
       fly(coin, WINDOW, () => pileSlot(index, tmpB), () => {
         pilePending--;
-        if (pile.length >= PILE_MAX) {
-          pileExtra++;
-        } else {
-          coin.rotation.set(0, 0, 0);
-          pileSlot(pile.length, coin.position);
-          scene.add(coin);
-          pile.push(coin);
-        }
+        pileCount++;
+        drawCoinPile();
         blip(1100, 0.04, 'sine', 0.03, 1.2);
         advanceHint(3);
       }, 1.6, 0.35);
     }, 0.7, 0.25);
+  }
+  // お金置き場の上に、今いくらあるかを出す
+  const pileLabel = document.createElement('div');
+  pileLabel.className = 'pile-label';
+  document.body.appendChild(pileLabel);
+  function updatePileLabel() {
+    if (pileCount <= 0) { pileLabel.style.display = 'none'; return; }
+    pileSlot(Math.min(pileCount, COIN_PILE_MAX) + COIN_COLUMNS, tmpA);
+    tmpA.x = CASH.x; tmpA.z = CASH.z; tmpA.y += 0.4;
+    tmpA.project(camera);
+    pileLabel.style.display = 'block';
+    pileLabel.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
+    pileLabel.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
+    pileLabel.textContent = '💰' + pileCount;
   }
 
   // ================================================================
@@ -1413,11 +1539,12 @@
     } else if (h.state === 'chop') {
       ch.vx = ch.vz = 0;
       h.timer -= dt;
-      if (h.timer <= 0) {
-        h.timer = HELPER_CHOP_INTERVAL * AXE_INTERVALS[axeLevel - 1] / AXE_INTERVALS[0];
+      if (h.timer <= 0 && !ch.swing) {
+        const dur = HELPER_CHOP_INTERVAL * AXE_INTERVALS[axeLevel - 1] / AXE_INTERVALS[0];
+        h.timer = dur;
         if (h.tree.hp > 0 && !carrierFull(h.carrier)) {
-          hitTree(h.tree, h.carrier);
-          ch.chop = 1;
+          const tree = h.tree;
+          startSwing(ch, dur, () => hitTree(tree, h.carrier, HELPER_AXE_LOGS[axeLevel - 1]));
         } else if (h.carrier.pending === 0) {
           ch.face = null;
           if (h.carrier.stack.length > 0) {
@@ -1509,7 +1636,7 @@
     buildFence();
     // 広げた場所に2つ目の焚き火と、お客さんの立ち位置を作る
     const fire = addCampfire(10.0, 0.0, 40, spareFireLight);
-    fire.dropZone = addZone(fire.x, fire.z + 2.15, 2.4, iconZone('🔥'));
+    fire.dropZone = addZone(fire.x, fire.z + 2.6, 2.4, iconZone('🔥'));
     const hub = { x: fire.x - 3.2, z: fire.z };
     const back = { x: fire.x, z: fire.z - 2.3 };
     const R2 = 2.2;
@@ -1517,7 +1644,7 @@
     const newSlots = [
       { ...at(180), via: [hub] }, { ...at(145), via: [hub] }, { ...at(-135), via: [hub] },
       { ...at(-90), via: [hub] }, { ...at(-45), via: [hub, back] }, { ...at(0), via: [hub, back] },
-      { ...at(35), via: [hub, { x: fire.x - 1.5, z: fire.z + 1.9 }] },
+      { ...at(35), via: [hub, { x: fire.x - 1.5, z: fire.z + 3.2 }] },
     ];
     slots = slots.concat(newSlots.map(s => ({ ...s, fire, guest: null })));
     burst(sparks, tmpA.set(fire.x, FLOOR + 0.5, fire.z), 20, 6, 6);
@@ -1648,13 +1775,13 @@
     chopTimer -= dt;
     const tree = carrierFull(carrier) ? null : nearestTree(p, PLAYER_R + 0.9);
     ch.face = tree;
-    if (tree && chopTimer <= 0) {
-      chopTimer = AXE_INTERVALS[axeLevel - 1];
-      ch.chop = 1;
-      hitTree(tree, carrier, () => {
+    if (tree && !ch.swing && chopTimer <= 0) {
+      const dur = AXE_INTERVALS[axeLevel - 1];
+      chopTimer = dur;
+      startSwing(ch, dur, () => hitTree(tree, carrier, AXE_LOGS[axeLevel - 1], () => {
         blip(420 + carrier.stack.length * 30);
         advanceHint(1);
-      });
+      }));
     }
 
     // 🔥 の枠で薪を入れる
@@ -1670,18 +1797,12 @@
     // 💰 の枠でお金を拾う
     const inCash = inZone(cashZone, p);
     collectTimer -= dt;
-    if (inCash && collectTimer <= 0 && pileTotal() > 0) {
+    if (inCash && collectTimer <= 0 && pileCount > 0) {
       collectTimer = 0.03;
-      let coin;
-      if (pileExtra > 0) {
-        pileExtra--;
-        coin = makeCoin();
-        pileSlot(Math.max(0, pile.length - 1), tmpA);
-      } else {
-        coin = pile.pop();
-        coin.getWorldPosition(tmpA);
-        scene.remove(coin);
-      }
+      pileCount--;
+      pileSlot(Math.min(pileCount, COIN_PILE_MAX - 1), tmpA);
+      coinPile.count = Math.min(pileCount, COIN_PILE_MAX);
+      const coin = makeCoin();
       fly(coin, tmpA, () => tmpB.set(p.x, p.y + 1.1, p.z), () => {
         money++;
         blip(1000 + (money % 10) * 40, 0.04, 'sine', 0.04, 1.2);
@@ -1738,6 +1859,8 @@
   //  メインループ
   // ================================================================
   const camTarget = player.ch.root.position.clone();
+  let camShake = 0;
+  function shakeCamera(t) { camShake = Math.max(camShake, t); }
   let last = performance.now();
   function frame(now) {
     // 次のコマの予約を先にしておく(途中でエラーが起きても、ゲーム全体が止まらないように)
@@ -1772,11 +1895,17 @@
     camTarget.z += (p.z - camTarget.z) * ck;
     camera.position.copy(camTarget).add(CAM_OFFSET);
     camera.lookAt(camTarget.x, 0.8, camTarget.z);
+    if (camShake > 0) {
+      camShake = Math.max(0, camShake - dt);
+      const a = camShake * 0.6;
+      camera.position.x += (Math.random() - 0.5) * a;
+      camera.position.y += (Math.random() - 0.5) * a;
+    }
     // 影はカメラのまわりだけ描けば十分なので、太陽ごとついてくる
     sun.position.copy(camTarget).add(SUN_OFFSET);
     sun.target.position.copy(camTarget);
 
-    safe('hud', () => updateHud(dt));
+    safe('hud', () => { updateHud(dt); updatePileLabel(); });
     safe('render', () => renderer.render(scene, camera));
     adaptQuality(now);
   }
@@ -1809,12 +1938,13 @@
   });
 
   // 自動テスト用(画面には影響しません)
-  window.__scene = scene; window.__renderer = renderer; // 自動テストで重さを測る用
+  window.__scene = scene; window.__renderer = renderer; window.__player = player; // 自動テストで重さを測る用
   window.__game = {
     get state() {
       return {
         x: player.ch.root.position.x, z: player.ch.root.position.z,
-        carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pileTotal(), pileMeshes: pile.length,
+        carry: player.carrier.stack.length, max: player.carrier.max, money, pile: pileCount,
+        woodPiles: fires.map(f => f.wood.stock),
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(), shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
