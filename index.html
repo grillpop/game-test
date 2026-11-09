@@ -181,9 +181,11 @@
 
   const CARRY_START = 12;        // 最初に運べる薪の本数
   const CARRY_UPGRADED = 24;     // リュック拡張後に運べる本数
-  const AXE_INTERVALS = [0.34, 0.28, 0.22, 0.17]; // 斧のレベルごとの、1回振る時間(秒)
-  const AXE_LOGS = [2, 2, 3, 3];                   // 斧のレベルごとの、1回でとれる薪の数
-  const HELPER_AXE_LOGS = [1, 1, 2, 2];            // 仲間が1回でとれる薪の数
+  // 道具のレベル: 1〜4 は斧、5 はチェーンソー
+  const AXE_INTERVALS = [0.34, 0.28, 0.22, 0.17, 0.1]; // レベルごとの、1回切る時間(秒)
+  const AXE_LOGS = [2, 2, 3, 3, 2];                    // レベルごとの、1回でとれる薪の数
+  const HELPER_AXE_LOGS = [1, 1, 2, 2, 2];             // 仲間が1回でとれる薪の数
+  const CHAINSAW_LEVEL = 5;
   const TREE_LOGS = 8;           // 木1本からとれる薪の数
   const WOOD_PILE_MAX = 30;      // 焚き火の横の薪置き場に、見た目として積む本数の上限
   const FEED_INTERVAL = 0.3;     // 薪置き場から焚き火へ、1本くべる間隔(秒)
@@ -225,7 +227,8 @@
   const AXE_UPGRADES = [
     { icon: '🪓', label: '斧 Lv2', cost: 20, message: '斧が軽くなった! 速く切れる', apply: () => setAxeLevel(2) },
     { icon: '🪓', label: '斧 Lv3', cost: 50, message: '金の斧! もっと速く切れる', apply: () => setAxeLevel(3) },
-    { icon: '🪓', label: '斧 Lv4', cost: 100, message: '伝説の斧! 最速で切れる', apply: () => setAxeLevel(4) },
+    { icon: '🪓', label: '斧 Lv4', cost: 100, message: '伝説の斧! もっともっと速く切れる', apply: () => setAxeLevel(4) },
+    { icon: '🪚', label: 'チェーンソー', cost: 180, message: 'チェーンソーを手に入れた! ギュイーン!', apply: () => setAxeLevel(CHAINSAW_LEVEL) },
   ];
 
   const CAM_YAW = Math.PI / 4;   // カメラを45度回して、ステージを斜めに見せる
@@ -239,7 +242,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.09-3';
+  const GAME_VERSION = '2026.11.09-4';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -761,6 +764,10 @@
     arm: new THREE.CapsuleGeometry(0.1, 0.22, 4, 10),
     mitten: new THREE.SphereGeometry(0.125, 10, 8),
     axeHandle: new THREE.CylinderGeometry(0.04, 0.045, 0.7, 6),
+    sawBody: new THREE.BoxGeometry(0.26, 0.32, 0.3),
+    sawHandle: new THREE.BoxGeometry(0.06, 0.06, 0.28),
+    sawBar: new THREE.BoxGeometry(0.05, 0.75, 0.14),
+    sawTeeth: new THREE.BoxGeometry(0.06, 0.72, 0.03),
     axeHead: new THREE.BoxGeometry(0.07, 0.28, 0.26),
   };
   const SKIN = '#ffdcbc';
@@ -775,6 +782,8 @@
     packTop: mat('#6e4527'),
     axeWood: mat('#8a5a34'),
     axeMetal: mat('#c7ced6', { metalness: 0.6, roughness: 0.35 }),
+    sawOrange: mat('#ff8a1f', { roughness: 0.5 }),
+    sawDark: mat('#2d2f36', { roughness: 0.6 }),
   };
 
   function makeCharacter({ coat, coatDark, hat, pack = false, axe = false, ownSkin = false }) {
@@ -834,7 +843,7 @@
     addLimb(root, 0.15, 0.36, true, 1);
     const leftArm = addLimb(body, -0.4, 0.82, false, -1);
     const rightArm = addLimb(body, 0.4, 0.82, false, 1);
-    let axeHead = null;
+    let axeHead = null, axeGroup = null, sawGroup = null;
     if (axe) {
       // 斧は前に向けて持つ。振るときは腕ごと振り下ろす
       const a = new THREE.Group();
@@ -845,9 +854,23 @@
       mesh(GEO.axeHandle, common.axeWood, 0, -0.3, 0, a);
       axeHead = mesh(GEO.axeHead, common.axeMetal, 0, -0.56, -0.14, a);
       rightArm.add(a);
+      axeGroup = a;
+      // チェーンソー(はじめは隠しておく)。腕の先から前へ刃がのびる
+      const saw = new THREE.Group();
+      saw.position.set(0, -0.3, 0);
+      saw.rotation.x = -0.37; // 構えたとき(腕 -1.2)に刃がちょうど前を向く角度
+      saw.scale.setScalar(1.45);
+      saw.visible = false;
+      mesh(GEO.sawBody, common.sawOrange, 0, -0.1, 0, saw);
+      mesh(GEO.sawHandle, common.sawDark, 0, -0.02, -0.18, saw);
+      mesh(GEO.sawBar, common.axeMetal, 0, -0.62, 0.02, saw);
+      const teeth = mesh(GEO.sawTeeth, common.sawDark, 0, -0.62, 0.11, saw);
+      teeth.castShadow = false;
+      rightArm.add(saw);
+      sawGroup = saw;
     }
     return {
-      root, body, head, limbs, leftArm, rightArm, skin, axeHead, swing: null,
+      root, body, head, limbs, leftArm, rightArm, skin, axeHead, axeGroup, sawGroup, tool: 'axe', swing: null,
       vx: 0, vz: 0, angle: 0, walk: 0,
       chop: 0, shiver: 0, hop: 0, face: null, speedRef: SPEED,
     };
@@ -888,7 +911,23 @@
     ch.head.rotation.z = Math.sin(ch.walk) * 0.06 * amount;
 
     // 斧を振る: 両手で頭の上まで振りかぶって(前半)、一気に振り下ろし(70%の時点で木に当たる)、戻す
-    if (ch.swing) {
+    if (ch.swing && ch.tool === 'saw') {
+      const sw = ch.swing;
+      sw.t += dt;
+      const k = Math.min(1, sw.t / sw.dur);
+      const buzz = Math.sin(time * 90) * 0.06;
+      ch.rightArm.rotation.x = -1.2 + buzz;
+      ch.rightArm.rotation.z = -0.05;
+      ch.leftArm.rotation.x = -1.1 + buzz;
+      ch.leftArm.rotation.z = 0.45;
+      ch.body.rotation.x += 0.15;
+      ch.body.position.x = buzz * 0.3;
+      if (!sw.hit && k >= 0.5) {
+        sw.hit = true;
+        if (sw.onHit) sw.onHit();
+      }
+      if (k >= 1) { ch.swing = null; ch.body.position.x = 0; }
+    } else if (ch.swing) {
       const sw = ch.swing;
       sw.t += dt;
       const k = Math.min(1, sw.t / sw.dur);
@@ -1252,9 +1291,15 @@
     tree.shake = 1;
     burst(chips, tmpA.set(tree.x, 0.8, tree.z), 8, 4, 4);
     for (let i = 0; i < n; i++) addLog(carrier, V(tree.x + (Math.random() - 0.5) * 0.4, 1.0 + i * 0.3, tree.z + (Math.random() - 0.5) * 0.4), onLand);
-    // コーンという手応えのある音
-    blip(150 + Math.random() * 30, 0.09, 'square', 0.07, 0.45);
-    blip(420, 0.04, 'triangle', 0.04, 0.7);
+    if (carrier.ch.tool === 'saw') {
+      // ギュイーンという音
+      blip(95 + Math.random() * 20, 0.11, 'sawtooth', 0.05, 1.35);
+      burst(chips, tmpA.set(tree.x, 0.6, tree.z), 6, 5, 2.5);
+    } else {
+      // コーンという手応えのある音
+      blip(150 + Math.random() * 30, 0.09, 'square', 0.07, 0.45);
+      blip(420, 0.04, 'triangle', 0.04, 0.7);
+    }
     if (tree.hp <= 0) {
       tree.regrow = TREE_REGROW;
       tree.stump.visible = true;
@@ -1731,8 +1776,12 @@
   const axeLegend = mat('#ff9a3a', { metalness: 0.6, roughness: 0.2, emissive: '#ff5a1f', emissiveIntensity: 0.6 });
   function setAxeLook(ch, level) {
     if (!ch.axeHead) return;
+    const saw = level >= CHAINSAW_LEVEL;
+    ch.tool = saw ? 'saw' : 'axe';
+    ch.axeGroup.visible = !saw;
+    ch.sawGroup.visible = saw;
     ch.axeHead.material = level >= 4 ? axeLegend : level >= 3 ? axeGold : axeMetal;
-    ch.axeHead.scale.setScalar(1 + (level - 1) * 0.18);
+    ch.axeHead.scale.setScalar(1 + (Math.min(level, 4) - 1) * 0.18);
   }
   function setAxeLevel(level) {
     axeLevel = level;
