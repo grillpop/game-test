@@ -140,6 +140,7 @@
     pointer-events: none;
     display: none;
   }
+  .pile-label.stall-name { display: block; background: rgba(40, 70, 50, .75); color: #fff; font-size: 15px; }
   #max {
     position: fixed;
     transform: translate(-50%, -100%);
@@ -216,7 +217,7 @@
   const HEAT_DECAY_PER_GUEST = 0.12; // 温まっている人1人あたり、さらに弱まる速さ
 
   const WARM_RATE = 0.22;        // 人が温まる速さ
-  const COINS_PER_GUEST = 5;     // 温まった人が置いていくお金
+  const COINS_PER_GUEST = 3;     // 温まった人が帰りに払うお金(入場料)
   const GUEST_INTERVAL = 3.6;    // 人がやってくる間隔(秒)。テントや焚き火が増えると短くなる
   const FIRE_SEATS = 10;         // 焚き火1つあたりの席の数(焚き火のまわりに輪に並べる)
   const ENTRY_QUEUE_LEN = 6;     // 入口の外で、席が空くのを待てる人数
@@ -237,13 +238,10 @@
     { icon: '⛺', label: 'テント2', cost: 100, message: 'テントが2つになった! 泊まれる人が増えたよ', apply: () => openTent(1) },
   ];
   // キャンプ拡張の枠: 拡張するたびに、そのエリアの火の番・木こり・テントが買えるようになる
-  const EXPAND_UPGRADES = EXPANSIONS.flatMap((e, i) => [
-    { icon: '🏕️', label: `拡張 ${i + 1}`, cost: e.cost, message: 'キャンプが広くなった! 焚き火も増えたよ', apply: () => expandCamp(i) },
-    { icon: '🔥', label: `火の番(${i + 2})`, cost: e.keeper, message: '新しい焚き火にも火の番が来た!', apply: () => hireFireKeeper(fires[i + 1]) },
-    { icon: '👷', label: `木こり(${i + 2})`, cost: e.lumber, message: '木こりの仲間が増えた!', apply: () => spawnHelper() },
-    { icon: '⛺', label: `テント(${i + 3})`, cost: e.tent, message: '新しいエリアにテントができた!', apply: () => openTent(i + 2) },
-  ]);
-  const TENT_FEE = 8;            // テントに泊まったお客さんが上乗せして払うお金
+  const EXPAND_UPGRADES = EXPANSIONS.map((e, i) => (
+    { icon: '🏕️', label: `拡張 ${i + 1}`, cost: e.cost, message: 'キャンプが広くなった! 新しいエリアに枠が出たよ', apply: () => expandCamp(i) }
+  ));
+  const TENT_FEE = 5;            // テントに泊まったお客さんが上乗せして払うお金
   const TENT_BEDS = 2;           // テントに同時に泊まれる人数
   const SLEEP_TIME = 6;          // テントで休む時間(秒)
   const SAVE_KEY = 'snow-camp-save-v1'; // 進み具合を保存する名前
@@ -259,8 +257,9 @@
   const BOAR_MEAT = 2;           // 1頭からとれる肉の数
   const BOAR_RESPAWN = 6;        // 倒したイノシシがまた現れるまでの時間(秒)
   const COOK_TIME = 3;           // 肉が焼けるまでの時間(秒)
-  const MEAT_CARRY = 6;          // 両手で抱えて運べる肉の数(薪とは別)
-  const MEAT_PRICE = 6;          // 焼いた肉をお客さんに渡したときにもらえるお金
+  const MEAT_CARRY = 10;         // 背中に積める肉の数(薪とは別)
+  const COUNTER_MAX = 12;        // 🍽️ 配膳台に置いておける焼いた肉の数
+  const MEAT_PRICE = 4;          // 焼いた肉をお客さんに渡したときにもらえるお金
   const MEAT_WANT_RATE = 0.5;    // 肉をほしがるお客さんの割合
   // 狩りの仲間(焼き台のそばの枠)
   const HUNT_UPGRADES = [
@@ -291,7 +290,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.10-3';
+  const GAME_VERSION = '2026.11.11-1';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -421,7 +420,7 @@
     const x = (rand() * 2 - 1) * 30, z = (rand() * 2 - 1) * 30;
     if (Math.abs(x) < PX + 2 && Math.abs(z) < PZ + 2) continue;
     if (x < -PX && z > -3 && z < 6) continue; // 入口の外の道と受付のまわりはあけておく
-    if (x > -3.5 && x < 4.5 && z > -16.5 && z < -8.5) continue; // 道具屋の前(枠が雪にかくれないように)
+    if (x > -3.5 && x < 4.5 && z > -18 && z < -8.5) continue; // 道具屋の前(枠が雪にかくれないように)
     if (x > -11.5 && x < -4.5 && z > 8.5 && z < 15.5) continue; // 武器屋の前
     const s = 0.6 + rand() * 1.2;
     const m = mesh(new THREE.SphereGeometry(1, 12, 8), mat('#f7fbff', { roughness: 1 }), x, 0, z);
@@ -720,10 +719,23 @@
   }
   buildStall(HUT.x, HUT.z, '受付', '#a6452f');
   // 道具屋(奥の出入口の外、森へ行く途中)と、武器屋(手前の出入口の外、狩り場の入口)
-  const TOOL_SHOP = { x: 0.4, z: -13.0 };
+  const TOOL_SHOP = { x: 0.4, z: -14.4 }; // 柵から少し離して、枠が柵にかくれないようにする
   const WEAPON_SHOP = { x: -8.0, z: 10.6 };
   buildStall(TOOL_SHOP.x, TOOL_SHOP.z, '道具屋', '#3f7f5a');
   buildStall(WEAPON_SHOP.x, WEAPON_SHOP.z, '武器屋', '#4a5d8a');
+
+  // 小屋の上に名前を浮かべる(柵の外にあって見つけにくいので)
+  const STALL_NAMES = [
+    { text: '🛎️ 受付', x: HUT.x, z: HUT.z },
+    { text: '🪓 道具屋', x: TOOL_SHOP.x, z: TOOL_SHOP.z },
+    { text: '🏹 武器屋', x: WEAPON_SHOP.x, z: WEAPON_SHOP.z },
+  ].map(n => {
+    const el = document.createElement('div');
+    el.className = 'pile-label stall-name';
+    el.textContent = n.text;
+    document.body.appendChild(el);
+    return { ...n, el };
+  });
 
   // ================================================================
   //  床の四角い枠
@@ -2128,7 +2140,7 @@
   }
   removeTreesIn(EXPAND_ZONE.x - 2.2, EXPAND_ZONE.x + 2.2, EXPAND_ZONE.z - 2.2, EXPAND_ZONE.z + 2.2); // 枠のまわりはあけておく
   removeTreesIn(-15.5, -7.6, -2.6, 5.5); // 受付の小屋とお金置き場のまわりもあける
-  removeTreesIn(TOOL_SHOP.x - 2.4, TOOL_SHOP.x + 2.4, TOOL_SHOP.z - 2, TOOL_SHOP.z + 4); // 道具屋のまわり
+  removeTreesIn(TOOL_SHOP.x - 3.2, TOOL_SHOP.x + 3.2, TOOL_SHOP.z - 2.5, TOOL_SHOP.z + 5.5); // 道具屋のまわり
   removeTreesIn(MEADOW.x1 - 1, MEADOW.x2 + 1, camp.z2 + 0.5, MEADOW.z2 + 1); // 狩り場は見通しよく
   function expandCamp(i) {
     const e = EXPANSIONS[i];
@@ -2144,6 +2156,13 @@
     const hubs = [{ x: -1.0, z: 3.0 }, { x: fire.x - 4.6, z: 3.0 }];
     slots = slots.concat(makeRingSeats(fire, FIRE_SEATS, hubs));
     burst(sparks, tmpA.set(fire.x, FLOOR + 0.5, fire.z), 20, 6, 6);
+    // 広げたエリアの中に、火の番・木こり・テントの枠を別々の場所に出す(テントの枠は、建つ場所そのもの)
+    const tentSpot = tents[i + 2];
+    shops.push(
+      makeShop([{ icon: '🔥', label: `火の番(${i + 2})`, cost: e.keeper, message: '新しい焚き火にも火の番が来た!', apply: () => hireFireKeeper(fires[i + 1]) }], { x: fire.x - 2.4, z: -6.6 }),
+      makeShop([{ icon: '👷', label: '木こり', cost: e.lumber, message: '木こりの仲間が増えた!', apply: () => spawnHelper() }], { x: fire.x + 2.4, z: -6.6 }),
+      makeShop([{ icon: '⛺', label: 'テント', cost: e.tent, message: '新しいエリアにテントができた!', apply: () => openTent(i + 2) }], { x: tentSpot.x, z: tentSpot.z }),
+    );
     // 拡張の枠を、新しい柵の外へ動かす
     const shop = shops.find(sh => sh.list === EXPAND_UPGRADES);
     if (shop) {
@@ -2437,7 +2456,7 @@
     g.position.set(GRILL.x, FLOOR, GRILL.z);
     scene.add(g);
     boxes.push({ x: GRILL.x, z: GRILL.z, hx: 0.55, hz: 0.65 });
-    for (const sx of [-0.2, 0.2]) for (const sz of [-0.34, 0, 0.34]) {
+    for (const sx of [-0.28, 0, 0.28]) for (const sz of [-0.34, 0, 0.34]) { // 9枠
       grillSlots.push({ x: GRILL.x + sx, z: GRILL.z + sz, item: null, reserved: false, t: 0 });
     }
   }
@@ -2497,15 +2516,41 @@
     }
   }
 
+  // ---- 🍽️ 配膳台に置いてある焼いた肉 ----
+  const counterMeat = []; // 配膳台の上の肉(見た目)
+  let counterPending = 0;
+  function counterSlot(i, out) {
+    const col = i % 2, row = Math.floor(i / 2) % 3, layer = Math.floor(i / 6);
+    return out.set(MEAT_COUNTER.x - 0.13 + col * 0.26, FLOOR + 0.9 + layer * 0.2, MEAT_COUNTER.z - 0.4 + row * 0.4);
+  }
+  // 背中の焼いた肉を、配膳台に1つ置く
+  function putOnCounter(carrier) {
+    if (counterMeat.length + counterPending >= COUNTER_MAX) return false;
+    const item = takeItem(carrier, 'cooked');
+    if (!item) return false;
+    const index = counterMeat.length + counterPending;
+    counterPending++;
+    fly(item, tmpA, () => counterSlot(index, tmpB), () => {
+      counterPending--;
+      item.rotation.set(0, Math.PI / 2, 0);
+      counterSlot(counterMeat.length, item.position);
+      scene.add(item);
+      counterMeat.push(item);
+      blip(560, 0.05, 'triangle', 0.05, 1.1);
+    }, 0.8, 0.2);
+    return true;
+  }
+
   // ---- お客さんに肉を渡す ----
   const meatIcons = new Map();
   function wantingGuests() { return guests.filter(g => g.wantsMeat && (g.state === 'warm' || g.state === 'toMeat' || g.state === 'meatQueue')); }
   const meatHeadReady = () => meatQueue.length > 0 && meatQueue[0].state === 'meatQueue' && meatQueue[0].atCounter;
-  // 配膳台の列の先頭の人に、焼けた肉を1つ渡す
-  function serveMeat(fromCarrier, toPlayer) {
-    if (!meatHeadReady()) return false;
-    const item = takeItem(fromCarrier, 'cooked');
-    if (!item) return false;
+  // 配膳台の上の肉を、列の先頭の人に1つ渡す
+  function serveMeat(toPlayer) {
+    if (!meatHeadReady() || !counterMeat.length) return false;
+    const item = counterMeat.pop();
+    item.getWorldPosition(tmpA);
+    scene.remove(item);
     const g = meatQueue.shift();
     g.wantsMeat = false;
     g.state = 'eat';
@@ -2541,12 +2586,13 @@
     if (inGrill && grillTimer <= 0) {
       if (unloadGrill(carrier) || loadGrill(carrier)) grillTimer = 0.15;
     }
-    // 🍽️ の枠に立つと、配膳台に並んでいる人に焼けた肉を渡す
+    // 🍽️ の枠に立つと、背中の焼いた肉を配膳台に置き、並んでいる人に渡す
     const inServe = inZone(serveZone, p);
     setZoneActive(serveZone, inServe, time);
     serveTimer -= dt;
-    if (inServe && serveTimer <= 0 && countKind(carrier, 'cooked') > 0) {
-      if (serveMeat(carrier, true)) serveTimer = 0.35;
+    if (inServe && serveTimer <= 0) {
+      if (serveMeat(true)) serveTimer = 0.35;
+      else if (putOnCounter(carrier)) serveTimer = 0.12;
     }
   }
   // お客さんの頭の上のマーク(🍖 = 肉を食べたい、🥶 = 寒くて帰る)
@@ -2642,28 +2688,34 @@
     ch.root.position.set(pos.x, FLOOR, pos.z);
     ch.hop = 0.5;
     scene.add(ch.root);
-    waiter = { ch, carrier: makeCarrier(ch, 4), state: 'toGrill', timer: 0, target: null };
+    waiter = { ch, carrier: makeCarrier(ch, 4), state: 'toCounter', timer: 0, target: null };
   }
   function updateWaiter(dt, time) {
     if (!waiter) return;
     const w = waiter, ch = w.ch, p = ch.root.position;
     w.timer -= dt;
     const has = countKind(w.carrier, 'cooked');
+    const grillHasCooked = grillSlots.some(sl => sl.item && sl.item.userData.kind === 'cooked');
     if (w.state === 'toGrill') {
       if (walkPath(ch, [{ x: -4.4, z: 7.0 }], HELPER_SPEED, dt)) { w.state = 'take'; ch.face = GRILL; }
     } else if (w.state === 'take') {
       ch.vx = ch.vz = 0;
       if (w.timer <= 0) {
         if (!carrierFull(w.carrier) && unloadGrill(w.carrier)) w.timer = 0.2;
-        else if (has > 0 && w.carrier.pending === 0 && meatQueue.length) { w.state = 'toCounter'; ch.face = null; }
-        else w.timer = 0.4;
+        else if (w.carrier.pending === 0) { w.state = 'toCounter'; ch.face = null; } // 取れるだけ取ったら配膳台へもどる
+        else w.timer = 0.2;
       }
     } else if (w.state === 'toCounter') {
       if (walkPath(ch, [{ x: serveZone.x, z: serveZone.z }], HELPER_SPEED, dt)) { w.state = 'serve'; ch.face = MEAT_COUNTER; }
     } else if (w.state === 'serve') {
+      // ふだんは配膳台の前に立つ。持っている肉は台に置き、並んでいる人に渡す
       ch.vx = ch.vz = 0;
-      if (has === 0 || !meatQueue.length) { w.state = 'toGrill'; ch.face = null; }
-      else if (w.timer <= 0 && serveMeat(w.carrier, false)) w.timer = 0.35;
+      if (w.timer <= 0) {
+        if (serveMeat(false)) w.timer = 0.35;
+        else if (has > 0 && putOnCounter(w.carrier)) w.timer = 0.15;
+        else if (has === 0 && counterMeat.length + counterPending < 4 && grillHasCooked) { w.state = 'toGrill'; ch.face = null; }
+        else w.timer = 0.3;
+      }
     }
     pushOut(p, 0.35);
     keepInWorld(p, 0.35);
@@ -2919,7 +2971,12 @@
     sun.position.copy(camTarget).add(SUN_OFFSET);
     sun.target.position.copy(camTarget);
 
-    safe('hud', () => { hudBottom = $('hud').getBoundingClientRect().bottom; updateHud(dt); updatePileLabel(); });
+    safe('hud', () => {
+      hudBottom = $('hud').getBoundingClientRect().bottom;
+      updateHud(dt);
+      updatePileLabel();
+      for (const n of STALL_NAMES) placeLabel(n.el, n.x, 3.1, n.z);
+    });
     safe('render', () => renderer.render(scene, camera));
     adaptQuality(now);
   }
@@ -2940,7 +2997,7 @@
     if (saveDisabled) return;
     const p = player.ch.root.position;
     const data = {
-      version: 2, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
+      version: 3, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
       shops: shops.map(s => [s.index, s.paid]), axe: axeLevel,
       heats: fires.map(f => Math.round(f.heat)), wood: fires.map(f => f.wood.stock + f.wood.pending),
       carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z,
@@ -2950,22 +3007,33 @@
   function loadGame() {
     let data = null;
     try { data = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { data = null; }
-    if (!data || (data.version !== 1 && data.version !== 2)) return false;
+    if (!data || ![1, 2, 3].includes(data.version)) return false;
     if (data.version === 1 && data.shops && data.shops[3]) {
       // 古いセーブ: 狩りの枠を「狩りの仲間」と「武器屋」に分ける
       const old = data.shops[3][0];
       data.shops[3] = [(old >= 2 ? 1 : 0) + (old >= 4 ? 1 : 0), 0];
       data.shops[4] = [(old >= 1 ? 1 : 0) + (old >= 3 ? 1 : 0), 0];
     }
-    // 解放済みのものを、音やお知らせなしで順に元に戻す
-    shops.forEach((shop, i) => {
+    if (data.version <= 2 && data.shops && data.shops[2]) {
+      // 古いセーブ: 拡張の枠は「拡張・火の番・木こり・テント」を4つずつ順に売っていた。
+      // 今は拡張だけを売り、ほかは広げたエリアの中の枠(1つずつ)で売るので、読み替える
+      const old = data.shops[2][0];
+      const done = Math.ceil(old / 4);
+      const rest = data.shops.slice(0, 5);
+      rest[2] = [done, 0];
+      for (let k = 0; k < done; k++) for (let j = 1; j <= 3; j++) rest.push([old > 4 * k + j ? 1 : 0, 0]);
+      data.shops = rest;
+    }
+    // 解放済みのものを、音やお知らせなしで順に元に戻す(拡張で枠が増えるので、増えた枠も順に読む)
+    for (let i = 0; i < shops.length; i++) {
+      const shop = shops[i];
       const [index, paid] = data.shops[i] || [0, 0];
       for (let j = 0; j < index && j < shop.list.length; j++) shop.list[j].apply();
       shop.index = Math.min(index, shop.list.length);
       shop.paid = shopItem(shop) ? Math.min(paid, shopItem(shop).cost - 1) : 0;
       if (shopItem(shop)) shop.zone.redraw(shopItem(shop), shop.paid);
       else shop.zone.mesh.visible = false;
-    });
+    }
     setAxeLevel(data.axe || axeLevel);
     money = data.money || 0;
     pileCount = data.pile || 0;
@@ -3032,7 +3100,7 @@
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(),
         queue: payQueue.length, entryQueue: entryQueue.length, meatQueue: meatQueue.length, seats: slots.length, seated: slots.filter(t => t.guest).length, sleepers: tents.reduce((n, t) => n + t.sleepers, 0), fires: fires.length, helpers: helpers.length, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
-        meat: { raw: countKind(player.meatCarrier, 'raw'), cooked: countKind(player.meatCarrier, 'cooked') },
+        meat: { raw: countKind(player.meatCarrier, 'raw'), cooked: countKind(player.meatCarrier, 'cooked') }, counter: counterMeat.length,
         grill: grillSlots.map(s => s.item ? s.item.userData.kind[0] : '-').join(''), wanting: wantingGuests().length,
         hunterState: hunter && hunter.state, waiterState: waiter && waiter.state, boarSpots: boars.filter(b => b.alive).map(b => [b.root.position.x, b.root.position.z]), keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
         branches: branches.length, branchSpots: branches.map(b => [b.x, b.z]),
