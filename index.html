@@ -239,7 +239,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.09-2';
+  const GAME_VERSION = '2026.11.09-3';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -367,7 +367,7 @@
   for (let i = 0; i < 40; i++) { // 雪のこんもり
     const x = (rand() * 2 - 1) * 30, z = (rand() * 2 - 1) * 30;
     if (Math.abs(x) < PX + 2 && Math.abs(z) < PZ + 2) continue;
-    if (x < -PX && Math.abs(z - 2.5) < 3) continue; // 入口までの道はあけておく
+    if (x < -PX && z > -3 && z < 6) continue; // 入口の外の道と受付のまわりはあけておく
     const s = 0.6 + rand() * 1.2;
     const m = mesh(new THREE.SphereGeometry(1, 12, 8), mat('#f7fbff', { roughness: 1 }), x, 0, z);
     m.scale.set(s * 1.4, s * 0.35, s);
@@ -401,7 +401,7 @@
   const FLOOR = 0.2; // 広場の床の高さ
 
   // 入口から外へ続く雪の道
-  const path = mesh(new THREE.PlaneGeometry(6, 2.2), mat('#dfe8f2', { roughness: 1 }), -PX - 3.7, 0.01, 2.5);
+  const path = mesh(new THREE.PlaneGeometry(18, 2.2), mat('#dfe8f2', { roughness: 1 }), -PX - 9.7, 0.01, 2.5);
   path.rotation.x = -Math.PI / 2;
   path.castShadow = false;
 
@@ -598,10 +598,10 @@
   scene.add(tent);
   const tentBox = { x: -1.2, z: 7.2, hx: 1.2, hz: 1.2, off: true };
 
-  // 受付の小屋(左の入口のそば)。窓口は広場の内側(右)を向いている
-  const HUT = { x: -5.4, z: 4.6 };
-  const PAY_SPOT = { x: -3.55, z: HUT.z };            // お客さんがお金を払う場所
-  const WINDOW = V(HUT.x + 1.05, FLOOR + 1.0, HUT.z);   // お金を投げ入れる窓口
+  // 受付の小屋(左の入口の外、雪の道のそば)。窓口は道のほう(手前)を向いている
+  const HUT = { x: -10.4, z: 0.3 };
+  const PAY_SPOT = { x: HUT.x, z: HUT.z + 2.0 };      // お客さんが入場料を払う場所(列の先頭)
+  const WINDOW = V(HUT.x, 1.0, HUT.z + 1.1);          // お金を投げ入れる窓口
   {
     const hut = new THREE.Group();
     const plank = canvasTexture(128, (g, n) => {
@@ -641,9 +641,10 @@
     const sign = mesh(new THREE.PlaneGeometry(1.2, 0.36), new THREE.MeshStandardMaterial({ map: signTex, roughness: 0.9 }), 1.01, 1.53, 0, hut);
     sign.rotation.y = Math.PI / 2;
     sign.castShadow = false;
-    hut.position.set(HUT.x, FLOOR, HUT.z);
+    hut.position.set(HUT.x, 0, HUT.z);
+    hut.rotation.y = -Math.PI / 2; // 窓口を道のほうへ向ける
     scene.add(hut);
-    boxes.push({ x: HUT.x, z: HUT.z, hx: 1.05, hz: 0.85 });
+    boxes.push({ x: HUT.x, z: HUT.z, hx: 0.85, hz: 1.05 });
   }
   boxes.push(tentBox);
 
@@ -696,7 +697,7 @@
     const material = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 1, depthWrite: false });
     const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), material);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(x, FLOOR + 0.01, z);
+    m.position.set(x, groundY(x, z) + 0.01, z);
     m.receiveShadow = true;
     scene.add(m);
     return { x, z, half: size / 2, mesh: m, material, redraw };
@@ -715,8 +716,8 @@
   }
 
   FIRE.dropZone = addZone(FIRE.x, FIRE.z + 2.6, 2.4, iconZone('🔥'));
-  const CASH = { x: -5.2, z: 7.4 }; // 受付の小屋の裏手。お金がここに溜まる
-  const DESK = { x: -3.1, z: 5.95 }; // 主人公がお金を受け取るために立つ場所(受付の窓口のそば)
+  const CASH = { x: -12.9, z: 0.4 }; // 受付の小屋の横。お金がここに溜まる
+  const DESK = { x: -8.75, z: 0.8 }; // 主人公が入場料を受け取るために立つ場所(受付の窓口のそば)
   const deskZone = addZone(DESK.x, DESK.z, 1.7, iconZone('🛎️'));
   const cashZone = addZone(CASH.x, CASH.z, 2.4, iconZone('💰'));
   function drawShopZone(g, n, u, paid) {
@@ -1108,8 +1109,8 @@
     '画面をなぞって歩こう',
     '落ちている枝を拾ったり、柵の外の森で木を切ろう',
     '🔥 の枠に立つと、薪を積んで火にくべられるよ',
-    '温まった人が受付に並ぶよ。🛎️ の枠に立ってお金を受け取ろう',
-    '受付の裏の 💰 の枠でお金を拾おう',
+    '入口の外の受付に、お客さんが並ぶよ。🛎️ の枠に立って入場料を受け取ろう',
+    '受付の横の 💰 の枠でお金を拾おう',
     '光っている枠にお金を払おう',
   ];
   let tutorial = 0;
@@ -1362,7 +1363,7 @@
   function pileSlot(i, out) {
     const [cx, cz] = COIN_COLS[i % COIN_COLUMNS];
     const jitter = ((i * 7919) % 13) / 13 - 0.5; // 少しだけ不ぞろいに積む
-    return out.set(CASH.x + cx + jitter * 0.05, FLOOR + 0.06 + Math.floor(i / COIN_COLUMNS) * 0.1, CASH.z + cz - jitter * 0.04);
+    return out.set(CASH.x + cx + jitter * 0.05, groundY(CASH.x, CASH.z) + 0.06 + Math.floor(i / COIN_COLUMNS) * 0.1, CASH.z + cz - jitter * 0.04);
   }
   function drawCoinPile() {
     const n = Math.min(pileCount, COIN_PILE_MAX);
@@ -1429,15 +1430,52 @@
   let guestInterval = GUEST_INTERVAL;
   const barsEl = $('bars');
 
+  // ---- 受付(柵の外)に並ぶ列 ----
+  // お客さんは雪の道に並び、先頭の人が入場料を払ってから中に入る。席(焚き火のまわり)が空いていないと入れない
+  const GATE_OUT = { x: -8.8, z: GATE_Z };                       // 入口のすぐ外
+  const EXIT_PATH = [{ x: -8.8, z: 4.1 }, { x: -24, z: 4.4 }];   // 帰り道(列のとなりを通る)
+  const SPAWN_X = -24;
+  const payQueue = [];
+  const QUEUE_LEN = 8; // 列に並べる最大人数
+  function queueSpot(i) {
+    return i === 0 ? PAY_SPOT : { x: PAY_SPOT.x - 0.9 - (i - 1) * 0.85, z: GATE_Z + 0.1 };
+  }
+  let deskAttended = false; // 主人公が 🛎️ の枠に立っているか
+  let receptionist = null;
+  function hireReceptionist() {
+    if (receptionist) return;
+    const ch = makeCharacter({ coat: '#d6457a', coatDark: '#b3365f', hat: '#fff3e2' });
+    ch.root.position.set(DESK.x, groundY(DESK.x, DESK.z), DESK.z);
+    ch.face = PAY_SPOT;
+    ch.angle = Math.atan2(PAY_SPOT.x - DESK.x, PAY_SPOT.z - DESK.z);
+    ch.hop = 0.5;
+    scene.add(ch.root);
+    receptionist = { ch };
+    deskZone.mesh.visible = false;
+  }
+  // テント
+  let tentOpen = false, sleepers = 0, tentReserved = 0; // tentReserved: テントに泊まる予定の人+寝ている人
+  const TENT_SIDE_A = { x: 0.6, z: 6.2 }, TENT_SIDE_B = { x: 0.6, z: 8.55 }, TENT_DOOR = { x: -1.2, z: 8.6 };
+  const sleepBubble = document.createElement('div');
+  sleepBubble.className = 'pile-label';
+  sleepBubble.textContent = '💤';
+  document.body.appendChild(sleepBubble);
+  const waitBubble = document.createElement('div');
+  waitBubble.className = 'pile-label';
+  document.body.appendChild(waitBubble);
+  function placeLabel(el, x, y, z) {
+    tmpA.set(x, y, z).project(camera);
+    el.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
+    el.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
+  }
+
   function spawnGuest() {
-    const free = slots.filter(s => !s.guest);
-    if (!free.length) return;
-    const slot = free[Math.floor(Math.random() * free.length)];
+    if (payQueue.length >= QUEUE_LEN) return;
     const [coat, coatDark, hat] = GUEST_LOOKS[Math.floor(Math.random() * GUEST_LOOKS.length)];
     const ch = makeCharacter({ coat, coatDark, hat, ownSkin: true });
     ch.speedRef = GUEST_SPEED;
     ch.skin.color.set(FROZEN);
-    ch.root.position.set(-12, 0, GATE_Z + (Math.random() - 0.5) * 0.8);
+    ch.root.position.set(SPAWN_X, 0, GATE_Z + (Math.random() - 0.5) * 0.8);
     ch.angle = Math.PI / 2;
     scene.add(ch.root);
     const bar = document.createElement('div');
@@ -1445,9 +1483,19 @@
     bar.innerHTML = '<div></div>';
     bar.style.display = 'none';
     barsEl.appendChild(bar);
-    const g = { ch, slot, state: 'arrive', warm: 0, path: [GATE_IN, ...(slot.via || []), slot], payLeft: 0, payTimer: 0, bar };
-    slot.guest = g;
+    const g = { ch, slot: null, state: 'queue', warm: 0, path: [], payLeft: 0, payTimer: 0, paying: false, tent: false, bar };
+    payQueue.push(g);
     guests.push(g);
+  }
+  // 入場料を払った人を、空いている席へ案内する
+  function admit(g) {
+    const free = slots.filter(s => !s.guest);
+    const slot = free[Math.floor(Math.random() * free.length)];
+    slot.guest = g;
+    g.slot = slot;
+    g.state = 'arrive';
+    g.ch.face = null;
+    g.path = [GATE_OUT, GATE_IN, ...(slot.via || []), slot];
   }
 
   function walkPath(ch, pathList, speed, dt) {
@@ -1468,54 +1516,51 @@
   }
 
   const frozenColor = new THREE.Color(FROZEN), skinColor = new THREE.Color(SKIN);
-  // 受付に並ぶ列。先頭の人が窓口の前でお金を払う
-  const payQueue = [];
-  const QUEUE_MAX_SPOTS = 8;
-  function queueSpot(i) { return { x: PAY_SPOT.x, z: PAY_SPOT.z - Math.min(i, QUEUE_MAX_SPOTS - 1) * 0.8 }; }
-  let deskAttended = false; // 主人公が 🛎️ の枠に立っているか
-  let receptionist = null;
-  function hireReceptionist() {
-    if (receptionist) return;
-    const ch = makeCharacter({ coat: '#d6457a', coatDark: '#b3365f', hat: '#fff3e2' });
-    ch.root.position.set(DESK.x, FLOOR, DESK.z);
-    ch.face = PAY_SPOT;
-    ch.angle = Math.atan2(PAY_SPOT.x - DESK.x, PAY_SPOT.z - DESK.z);
-    ch.hop = 0.5;
-    scene.add(ch.root);
-    receptionist = { ch };
-    deskZone.mesh.visible = false;
-  }
-  // テント
-  let tentOpen = false, sleepers = 0, tentReserved = 0; // tentReserved: テントへ向かっている人+寝ている人
-  const TENT_SIDE_A = { x: 0.6, z: 6.2 }, TENT_SIDE_B = { x: 0.6, z: 8.55 }, TENT_DOOR = { x: -1.2, z: 8.6 };
-  const sleepBubble = document.createElement('div');
-  sleepBubble.className = 'pile-label';
-  sleepBubble.textContent = '💤';
-  document.body.appendChild(sleepBubble);
-  const waitBubble = document.createElement('div');
-  waitBubble.className = 'pile-label';
-  waitBubble.textContent = '🛎️';
-  document.body.appendChild(waitBubble);
-  function placeLabel(el, x, y, z) {
-    tmpA.set(x, y, z).project(camera);
-    el.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
-    el.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
-  }
-  function joinQueue(g, pathFirst) {
-    g.state = 'queue';
-    g.path = pathFirst;
-    payQueue.push(g);
-  }
-
   function updateGuests(dt, time) {
     for (const f of fires) f.warming = 0;
     if (receptionist) animateCharacter(receptionist.ch, dt, time);
     guestTimer -= dt;
     if (guestTimer <= 0) { guestTimer = guestInterval; spawnGuest(); }
+    const seatFree = slots.some(s => !s.guest);
+    let headWaiting = null;
 
     for (let i = guests.length - 1; i >= 0; i--) {
       const g = guests[i], ch = g.ch;
-      if (g.state === 'arrive') {
+      if (g.state === 'queue') {
+        // 雪の道で列に並んで待つ(寒いのでふるえている)
+        ch.shiver = 0.6;
+        const idx = payQueue.indexOf(g);
+        const spot = queueSpot(idx);
+        const arrived = walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15;
+        ch.face = idx === 0 ? WINDOW : { x: ch.root.position.x + 1, z: ch.root.position.z };
+        if (idx === 0 && arrived) {
+          if (!g.paying && (deskAttended || receptionist) && seatFree) {
+            g.paying = true;
+            g.payLeft = COINS_PER_GUEST;
+            if (tentOpen && tentReserved < TENT_BEDS && Math.random() < 0.5) {
+              tentReserved++;
+              g.tent = true;
+              g.payLeft += TENT_FEE; // テントに泊まる人は宿泊代もいっしょに払う
+            }
+          }
+          if (g.paying) {
+            g.payTimer -= dt;
+            if (g.payLeft > 0 && g.payTimer <= 0) {
+              g.payTimer = 0.09;
+              g.payLeft--;
+              ch.chop = 0.6; // 腕を振ってお金を投げる
+              if (receptionist) receptionist.ch.chop = 0.6;
+              payToPile(V(ch.root.position.x, ch.root.position.y + 1.1, ch.root.position.z - 0.3));
+            }
+            if (g.payLeft === 0 && g.payTimer <= 0) {
+              payQueue.shift();
+              admit(g);
+            }
+          } else {
+            headWaiting = g;
+          }
+        }
+      } else if (g.state === 'arrive') {
         ch.shiver = 0.6;
         if (walkPath(ch, g.path, GUEST_SPEED, dt)) { g.state = 'warm'; ch.face = g.slot.fire; g.bar.style.display = 'block'; }
       } else if (g.state === 'warm') {
@@ -1530,22 +1575,21 @@
           g.state = 'happy';
           ch.hop = 0.5;
           ch.shiver = 0;
-          g.payLeft = COINS_PER_GUEST;
           g.bar.style.display = 'none';
           blip(660, 0.12, 'sine', 0.06, 1.5);
         }
       } else if (g.state === 'happy') {
-        // 喜んだら、テントで休むか、受付の列に並ぶ(焚き火のまわりの場所は次の人にゆずる)
+        // 温まったら、テントで休むか帰る(焚き火のまわりの席は次の人にゆずる)
         if (ch.hop <= 0) {
           ch.face = null;
           g.slot.guest = null;
           const back = (g.slot.via || []).slice().reverse();
-          if (tentOpen && tentReserved < TENT_BEDS && Math.random() < 0.6) {
-            tentReserved++;
+          if (g.tent) {
             g.state = 'toTent';
             g.path = [...back, TENT_SIDE_A, TENT_SIDE_B, TENT_DOOR];
           } else {
-            joinQueue(g, back);
+            g.state = 'leave';
+            g.path = [...back, GATE_IN, GATE_OUT, ...EXIT_PATH];
           }
         }
       } else if (g.state === 'toTent') {
@@ -1562,34 +1606,8 @@
           tentReserved--;
           ch.root.visible = true;
           ch.hop = 0.4;
-          g.payLeft += TENT_FEE; // 宿泊代を上乗せ
-          joinQueue(g, [TENT_SIDE_B, TENT_SIDE_A]);
-        }
-      } else if (g.state === 'queue') {
-        const idx = payQueue.indexOf(g);
-        if (g.path.length) {
-          walkPath(ch, g.path, GUEST_SPEED * 1.2, dt);
-        } else {
-          const spot = queueSpot(idx);
-          const arrived = walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15;
-          ch.face = idx === 0 ? WINDOW : { x: ch.root.position.x, z: ch.root.position.z + 1 };
-          // 列の先頭で、受付に人がいるときだけ払える
-          if (idx === 0 && arrived && (deskAttended || receptionist)) {
-            g.payTimer -= dt;
-            if (g.payLeft > 0 && g.payTimer <= 0) {
-              g.payTimer = 0.09;
-              g.payLeft--;
-              ch.chop = 0.6; // 腕を振ってお金を投げる
-              if (receptionist) receptionist.ch.chop = 0.6;
-              payToPile(V(ch.root.position.x + 0.3, ch.root.position.y + 1.1, ch.root.position.z));
-            }
-            if (g.payLeft === 0 && g.payTimer <= 0) {
-              g.state = 'leave';
-              ch.face = null;
-              payQueue.splice(idx, 1);
-              g.path = [{ x: -3.8, z: 3.2 }, GATE_IN, { x: -13, z: GATE_Z }]; // 小屋をよけて出口へ
-            }
-          }
+          g.state = 'leave';
+          g.path = [TENT_SIDE_B, TENT_SIDE_A, GATE_IN, GATE_OUT, ...EXIT_PATH];
         }
       } else if (g.state === 'leave') {
         if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
@@ -1607,13 +1625,14 @@
         g.bar.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
       }
     }
-    // テントで寝ている人がいるときは 💤、受付で待っている人がいるときは 🛎️ を出す
+    // テントで寝ている人がいるときは 💤。受付の先頭で待っている人がいるときは、🛎️(受付に誰もいない)か「満席」を出す
     sleepBubble.style.display = sleepers > 0 ? 'block' : 'none';
     if (sleepers > 0) placeLabel(sleepBubble, -1.2, FLOOR + 2.8 + Math.sin(time * 3) * 0.1, 7.2);
-    const head = payQueue[0];
-    const waiting = head && !head.path.length && !deskAttended && !receptionist && flat(head.ch.root.position, PAY_SPOT) < 0.3;
-    waitBubble.style.display = waiting ? 'block' : 'none';
-    if (waiting) placeLabel(waitBubble, PAY_SPOT.x, FLOOR + 2.5 + Math.abs(Math.sin(time * 5)) * 0.2, PAY_SPOT.z);
+    waitBubble.style.display = headWaiting ? 'block' : 'none';
+    if (headWaiting) {
+      waitBubble.textContent = (deskAttended || receptionist) ? '満席' : '🛎️';
+      placeLabel(waitBubble, PAY_SPOT.x, 2.3 + Math.abs(Math.sin(time * 5)) * 0.2, PAY_SPOT.z);
+    }
   }
 
   // ================================================================
@@ -1747,6 +1766,7 @@
     }
   }
   removeTreesIn(EXPAND_ZONE.x - 2.2, EXPAND_ZONE.x + 2.2, EXPAND_ZONE.z - 2.2, EXPAND_ZONE.z + 2.2); // 枠のまわりはあけておく
+  removeTreesIn(-15.5, -7.6, -2.6, 5.5); // 受付の小屋とお金置き場のまわりもあける
   function expandCamp() {
     camp.x2 = EXPAND_X2;
     removeTreesIn(camp.x1 - 1, camp.x2 + 1.2, camp.z1 - 1, camp.z2 + 1.2);
