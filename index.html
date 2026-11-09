@@ -181,8 +181,12 @@
   // ================================================================
   const PX = 7, PZ = 9;          // 最初のキャンプ(柵の内側)の半分の広さ
   const camp = { x1: -PX, x2: PX, z1: -PZ, z2: PZ }; // 今の柵の内側の範囲(拡張すると広がる)
-  const EXPAND_COST = 80;        // キャンプ拡張の値段
-  const EXPAND_X2 = 13;          // 拡張したあとの、キャンプの右端
+  // キャンプ拡張(3段階)。広げるたびに右へ8ずつ広がり、焚き火が1つ増える
+  const EXPANSIONS = [
+    { x2: 15, fire: { x: 10.5, z: 0 }, cost: 80, keeper: 40, lumber: 60, tent: 80 },
+    { x2: 23, fire: { x: 18.5, z: 0 }, cost: 200, keeper: 80, lumber: 100, tent: 120 },
+    { x2: 31, fire: { x: 26.5, z: 0 }, cost: 400, keeper: 120, lumber: 150, tent: 160 },
+  ];
   const SPEED = 6.5;             // 主人公の歩く速さ(単位/秒)
   const STICK_RADIUS = 56;       // バーチャルスティックの半径(px)
   const PLAYER_R = 0.4;          // 当たり判定の半径
@@ -202,7 +206,7 @@
   const TREE_REGROW = 10;        // 切った木が生え直すまでの時間(秒)
   const BRANCH_COUNT = 14;       // 柵の外に落ちている枝の数
   const BRANCH_RESPAWN = 3;      // 拾った枝が、別の場所にまた落ちるまでの時間(秒)
-  const WORLD = 30;              // 歩ける範囲(柵の外も含む)の半分の広さ
+  const WORLD = 34;              // 歩ける範囲(柵の外も含む)の半分の広さ
   const DROP_INTERVAL = 0.06;    // 薪を焚き火に1本入れる間隔(秒)
   const FLY_TIME = 0.22;         // 薪やお金が飛んでいく時間(秒)
 
@@ -213,9 +217,10 @@
 
   const WARM_RATE = 0.22;        // 人が温まる速さ
   const COINS_PER_GUEST = 5;     // 温まった人が置いていくお金
-  const GUEST_INTERVAL = 1.5;    // 人がやってくる間隔(秒)
-  const GUEST_INTERVAL_TENT = 1.0; // テント解放後の間隔(秒)
-  const FIRE_SEATS = 20;         // 1つ目の焚き火のまわりの席の数(2重の輪に並べる)
+  const GUEST_INTERVAL = 3.6;    // 人がやってくる間隔(秒)。テントや焚き火が増えると短くなる
+  const FIRE_SEATS = 10;         // 焚き火1つあたりの席の数(焚き火のまわりに輪に並べる)
+  const ENTRY_QUEUE_LEN = 6;     // 入口の外で、席が空くのを待てる人数
+  const CHECKOUT_QUEUE_LEN = 8;  // 帰りに受付でお会計を待てる人数
   const MEAT_QUEUE_LEN = 8;      // 🍽️ 配膳台に並べる人数
   const GUEST_SPEED = 3;         // 人の歩く速さ
   const HELPER_SPEED = 4.2;      // 仲間の歩く速さ
@@ -228,8 +233,16 @@
     { icon: '🔥', label: '火の番', cost: 20, message: '火の番が来た! 薪を自動でくべてくれるよ', apply: () => hireFireKeeper(fires[0]) },
     { icon: '🛎️', label: '受付係', cost: 30, message: '受付係が来た! お金を自動で受け取ってくれるよ', apply: () => hireReceptionist() },
     { icon: '👷', label: '木こり', cost: 40, message: '木こりの仲間が来た!', apply: () => spawnHelper() },
-    { icon: '⛺', label: 'テント', cost: 60, message: 'テントができた! 泊まるお客さんは宿泊代も払うよ', apply: () => openTent() },
+    { icon: '⛺', label: 'テント', cost: 60, message: 'テントができた! 泊まるお客さんは宿泊代も払うよ', apply: () => openTent(0) },
+    { icon: '⛺', label: 'テント2', cost: 100, message: 'テントが2つになった! 泊まれる人が増えたよ', apply: () => openTent(1) },
   ];
+  // キャンプ拡張の枠: 拡張するたびに、そのエリアの火の番・木こり・テントが買えるようになる
+  const EXPAND_UPGRADES = EXPANSIONS.flatMap((e, i) => [
+    { icon: '🏕️', label: `拡張 ${i + 1}`, cost: e.cost, message: 'キャンプが広くなった! 焚き火も増えたよ', apply: () => expandCamp(i) },
+    { icon: '🔥', label: `火の番(${i + 2})`, cost: e.keeper, message: '新しい焚き火にも火の番が来た!', apply: () => hireFireKeeper(fires[i + 1]) },
+    { icon: '👷', label: `木こり(${i + 2})`, cost: e.lumber, message: '木こりの仲間が増えた!', apply: () => spawnHelper() },
+    { icon: '⛺', label: `テント(${i + 3})`, cost: e.tent, message: '新しいエリアにテントができた!', apply: () => openTent(i + 2) },
+  ]);
   const TENT_FEE = 8;            // テントに泊まったお客さんが上乗せして払うお金
   const TENT_BEDS = 2;           // テントに同時に泊まれる人数
   const SLEEP_TIME = 6;          // テントで休む時間(秒)
@@ -278,7 +291,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.10-2';
+  const GAME_VERSION = '2026.11.10-3';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -403,14 +416,18 @@
   snow.rotation.x = -Math.PI / 2;
   snow.receiveShadow = true;
   scene.add(snow);
+  const mounds = [];
   for (let i = 0; i < 40; i++) { // 雪のこんもり
     const x = (rand() * 2 - 1) * 30, z = (rand() * 2 - 1) * 30;
     if (Math.abs(x) < PX + 2 && Math.abs(z) < PZ + 2) continue;
     if (x < -PX && z > -3 && z < 6) continue; // 入口の外の道と受付のまわりはあけておく
+    if (x > -3.5 && x < 4.5 && z > -16.5 && z < -8.5) continue; // 道具屋の前(枠が雪にかくれないように)
+    if (x > -11.5 && x < -4.5 && z > 8.5 && z < 15.5) continue; // 武器屋の前
     const s = 0.6 + rand() * 1.2;
     const m = mesh(new THREE.SphereGeometry(1, 12, 8), mat('#f7fbff', { roughness: 1 }), x, 0, z);
     m.scale.set(s * 1.4, s * 0.35, s);
     m.castShadow = false;
+    mounds.push({ m, x, z });
   }
 
   // キャンプの土の広場
@@ -582,9 +599,7 @@
       g.add(f);
       flames.push({ mesh: f, h, phase: rand() * 6 });
     }
-    fireLight = light || new THREE.PointLight('#ff9a40', 6, 8, 1.6);
-    fireLight.position.set(0, 1, 0);
-    g.add(fireLight);
+    fireLight = null; // 光は、近い焚き火に順番に貸し出す(updateFires)
     g.position.set(x, FLOOR, z);
     scene.add(g);
     circles.push({ x, z, r: 0.95 });
@@ -616,31 +631,42 @@
   }
   const FIRE = addCampfire(-2.2, -2.5, HEAT_START);
   // 拡張でできる2つ目の焚き火の光。最初から(明るさ0で)置いておく
-  const spareFireLight = new THREE.PointLight('#ff9a40', 0, 8, 1.6);
-  spareFireLight.position.set(0, -50, 0);
-  scene.add(spareFireLight);
+  // 焚き火の光は2つだけ用意して、カメラに近い焚き火に貸す(焚き火が増えても重くならず、途中で光の数も変わらない)
+  const fireLights = [0, 1].map(() => {
+    const l = new THREE.PointLight('#ff9a40', 0, 8, 1.6);
+    l.position.set(0, -50, 0);
+    scene.add(l);
+    return l;
+  });
 
   addBench(-2.2, -4.6, true);
   addBench(-4.6, -2.5, false);
   addCrate(5.6, 7.6); addCrate(4.7, 7.8); addCrate(5.2, 7.7, FLOOR + 0.8, 0.7);
   boxes.push({ x: 5.15, z: 7.7, hx: 0.95, hz: 0.5 });
 
-  // テント(解放すると出てくる)
-  const tent = new THREE.Group();
-  {
+  // テント(解放すると出てくる)。1つに2人まで泊まれる
+  const TENT_SPOTS = [{ x: -1.2, z: 7.2 }, { x: 2.4, z: 7.4 }, ...EXPANSIONS.map(e => ({ x: e.fire.x, z: 7.0 }))];
+  const tents = TENT_SPOTS.map(({ x, z }) => {
+    const g = new THREE.Group();
     const cloth = mat('#e8c27a', { flatShading: true });
-    const roof = mesh(new THREE.ConeGeometry(1.7, 2.0, 4), cloth, 0, 1.0, 0, tent);
+    const roof = mesh(new THREE.ConeGeometry(1.7, 2.0, 4), cloth, 0, 1.0, 0, g);
     roof.rotation.y = Math.PI / 4;
-    const door = mesh(new THREE.PlaneGeometry(0.7, 1.0), mat('#5a3a22', { side: THREE.DoubleSide }), 0, 0.5, 1.21, tent);
+    const door = mesh(new THREE.PlaneGeometry(0.7, 1.0), mat('#5a3a22', { side: THREE.DoubleSide }), 0, 0.5, 1.21, g);
     door.castShadow = false;
-    mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), woodDark, 0, 2.1, 0, tent);
-    const flag = mesh(new THREE.PlaneGeometry(0.4, 0.25), mat('#ef6c3a', { side: THREE.DoubleSide }), 0.2, 2.25, 0, tent);
+    mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), woodDark, 0, 2.1, 0, g);
+    const flag = mesh(new THREE.PlaneGeometry(0.4, 0.25), mat('#ef6c3a', { side: THREE.DoubleSide }), 0.2, 2.25, 0, g);
     flag.castShadow = false;
-  }
-  tent.position.set(-1.2, FLOOR, 7.2);
-  tent.visible = false;
-  scene.add(tent);
-  const tentBox = { x: -1.2, z: 7.2, hx: 1.2, hz: 1.2, off: true };
+    g.position.set(x, FLOOR, z);
+    g.visible = false;
+    scene.add(g);
+    const box = { x, z, hx: 1.2, hz: 1.2, off: true };
+    boxes.push(box);
+    // テントへの行き方: 横を通って、入口(手前)へ
+    const side = x < 0.6 ? 1.8 : -1.8;
+    const route = [{ x: x + side, z: z - 1.4 }, { x: x + side, z: z + 1.45 }, { x, z: z + 1.45 }];
+    return { x, z, g, box, route, open: false, reserved: 0, sleepers: 0, bubble: null };
+  });
+  const tent = tents[0].g; // (テスト用の表示で使う)
 
   // 受付の小屋(左の入口の外、雪の道のそば)。窓口は道のほう(手前)を向いている
   const HUT = { x: -10.4, z: 0.3 };
@@ -698,7 +724,6 @@
   const WEAPON_SHOP = { x: -8.0, z: 10.6 };
   buildStall(TOOL_SHOP.x, TOOL_SHOP.z, '道具屋', '#3f7f5a');
   buildStall(WEAPON_SHOP.x, WEAPON_SHOP.z, '武器屋', '#4a5d8a');
-  boxes.push(tentBox);
 
   // ================================================================
   //  床の四角い枠
@@ -1283,7 +1308,7 @@
     '画面をなぞって歩こう',
     '落ちている枝を拾ったり、柵の外の森で木を切ろう',
     '🔥 の枠に立つと、薪を積んで火にくべられるよ',
-    '入口の外の受付に、お客さんが並ぶよ。🛎️ の枠に立って入場料を受け取ろう',
+    '温まったお客さんは、帰りに受付でお金を払うよ。🛎️ の枠に立って受け取ろう',
     '受付の横の 💰 の枠でお金を拾おう',
     '光っている枠にお金を払おう',
     '柵の手前の出入口から外に出ると、イノシシがいるよ。近づくと自動でパチンコを撃つよ',
@@ -1333,6 +1358,13 @@
   }
   function updateFires(dt, time) {
     for (const fire of fires) updateFire(fire, dt, time);
+    const near = fires.slice().sort((a, b) => flat(a, camTarget) - flat(b, camTarget));
+    fireLights.forEach((l, i) => {
+      const f = near[i];
+      if (!f) { l.intensity = 0; return; }
+      l.position.set(f.x, FLOOR + 1, f.z);
+      l.intensity = f.glow || 0;
+    });
   }
   function updateFire(fire, dt, time) {
     // 薪置き場から焚き火へ、1本ずつくべる(火がいっぱいのときは待つ)
@@ -1361,7 +1393,7 @@
       f.mesh.position.y = 0.2 + f.h * s / 2;
       f.mesh.rotation.y += dt * 2;
     }
-    fire.light.intensity = (2 + fire.heat / 100 * 7) * (1 + fire.pop) + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6;
+    fire.glow = Math.max(0, (2 + fire.heat / 100 * 7) * (1 + fire.pop) + Math.sin(time * 15) * 0.8 + Math.sin(time * 9.1) * 0.6);
   }
 
   // ================================================================
@@ -1638,15 +1670,18 @@
     if (x > -0.9 && x < 7.5 && z > 0.1 && z < 2.5) return true; // 配膳台と、肉を待つ列のあたり
     return false;
   }
-  function makeRingSeats(fire, max) {
+  // hubs: 入口(GATE_IN)から輪に着くまでに通る場所。2つ目からの焚き火は、広場の手前を回って行く
+  function makeRingSeats(fire, max, hubs = []) {
     const seats = [];
-    const entryA = angleOf(fire, GATE_IN), counterA = angleOf(fire, MEAT_COUNTER);
+    const entry = hubs.length ? hubs[hubs.length - 1] : GATE_IN;
+    const entryA = angleOf(fire, entry), counterA = angleOf(fire, MEAT_COUNTER);
     for (const [R, n] of [[2.25, 12], [3.25, 22]]) {
       for (let i = 0; i < n; i++) {
         const a = i / n * Math.PI * 2 + (R > 3 ? Math.PI / n : 0);
         const x = fire.x + Math.cos(a) * R, z = fire.z + Math.sin(a) * R;
         if (seatBlocked(x, z, fire) || seats.some(t => Math.hypot(t.x - x, t.z - z) < 0.75)) continue;
-        seats.push({ x, z, fire, guest: null, via: ringWay(fire, entryA, a), toCounter: ringWay(fire, a, counterA) });
+        const toCounter = hubs.length ? [...ringWay(fire, a, entryA), hubs[hubs.length - 1]] : ringWay(fire, a, counterA);
+        seats.push({ x, z, fire, guest: null, via: [...hubs, ...ringWay(fire, entryA, a)], toCounter });
         if (seats.length >= max) return seats;
       }
     }
@@ -1659,18 +1694,23 @@
   ];
   const guests = [];
   let guestTimer = 1.0;
-  let guestInterval = GUEST_INTERVAL;
   const barsEl = $('bars');
 
-  // ---- 受付(柵の外)に並ぶ列 ----
-  // お客さんは雪の道に並び、先頭の人が入場料を払ってから中に入る。席(焚き火のまわり)が空いていないと入れない
-  const GATE_OUT = { x: -8.8, z: GATE_Z };                       // 入口のすぐ外
-  const EXIT_PATH = [{ x: -8.8, z: 4.1 }, { x: -24, z: 4.4 }];   // 帰り道(列のとなりを通る)
+  // ---- お客さんの流れ ----
+  // 1) 西の雪の道からやってきて、入口の外で席が空くのを待つ(入るのは無料)
+  // 2) 焚き火で温まる。🍖 の人は配膳台に並んで肉を食べる。テントに泊まる人もいる
+  // 3) 帰りに受付の窓口に並んで、お会計(入場料+宿泊代)を払ってから帰る
+  //    寒くて(火が消えて)帰る人は、お会計をせずに帰ってしまう
+  const GATE_OUT = { x: -8.8, z: GATE_Z };                    // 入口のすぐ外
+  const ENTRY_ROW_Z = 3.3;                                    // 入る人が待つ列(道の奥側)
+  const EXIT_PATH = [{ x: -11.4, z: 4.4 }, { x: -24, z: 4.4 }]; // お会計のあとの帰り道
+  const COLD_EXIT = [GATE_OUT, { x: -8.8, z: 4.4 }, { x: -24, z: 4.4 }]; // 寒くて帰る人の帰り道
   const SPAWN_X = -24;
-  const payQueue = [];
-  const QUEUE_LEN = 8; // 列に並べる最大人数
+  const entryQueue = [];   // 入口の外で席を待つ列
+  const payQueue = [];     // 帰りにお会計を待つ列(先頭は受付の窓口の前)
+  function entrySpot(i) { return { x: -13.4 - i * 0.85, z: ENTRY_ROW_Z }; }
   function queueSpot(i) {
-    return i === 0 ? PAY_SPOT : { x: PAY_SPOT.x - 0.9 - (i - 1) * 0.85, z: GATE_Z + 0.1 };
+    return i === 0 ? PAY_SPOT : { x: PAY_SPOT.x - 0.85 - (Math.min(i, CHECKOUT_QUEUE_LEN) - 1) * 0.8, z: PAY_SPOT.z };
   }
   let deskAttended = false; // 主人公が 🛎️ の枠に立っているか
   let receptionist = null;
@@ -1685,29 +1725,34 @@
     receptionist = { ch };
     deskZone.mesh.visible = false;
   }
-  // テント
-  let tentOpen = false, sleepers = 0, tentReserved = 0; // tentReserved: テントに泊まる予定の人+寝ている人
-  const TENT_SIDE_A = { x: 0.6, z: 6.2 }, TENT_SIDE_B = { x: 0.6, z: 8.55 }, TENT_DOOR = { x: -1.2, z: 8.6 };
-  const sleepBubble = document.createElement('div');
-  sleepBubble.className = 'pile-label';
-  sleepBubble.textContent = '💤';
-  document.body.appendChild(sleepBubble);
+  const openTents = () => tents.filter(t => t.open);
   const waitBubble = document.createElement('div');
   waitBubble.className = 'pile-label';
   document.body.appendChild(waitBubble);
+  const fullBubble = document.createElement('div');
+  fullBubble.className = 'pile-label';
+  fullBubble.textContent = '満席';
+  document.body.appendChild(fullBubble);
+  let hudBottom = 0;
   function placeLabel(el, x, y, z) {
     tmpA.set(x, y, z).project(camera);
+    const top = (1 - tmpA.y) / 2 * window.innerHeight;
     el.style.left = ((tmpA.x + 1) / 2 * window.innerWidth) + 'px';
-    el.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
+    el.style.top = top + 'px';
+    el.style.visibility = top < hudBottom + 30 ? 'hidden' : 'visible'; // 画面上の表示と重なるときは隠す
+  }
+  // テントや焚き火が増えるほど、お客さんが来る間隔が短くなる
+  function guestInterval() {
+    return GUEST_INTERVAL / (1 + 0.25 * openTents().length + 0.6 * (fires.length - 1));
   }
 
   function spawnGuest() {
-    if (payQueue.length >= QUEUE_LEN) return;
+    if (entryQueue.length >= ENTRY_QUEUE_LEN) return;
     const [coat, coatDark, hat] = GUEST_LOOKS[Math.floor(Math.random() * GUEST_LOOKS.length)];
     const ch = makeCharacter({ coat, coatDark, hat, ownSkin: true });
     ch.speedRef = GUEST_SPEED;
     ch.skin.color.set(FROZEN);
-    ch.root.position.set(SPAWN_X, 0, GATE_Z + (Math.random() - 0.5) * 0.8);
+    ch.root.position.set(SPAWN_X, 0, ENTRY_ROW_Z + (Math.random() - 0.5) * 0.4);
     ch.angle = Math.PI / 2;
     scene.add(ch.root);
     const bar = document.createElement('div');
@@ -1715,19 +1760,37 @@
     bar.innerHTML = '<div></div>';
     bar.style.display = 'none';
     barsEl.appendChild(bar);
-    const g = { ch, slot: null, state: 'queue', warm: 0, path: [], payLeft: 0, payTimer: 0, paying: false, tent: false, bar };
-    payQueue.push(g);
+    const g = { ch, slot: null, state: 'wait', warm: 0, path: [], payLeft: 0, payTimer: 0, paying: false, tent: null, slept: false, bar };
+    entryQueue.push(g);
     guests.push(g);
   }
-  // 入場料を払った人を、空いている席へ案内する
+  // 空いている席へ案内する
   function admit(g) {
-    const free = slots.filter(s => !s.guest);
+    const free = slots.filter(t => !t.guest);
     const slot = free[Math.floor(Math.random() * free.length)];
     slot.guest = g;
     g.slot = slot;
     g.state = 'arrive';
     g.ch.face = null;
-    g.path = [GATE_OUT, GATE_IN, ...(slot.via || []), slot];
+    g.path = [{ x: -11.6, z: ENTRY_ROW_Z }, { x: -8.8, z: ENTRY_ROW_Z }, GATE_OUT, GATE_IN, ...(slot.via || []), slot];
+  }
+  // 帰りに、受付のお会計の列に並ぶ
+  function goCheckout(g, pathFirst) {
+    g.state = 'toPay';
+    g.path = [...pathFirst, GATE_IN, GATE_OUT];
+    g.ch.face = null;
+  }
+  function leaveCold(g) {
+    g.slot.guest = null;
+    g.bar.style.display = 'none';
+    g.wantsMeat = false;
+    if (g.tent) { g.tent.reserved--; g.tent = null; }
+    g.emote = '🥶';
+    g.emoteT = 2.5;
+    g.ch.face = null;
+    g.state = 'leave'; // お会計をせずに帰る
+    g.path = [...(g.slot.via || []).slice().reverse(), GATE_IN, ...COLD_EXIT];
+    blip(220, 0.15, 'triangle', 0.04, 0.6);
   }
 
   function walkPath(ch, pathList, speed, dt) {
@@ -1752,45 +1815,22 @@
     for (const f of fires) f.warming = 0;
     if (receptionist) animateCharacter(receptionist.ch, dt, time);
     guestTimer -= dt;
-    if (guestTimer <= 0) { guestTimer = guestInterval; spawnGuest(); }
-    const seatFree = slots.some(s => !s.guest);
-    let headWaiting = null;
+    if (guestTimer <= 0) { guestTimer = guestInterval(); spawnGuest(); }
+    const seatFree = slots.some(t => !t.guest);
+    let entryWaiting = null, payWaiting = null;
 
     for (let i = guests.length - 1; i >= 0; i--) {
       const g = guests[i], ch = g.ch;
-      if (g.state === 'queue') {
-        // 雪の道で列に並んで待つ(寒いのでふるえている)
+      if (g.state === 'wait') {
+        // 入口の外で、席が空くのを待つ(寒いのでふるえている)
         ch.shiver = 0.6;
-        const idx = payQueue.indexOf(g);
-        const spot = queueSpot(idx);
+        const idx = entryQueue.indexOf(g);
+        const spot = entrySpot(idx);
         const arrived = walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15;
-        ch.face = idx === 0 ? WINDOW : { x: ch.root.position.x + 1, z: ch.root.position.z };
+        ch.face = { x: ch.root.position.x + 1, z: ch.root.position.z };
         if (idx === 0 && arrived) {
-          if (!g.paying && (deskAttended || receptionist) && seatFree) {
-            g.paying = true;
-            g.payLeft = COINS_PER_GUEST;
-            if (tentOpen && tentReserved < TENT_BEDS && Math.random() < 0.5) {
-              tentReserved++;
-              g.tent = true;
-              g.payLeft += TENT_FEE; // テントに泊まる人は宿泊代もいっしょに払う
-            }
-          }
-          if (g.paying) {
-            g.payTimer -= dt;
-            if (g.payLeft > 0 && g.payTimer <= 0) {
-              g.payTimer = 0.09;
-              g.payLeft--;
-              ch.chop = 0.6; // 腕を振ってお金を投げる
-              if (receptionist) receptionist.ch.chop = 0.6;
-              payToPile(V(ch.root.position.x, ch.root.position.y + 1.1, ch.root.position.z - 0.3));
-            }
-            if (g.payLeft === 0 && g.payTimer <= 0) {
-              payQueue.shift();
-              admit(g);
-            }
-          } else {
-            headWaiting = g;
-          }
+          if (seatFree) { entryQueue.shift(); admit(g); }
+          else entryWaiting = g;
         }
       } else if (g.state === 'arrive') {
         ch.shiver = 0.6;
@@ -1813,16 +1853,7 @@
         // 火が消えると、寒くてすぐに帰ってしまう
         if (fire.heat <= 0) g.cold += dt; else g.cold = 0;
         if (g.cold > g.coldLimit) {
-          g.slot.guest = null;
-          g.bar.style.display = 'none';
-          g.wantsMeat = false;
-          if (g.tent) { g.tent = false; tentReserved--; }
-          g.emote = '🥶';
-          g.emoteT = 2.5;
-          ch.face = null;
-          g.state = 'leave';
-          g.path = [...(g.slot.via || []).slice().reverse(), GATE_IN, GATE_OUT, ...EXIT_PATH];
-          blip(220, 0.15, 'triangle', 0.04, 0.6);
+          leaveCold(g);
         } else if (g.warm >= 1) {
           g.state = 'happy';
           ch.hop = 0.5;
@@ -1831,23 +1862,26 @@
           blip(660, 0.12, 'sine', 0.06, 1.5);
         }
       } else if (g.state === 'happy') {
-        // 温まったら、テントで休むか帰る(焚き火のまわりの席は次の人にゆずる)
+        // 温まったら: 🍖 の人は配膳台へ、テントに泊まる人はテントへ、ほかの人はお会計へ
         if (ch.hop <= 0) {
           ch.face = null;
           g.slot.guest = null;
           const back = (g.slot.via || []).slice().reverse();
+          if (!g.tent) {
+            const t = openTents().find(t => t.reserved < TENT_BEDS);
+            if (t && Math.random() < 0.6) { t.reserved++; g.tent = t; }
+          }
           if (g.wantsMeat && meatQueue.length < MEAT_QUEUE_LEN) {
-            // おなかがすいている人は、🍽️ 配膳台に並ぶ
             g.state = 'toMeat';
             g.path = [...(g.slot.toCounter || back)];
             meatQueue.push(g);
           } else if (g.tent) {
+            g.wantsMeat = false;
             g.state = 'toTent';
-            g.path = [...back, TENT_SIDE_A, TENT_SIDE_B, TENT_DOOR];
+            g.path = [...back, ...g.tent.route];
           } else {
             g.wantsMeat = false;
-            g.state = 'leave';
-            g.path = [...back, GATE_IN, GATE_OUT, ...EXIT_PATH];
+            goCheckout(g, back);
           }
         }
       } else if (g.state === 'toMeat') {
@@ -1858,29 +1892,64 @@
         g.atCounter = (walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15) && idx === 0;
         ch.face = idx === 0 ? MEAT_COUNTER : { x: ch.root.position.x - 1, z: ch.root.position.z };
       } else if (g.state === 'eat') {
-        // 肉を受け取って、少し喜んでから帰る(テントに泊まる人はテントへ)
+        // 肉を受け取って、少し喜んでから、テントかお会計へ
         ch.vx = ch.vz = 0;
         g.eatT -= dt;
         if (g.eatT <= 0) {
-          if (g.tent) { g.state = 'toTent'; g.path = [TENT_SIDE_A, TENT_SIDE_B, TENT_DOOR]; }
-          else { g.state = 'leave'; g.path = [GATE_IN, GATE_OUT, ...EXIT_PATH]; }
+          if (g.tent) { g.state = 'toTent'; g.path = [{ x: 0.6, z: 3.0 }, ...g.tent.route]; }
+          else goCheckout(g, [{ x: -1.0, z: 3.0 }]);
         }
       } else if (g.state === 'toTent') {
         if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
           g.state = 'sleep';
           g.sleep = SLEEP_TIME;
-          sleepers++;
+          g.tent.sleepers++;
           ch.root.visible = false; // テントの中で休む
         }
       } else if (g.state === 'sleep') {
         g.sleep -= dt;
         if (g.sleep <= 0) {
-          sleepers--;
-          tentReserved--;
+          g.tent.sleepers--;
+          g.tent.reserved--;
+          g.slept = true;
           ch.root.visible = true;
           ch.hop = 0.4;
-          g.state = 'leave';
-          g.path = [TENT_SIDE_B, TENT_SIDE_A, GATE_IN, GATE_OUT, ...EXIT_PATH];
+          goCheckout(g, g.tent.route.slice(0, 2).reverse());
+        }
+      } else if (g.state === 'toPay') {
+        if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
+          g.state = 'checkout';
+          payQueue.push(g);
+        }
+      } else if (g.state === 'checkout') {
+        // 受付の窓口の前に並んで、お会計
+        const idx = payQueue.indexOf(g);
+        const spot = queueSpot(idx);
+        const arrived = walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15;
+        ch.face = idx === 0 ? WINDOW : { x: ch.root.position.x + 1, z: ch.root.position.z };
+        if (idx === 0 && arrived) {
+          if (!g.paying && (deskAttended || receptionist)) {
+            g.paying = true;
+            g.payLeft = COINS_PER_GUEST + (g.slept ? TENT_FEE : 0);
+          }
+          if (g.paying) {
+            g.payTimer -= dt;
+            if (g.payLeft > 0 && g.payTimer <= 0) {
+              g.payTimer = 0.09;
+              g.payLeft--;
+              ch.chop = 0.6; // 腕を振ってお金を投げる
+              if (receptionist) receptionist.ch.chop = 0.6;
+              payToPile(V(ch.root.position.x, ch.root.position.y + 1.1, ch.root.position.z - 0.3));
+            }
+            if (g.payLeft === 0 && g.payTimer <= 0) {
+              payQueue.shift();
+              g.state = 'leave';
+              ch.face = null;
+              g.path = [...EXIT_PATH];
+            }
+          } else {
+            payWaiting = g;
+          }
         }
       } else if (g.state === 'leave') {
         if (walkPath(ch, g.path, GUEST_SPEED * 1.2, dt)) {
@@ -1898,20 +1967,32 @@
         g.bar.style.top = ((1 - tmpA.y) / 2 * window.innerHeight) + 'px';
       }
     }
-    // テントで寝ている人がいるときは 💤。受付の先頭で待っている人がいるときは、🛎️(受付に誰もいない)か「満席」を出す
-    sleepBubble.style.display = sleepers > 0 ? 'block' : 'none';
-    if (sleepers > 0) placeLabel(sleepBubble, -1.2, FLOOR + 2.8 + Math.sin(time * 3) * 0.1, 7.2);
-    waitBubble.style.display = headWaiting ? 'block' : 'none';
-    if (headWaiting) {
-      waitBubble.textContent = (deskAttended || receptionist) ? '満席' : '🛎️';
+    // テントで寝ている人がいるときは 💤
+    for (const t of tents) {
+      if (!t.bubble) {
+        t.bubble = document.createElement('div');
+        t.bubble.className = 'pile-label';
+        t.bubble.textContent = '💤';
+        document.body.appendChild(t.bubble);
+      }
+      t.bubble.style.display = t.sleepers > 0 ? 'block' : 'none';
+      if (t.sleepers > 0) placeLabel(t.bubble, t.x, FLOOR + 2.8 + Math.sin(time * 3) * 0.1, t.z);
+    }
+    // お会計を待っている人がいて受付に誰もいないときは 🛎️、席が空かずに入れないときは「満席」
+    waitBubble.style.display = payWaiting ? 'block' : 'none';
+    if (payWaiting) {
+      waitBubble.textContent = '🛎️';
       placeLabel(waitBubble, PAY_SPOT.x, 2.3 + Math.abs(Math.sin(time * 5)) * 0.2, PAY_SPOT.z);
     }
+    fullBubble.style.display = entryWaiting ? 'block' : 'none';
+    if (entryWaiting) placeLabel(fullBubble, entryWaiting.ch.root.position.x, 2.3, entryWaiting.ch.root.position.z);
   }
 
   // ================================================================
   //  木こりの仲間
   // ================================================================
-  let helper = null;
+  const helpers = [];
+  let helper = null; // (最初に雇った木こり。テスト用の表示で使う)
   const BACK_IN = { x: BACK_GATE_X, z: -PZ + 0.6 };
   const BACK_OUT = { x: BACK_GATE_X, z: -FZ - 1.4 };
   // 柵の中と外を行き来するときは、奥の出入口を通る
@@ -1923,16 +2004,19 @@
   function spawnHelper() {
     const ch = makeCharacter({ coat: '#3fa55c', coatDark: '#2f8a4a', hat: '#ffd166', pack: true, axe: true });
     ch.speedRef = HELPER_SPEED;
-    const pos = shops[0].pos;
-    ch.root.position.set(pos.x, FLOOR, pos.z);
+    ch.root.position.set(3.6, FLOOR, 4.6); // キャンプの枠のあたりから出てくる
     ch.hop = 0.5;
     setAxeLook(ch, axeLevel);
     scene.add(ch.root);
-    helper = { ch, carrier: makeCarrier(ch, HELPER_CARRY), state: 'toTree', tree: null, timer: 0, path: [], stuck: 0, last: V() };
+    const h = { ch, carrier: makeCarrier(ch, HELPER_CARRY), state: 'toTree', tree: null, timer: 0, path: [], stuck: 0, last: V() };
+    helpers.push(h);
+    if (!helper) helper = h;
   }
   function updateHelper(dt, time) {
-    if (!helper) return;
-    const h = helper, ch = h.ch, p = ch.root.position;
+    for (const h of helpers) updateOneHelper(h, dt, time);
+  }
+  function updateOneHelper(h, dt, time) {
+    const ch = h.ch, p = ch.root.position;
     if (h.state === 'toTree') {
       if (!h.tree || h.tree.hp <= 0) {
         // 出入口から近い木を選ぶ
@@ -2014,13 +2098,14 @@
   function setAxeLevel(level) {
     axeLevel = level;
     setAxeLook(player.ch, level);
-    if (helper) setAxeLook(helper.ch, level);
+    for (const h of helpers) setAxeLook(h.ch, level);
   }
-  function openTent() {
-    tentOpen = true;
-    tent.visible = true;
-    tentBox.off = false;
-    guestInterval = GUEST_INTERVAL_TENT;
+  function openTent(i) {
+    const t = tents[i];
+    if (!t || t.open) return;
+    t.open = true;
+    t.g.visible = true;
+    t.box.off = false;
   }
 
   function makeShop(list, pos) {
@@ -2030,7 +2115,7 @@
     return shop;
   }
   // ---- キャンプ拡張(柵の右の外に枠がある) ----
-  const EXPAND_ZONE = { x: 9.6, z: -5.2 };
+  const EXPAND_ZONE = { x: camp.x2 + 2.6, z: -5.2 }; // 柵の右の外。拡張するたびに外へずれる
   function removeTreesIn(x1, x2, z1, z2) {
     for (const t of trees) {
       if (t.dead || t.x < x1 || t.x > x2 || t.z < z1 || t.z > z2) continue;
@@ -2045,34 +2130,35 @@
   removeTreesIn(-15.5, -7.6, -2.6, 5.5); // 受付の小屋とお金置き場のまわりもあける
   removeTreesIn(TOOL_SHOP.x - 2.4, TOOL_SHOP.x + 2.4, TOOL_SHOP.z - 2, TOOL_SHOP.z + 4); // 道具屋のまわり
   removeTreesIn(MEADOW.x1 - 1, MEADOW.x2 + 1, camp.z2 + 0.5, MEADOW.z2 + 1); // 狩り場は見通しよく
-  function expandCamp() {
-    camp.x2 = EXPAND_X2;
+  function expandCamp(i) {
+    const e = EXPANSIONS[i];
+    if (!e || camp.x2 >= e.x2) return;
+    camp.x2 = e.x2;
     removeTreesIn(camp.x1 - 1, camp.x2 + 1.2, camp.z1 - 1, camp.z2 + 1.2);
+    for (const md of mounds) if (insidePlaza(md.x, md.z)) md.m.visible = false; // 広場の中の雪は消す
     buildPlaza();
     buildFence();
-    // 広げた場所に2つ目の焚き火と、お客さんの立ち位置を作る
-    const fire = addCampfire(10.0, 0.0, 40, spareFireLight);
+    // 広げた場所に新しい焚き火と、そのまわりの席を作る
+    const fire = addCampfire(e.fire.x, e.fire.z, 40);
     fire.dropZone = addZone(fire.x, fire.z + 2.6, 2.4, iconZone('🔥'));
-    const hub = { x: fire.x - 3.2, z: fire.z };
-    const back = { x: fire.x, z: fire.z - 2.3 };
-    const R2 = 2.2;
-    const at = (deg) => ({ x: fire.x + Math.cos(deg * Math.PI / 180) * R2, z: fire.z + Math.sin(deg * Math.PI / 180) * R2 });
-    const newSlots = [
-      { ...at(180), via: [hub] }, { ...at(145), via: [hub] }, { ...at(-135), via: [hub] },
-      { ...at(-90), via: [hub] }, { ...at(-45), via: [hub, back] }, { ...at(0), via: [hub, back] },
-      { ...at(35), via: [hub, { x: fire.x - 1.5, z: fire.z + 3.2 }] },
-    ];
-    slots = slots.concat(newSlots.map(s => ({ ...s, fire, guest: null, toCounter: (s.via || []).slice().reverse() })));
+    const hubs = [{ x: -1.0, z: 3.0 }, { x: fire.x - 4.6, z: 3.0 }];
+    slots = slots.concat(makeRingSeats(fire, FIRE_SEATS, hubs));
     burst(sparks, tmpA.set(fire.x, FLOOR + 0.5, fire.z), 20, 6, 6);
+    // 拡張の枠を、新しい柵の外へ動かす
+    const shop = shops.find(sh => sh.list === EXPAND_UPGRADES);
+    if (shop) {
+      shop.pos = { x: camp.x2 + 2.6, z: -5.2 };
+      shop.zone.x = shop.pos.x;
+      shop.zone.mesh.position.set(shop.pos.x, groundY(shop.pos.x, shop.pos.z) + 0.01, shop.pos.z);
+      removeTreesIn(shop.pos.x - 2.2, shop.pos.x + 2.2, shop.pos.z - 2.2, shop.pos.z + 2.2);
+      for (const md of mounds) if (Math.abs(md.x - shop.pos.x) < 3 && Math.abs(md.z - shop.pos.z) < 3) md.m.visible = false;
+    }
   }
 
   const shops = [
     makeShop(CAMP_UPGRADES, { x: 3.6, z: 4.6 }),   // キャンプを充実させる
     makeShop(AXE_UPGRADES, { x: TOOL_SHOP.x, z: TOOL_SHOP.z + 2.05 }), // 道具屋(斧・チェーンソー)
-    makeShop([
-      { icon: '🏕️', label: 'キャンプ拡張', cost: EXPAND_COST, message: 'キャンプが広くなった! 焚き火も増えたよ', apply: expandCamp },
-      { icon: '🔥', label: '火の番(2)', cost: 40, message: '2つ目の焚き火にも火の番が来た!', apply: () => hireFireKeeper(fires[1]) },
-    ], EXPAND_ZONE),
+    makeShop(EXPAND_UPGRADES, EXPAND_ZONE), // キャンプ拡張(柵の右の外)
     makeShop(HUNT_UPGRADES, { x: -5.2, z: 4.6 }),  // 狩りの仲間(焼き台のそば)
     makeShop(WEAPON_UPGRADES, { x: WEAPON_SHOP.x, z: WEAPON_SHOP.z + 2.05 }), // 武器屋(弓・ボウガン)
   ];
@@ -2833,7 +2919,7 @@
     sun.position.copy(camTarget).add(SUN_OFFSET);
     sun.target.position.copy(camTarget);
 
-    safe('hud', () => { updateHud(dt); updatePileLabel(); });
+    safe('hud', () => { hudBottom = $('hud').getBoundingClientRect().bottom; updateHud(dt); updatePileLabel(); });
     safe('render', () => renderer.render(scene, camera));
     adaptQuality(now);
   }
@@ -2945,7 +3031,7 @@
         woodPiles: fires.map(f => f.wood.stock),
         heat: FIRE.heat, heats: fires.map(f => Math.round(f.heat)), camp: { ...camp }, guests: guests.length,
         guestStates: guests.map(g => g.state).join(','), errors: errorsSeen.slice(),
-        queue: payQueue.length, meatQueue: meatQueue.length, seats: slots.length, seated: slots.filter(t => t.guest).length, sleepers, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
+        queue: payQueue.length, entryQueue: entryQueue.length, meatQueue: meatQueue.length, seats: slots.length, seated: slots.filter(t => t.guest).length, sleepers: tents.reduce((n, t) => n + t.sleepers, 0), fires: fires.length, helpers: helpers.length, weaponLevel, boarsAlive: boars.filter(b => b.alive).length,
         meat: { raw: countKind(player.meatCarrier, 'raw'), cooked: countKind(player.meatCarrier, 'cooked') },
         grill: grillSlots.map(s => s.item ? s.item.userData.kind[0] : '-').join(''), wanting: wantingGuests().length,
         hunterState: hunter && hunter.state, waiterState: waiter && waiter.state, boarSpots: boars.filter(b => b.alive).map(b => [b.root.position.x, b.root.position.z]), keepers: fires.map(f => !!f.keeper), receptionist: !!receptionist, tutorial, shops: shops.map(s => s.index + ':' + s.paid), axeLevel,
@@ -2958,6 +3044,8 @@
     setHeat(v) { for (const f of fires) f.heat = v; },
     wantingSpots() { return wantingGuests().map(g => [g.ch.root.position.x, g.ch.root.position.z]); },
     meatQueueLen() { return meatQueue.length; },
+    shopZones() { return shops.map(sh => [sh.pos.x, sh.pos.z]); },
+    buyNow(i) { const sh = shops[i], u = shopItem(sh); if (u) { sh.paid = u.cost; completeShop(sh); sh.cool = 0; } }, // テスト用: すぐ買う
   };
 </script>
 
