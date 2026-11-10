@@ -277,7 +277,7 @@
   //  設定(ここの数字を変えると、遊びやすさを調整できます)
   // ================================================================
   // 場所(ステージ)。キャンプが完成すると次の場所へ進める。先の場所ほど火が消えやすくお客さんが多いが、よく稼げる
-  const STAGE_KEY = 'snow-camp-stage-v1'; // 今いる場所の番号を保存する名前(進み具合のセーブとは別)
+  const STAGE_KEY = 'snow-camp2-stage-v1'; // 今いる場所の番号を保存する名前(進み具合のセーブとは別)
   const STAGES = [
     { name: '🌲 雪の森', sky: '#cfe3f2', snow: '#eef4fb', leaves: ['#2e7d55', '#2a6e4c'], light: 1,
       heat: 1, guests: 1, price: 1, coins: 3, meat: 4, tent: 5, desc: '' },
@@ -371,7 +371,7 @@
   const TENT_FEE = ST.tent;      // テントに泊まったお客さんが上乗せして払うお金(雪の森は5)
   const TENT_BEDS = 2;           // テントに同時に泊まれる人数
   const SLEEP_TIME = 6;          // テントで休む時間(秒)
-  const SAVE_KEY = 'snow-camp-save-v1'; // 進み具合を保存する名前
+  const SAVE_KEY = 'snow-camp2-save-v1'; // 進み具合を保存する名前(第1版 snow-camp-v1/ とは別の名前にして、セーブが混ざらないようにしている)
   // 狩り: 道具はパチンコ → 弓 → ボウガン
   const WEAPONS = [
     { name: 'パチンコ', range: 5.0, cool: 0.7, dmg: 1, kind: 'stone' },
@@ -427,7 +427,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-10';
+  const GAME_VERSION = '2026.11.12-1';
   $('version').textContent = '📍' + ST.name + '  v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
