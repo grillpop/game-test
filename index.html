@@ -107,6 +107,39 @@
     color: #ffd23f; text-shadow: 0 0 3px #7a4a10, 0 2px 4px rgba(0, 0, 0, .5);
     pointer-events: none;
   }
+  #mission.clickable { pointer-events: auto; background: #ffe27a; cursor: pointer; animation: repup .6s ease-in-out infinite alternate; }
+  /* キャンプ完成の画面 */
+  #clear {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(20, 30, 50, .55);
+  }
+  #clear.show { display: flex; }
+  #clear .card {
+    width: min(86vw, 360px);
+    padding: 22px 20px 18px;
+    border-radius: 22px;
+    background: #fffaf0;
+    color: #4a2e1c;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    animation: clearin .45s cubic-bezier(.2, 1.6, .4, 1);
+  }
+  @keyframes clearin { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #clear h1 { margin: 0 0 4px; font-size: 30px; color: #c2410c; }
+  #clear .place { font-size: 16px; font-weight: 800; margin-bottom: 12px; }
+  #clear .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 0 0 14px; font-size: 15px; font-weight: 800; }
+  #clear .stats div { background: #f3e6cf; border-radius: 10px; padding: 6px 4px; }
+  #clear .next { font-size: 14px; font-weight: 700; line-height: 1.5; margin-bottom: 14px; }
+  #clear .next b { font-size: 17px; }
+  #clear button {
+    display: block; width: 100%;
+    margin-top: 8px; padding: 12px;
+    border: 0; border-radius: 14px;
+    font-size: 18px; font-weight: 900;
+  }
+  #clear-next { background: #ff8a1f; color: #fff; box-shadow: 0 3px 0 #c2410c; }
+  #clear-stay { background: #e8dcc6; color: #6a4a2c; font-size: 15px !important; }
   #toast {
     position: fixed;
     left: 0; right: 0;
@@ -218,6 +251,19 @@
   <div id="version"></div>
   <button id="reset" type="button">はじめから</button>
   <div id="error"></div>
+  <div id="clear"><div class="card">
+    <h1>🎉 キャンプ完成!</h1>
+    <div class="place" id="clear-place"></div>
+    <div class="stats">
+      <div>👥 <span id="clear-guests">0</span>人</div>
+      <div>⏱️ <span id="clear-time">0</span></div>
+      <div>⭐ ★<span id="clear-star">5</span></div>
+      <div>💰 <span id="clear-money">0</span></div>
+    </div>
+    <div class="next" id="clear-next-text"></div>
+    <button id="clear-next" type="button">次の場所へ ▶</button>
+    <button id="clear-stay" type="button">このまま遊ぶ</button>
+  </div></div>
 
 <script type="module">
   import * as THREE from './vendor/three.module.min.js';
@@ -225,6 +271,27 @@
   // ================================================================
   //  設定(ここの数字を変えると、遊びやすさを調整できます)
   // ================================================================
+  // 場所(ステージ)。キャンプが完成すると次の場所へ進める。先の場所ほど火が消えやすくお客さんが多いが、よく稼げる
+  const STAGE_KEY = 'snow-camp-stage-v1'; // 今いる場所の番号を保存する名前(進み具合のセーブとは別)
+  const STAGES = [
+    { name: '🌲 雪の森', sky: '#cfe3f2', snow: '#eef4fb', leaves: ['#2e7d55', '#2a6e4c'], light: 1,
+      heat: 1, guests: 1, price: 1, coins: 3, meat: 4, tent: 5, desc: '' },
+    { name: '🧊 凍った湖', sky: '#a6c6ea', snow: '#d8e6f6', leaves: ['#2d6f72', '#275f60'], light: 0.95, ice: true,
+      heat: 1.2, guests: 1.15, price: 1.6, coins: 4, meat: 5, tent: 7, desc: '火が少し消えやすく、お客さんが多い。そのぶんよく稼げる' },
+    { name: '🌙 星空の雪山', sky: '#3e4c7c', snow: '#c3cbe6', leaves: ['#1f5245', '#1a463d'], light: 0.5, night: true,
+      heat: 1.4, guests: 1.3, price: 2.2, coins: 5, meat: 6, tent: 9, desc: '夜の雪山。火がもっと消えやすく、お客さんももっと多い' },
+  ];
+  function stageInfo(n) {
+    if (n <= STAGES.length) return STAGES[n - 1];
+    const k = n - STAGES.length, b = STAGES[STAGES.length - 1]; // 4つ目からは、雪山がだんだん厳しくなる
+    return { ...b, name: b.name + ' ' + (k + 1), heat: b.heat + 0.15 * k, guests: b.guests + 0.1 * k,
+      price: b.price + 0.6 * k, coins: b.coins + k, meat: b.meat + k, tent: b.tent + 2 * k, desc: '前よりさらに厳しい雪山' };
+  }
+  let STAGE_NO = 1;
+  try { STAGE_NO = Math.max(1, Math.floor(+(JSON.parse(localStorage.getItem(STAGE_KEY) || '{}').stage) || 1)); } catch (e) { STAGE_NO = 1; }
+  const ST = stageInfo(STAGE_NO);
+  const stageCost = (c) => Math.round(c * ST.price / 5) * 5 || c; // 値段は5きざみにそろえる
+
   const PX = 7, PZ = 9;          // 最初のキャンプ(柵の内側)の半分の広さ
   const camp = { x1: -PX, x2: PX, z1: -PZ, z2: PZ }; // 今の柵の内側の範囲(拡張すると広がる)
   // キャンプ拡張(3段階)。広げるたびに右へ8ずつ広がり、焚き火が1つ増える
@@ -233,6 +300,7 @@
     { x2: 23, fire: { x: 18.5, z: 0 }, cost: 200, keeper: 80, lumber: 100, tent: 120 },
     { x2: 31, fire: { x: 26.5, z: 0 }, cost: 400, keeper: 120, lumber: 150, tent: 160 },
   ];
+  for (const e of EXPANSIONS) for (const k of ['cost', 'keeper', 'lumber', 'tent']) e[k] = stageCost(e[k]);
   const SPEED = 6.5;             // 主人公の歩く速さ(単位/秒)
   const STICK_RADIUS = 56;       // バーチャルスティックの半径(px)
   const PLAYER_R = 0.4;          // 当たり判定の半径
@@ -258,12 +326,12 @@
 
   const HEAT_START = 35;         // 最初の火の強さ(0〜100)
   const HEAT_PER_LOG = 4;        // 薪1本で増える火の強さ
-  const HEAT_DECAY = 1.0;        // 火が弱まる速さ(1秒あたり)
+  const HEAT_DECAY = 1.0 * ST.heat; // 火が弱まる速さ(1秒あたり。先の場所ほど速い)
   const HEAT_DECAY_PER_GUEST = 0.12; // 温まっている人1人あたり、さらに弱まる速さ
 
   const WARM_RATE = 0.22;        // 人が温まる速さ
-  const COINS_PER_GUEST = 3;     // 温まった人が帰りに払うお金(入場料)
-  const GUEST_INTERVAL = 3.6;    // 人がやってくる間隔(秒)。テントや焚き火が増えると短くなる
+  const COINS_PER_GUEST = ST.coins; // 温まった人が帰りに払うお金(入場料。雪の森は3)
+  const GUEST_INTERVAL = 3.6 / ST.guests; // 人がやってくる間隔(秒)。テントや焚き火が増えると短くなる
   const FIRE_SEATS = 10;         // 焚き火1つあたりの席の数(焚き火のまわりに輪に並べる)
   const ENTRY_QUEUE_LEN = 6;     // 入口の外で、席が空くのを待てる人数
   // キャンプ場の定員(中にいられるお客さんの最大人数)。テントや焚き火が増えると少しずつ増える
@@ -295,7 +363,7 @@
   const EXPAND_UPGRADES = EXPANSIONS.map((e, i) => (
     { icon: '🏕️', label: `拡張 ${i + 1}`, cost: e.cost, message: 'キャンプが広くなった! 新しいエリアに枠が出たよ', apply: () => expandCamp(i) }
   ));
-  const TENT_FEE = 5;            // テントに泊まったお客さんが上乗せして払うお金
+  const TENT_FEE = ST.tent;      // テントに泊まったお客さんが上乗せして払うお金(雪の森は5)
   const TENT_BEDS = 2;           // テントに同時に泊まれる人数
   const SLEEP_TIME = 6;          // テントで休む時間(秒)
   const SAVE_KEY = 'snow-camp-save-v1'; // 進み具合を保存する名前
@@ -313,7 +381,7 @@
   const COOK_TIME = 3;           // 肉が焼けるまでの時間(秒)
   const MEAT_CARRY = 10;         // 背中に積める肉の数(薪とは別)
   const COUNTER_MAX = 12;        // 🍽️ 配膳台に置いておける焼いた肉の数
-  const MEAT_PRICE = 4;          // 焼いた肉をお客さんに渡したときにもらえるお金
+  const MEAT_PRICE = ST.meat;    // 焼いた肉をお客さんに渡したときにもらえるお金(雪の森は4)
   const MEAT_WANT_RATE = 0.5;    // 肉をほしがるお客さんの割合
   // 狩りの仲間(焼き台のそばの枠)
   const HUNT_UPGRADES = [
@@ -340,6 +408,8 @@
     { icon: '🪓', label: '斧 Lv4', cost: 100, message: '伝説の斧! もっともっと速く切れる', apply: () => setAxeLevel(4) },
     { icon: '🪚', label: 'チェーンソー', cost: 180, message: 'チェーンソーを手に入れた! ギュイーン!', apply: () => setAxeLevel(CHAINSAW_LEVEL) },
   ];
+  // 先の場所ほど値段が高い(拡張の値段は EXPANSIONS のところで変えている)
+  for (const u of [...CAMP_UPGRADES, ...HUNT_UPGRADES, ...WEAPON_UPGRADES, ...AXE_UPGRADES]) u.cost = stageCost(u.cost);
 
   const CAM_YAW = Math.PI / 4;   // カメラを45度回して、ステージを斜めに見せる
   const CAM_DIST = 24;           // カメラまでの水平距離
@@ -352,8 +422,8 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-7';
-  $('version').textContent = 'v' + GAME_VERSION;
+  const GAME_VERSION = '2026.11.11-8';
+  $('version').textContent = '📍' + ST.name + '  v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
   const errorsSeen = [];
@@ -380,7 +450,8 @@
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.prepend(renderer.domElement);
 
-  const SKY = '#cfe3f2';
+  const SKY = ST.sky;
+  document.documentElement.style.background = document.body.style.background = SKY;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY);
   scene.fog = new THREE.Fog(SKY, 50, 85);
@@ -396,8 +467,8 @@
   window.addEventListener('resize', resize);
   resize();
 
-  scene.add(new THREE.HemisphereLight('#e6f1ff', '#b08a6a', 1.5));
-  const sun = new THREE.DirectionalLight('#ffe6c4', 2.1);
+  scene.add(new THREE.HemisphereLight('#e6f1ff', '#b08a6a', 1.5 * ST.light));
+  const sun = new THREE.DirectionalLight(ST.night ? '#b8c8ff' : '#ffe6c4', 2.1 * ST.light); // 夜の場所は月明かり
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
@@ -473,10 +544,24 @@
   // ================================================================
   //  ステージ
   // ================================================================
-  const snow = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), mat('#eef4fb', { roughness: 1 }));
+  const snow = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), mat(ST.snow, { roughness: 1 }));
   snow.rotation.x = -Math.PI / 2;
   snow.receiveShadow = true;
   scene.add(snow);
+  if (ST.ice) {
+    // 凍った湖: 雪原のあちこちに、つるつるの氷の面(見た目だけ。1回で描く)
+    const iceMat = new THREE.MeshStandardMaterial({ color: '#b6e0f7', roughness: 0.12, metalness: 0.15 });
+    const ice = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20), iceMat, 16);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const spots = [[-22, -6, 6, 3.5], [-18, 14, 5, 3], [-26, 22, 7, 4], [-12, -22, 6, 3], [6, -26, 8, 4], [22, -22, 5, 3],
+      [36, 12, 6, 4], [24, 20, 8, 4.5], [10, 26, 6, 3], [-6, 30, 7, 3.5], [-30, 4, 4, 6], [40, -8, 5, 3],
+      [-24, -24, 5, 3], [16, -32, 6, 3], [-34, 30, 6, 4], [34, 32, 7, 4]];
+    spots.forEach(([x, z, sx, sz], i) => {
+      ice.setMatrixAt(i, m4.compose(new THREE.Vector3(x, 0.012, z), q, new THREE.Vector3(sx, sz, 1)));
+    });
+    ice.receiveShadow = true;
+    scene.add(ice);
+  }
   const mounds = [];
   for (let i = 0; i < 40; i++) { // 雪のこんもり
     const x = (rand() * 2 - 1) * 30, z = (rand() * 2 - 1) * 30;
@@ -594,7 +679,7 @@
   const CAP_GEOS = [0, 1, 2].map(i => new THREE.ConeGeometry((1.15 - i * 0.28) * 0.55, 0.55, 7));
   // 木の部品(幹・葉3段・雪3段)。木は150本近くあるので、部品ごとに InstancedMesh でまとめて描く
   const leafMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, flatShading: true });
-  const LEAF_COLORS = ['#2e7d55', '#2a6e4c'].map(c => new THREE.Color(c));
+  const LEAF_COLORS = ST.leaves.map(c => new THREE.Color(c));
   const TREE_PARTS = [{ geo: TRUNK_GEO, mat: trunkMat, y: 0.5 }];
   for (let i = 0; i < 3; i++) {
     const y = 1.25 + i * 0.7;
@@ -694,7 +779,7 @@
   // 拡張でできる2つ目の焚き火の光。最初から(明るさ0で)置いておく
   // 焚き火の光は2つだけ用意して、カメラに近い焚き火に貸す(焚き火が増えても重くならず、途中で光の数も変わらない)
   const fireLights = [0, 1].map(() => {
-    const l = new THREE.PointLight('#ff9a40', 0, 8, 1.6);
+    const l = new THREE.PointLight('#ff9a40', 0, ST.night ? 12 : 8, 1.6);
     l.position.set(0, -50, 0);
     scene.add(l);
     return l;
@@ -2094,6 +2179,7 @@
               payQueue.shift();
               missionEvent('checkout');
               addRep(REP_HAPPY + (g.ate ? 1 : 0) + (g.slept ? 1 : 0), ch.root.position);
+              served++;
               g.state = 'leave';
               ch.face = null;
               g.path = [...EXIT_PATH];
@@ -3141,6 +3227,7 @@
     { text: '⭐ 評判を ★5 にしよう', done: () => star >= 5, reward: 150 },
   ];
   let mission = 0, missionCount = 0, missionWait = 0, missionShown = '';
+  const missionReward = (m) => stageCost(m.reward); // 先の場所ほど、ごほうびも多い
   function missionEvent(ev, n = 1) {
     const m = MISSIONS[mission];
     if (!m || m.ev !== ev) return;
@@ -3148,8 +3235,8 @@
   }
   function completeMission() {
     const m = MISSIONS[mission];
-    money += m.reward;
-    toast('ミッション達成! 💰+' + m.reward);
+    money += missionReward(m);
+    toast('ミッション達成! 💰+' + missionReward(m));
     [784, 988, 1175, 1568].forEach((f, i) => setTimeout(() => blip(f, 0.12, 'triangle', 0.07, 1.05), i * 80));
     const p = player.ch.root.position;
     burst(sparks, tmpA.set(p.x, p.y + 1.2, p.z), 14, 4, 5);
@@ -3167,7 +3254,40 @@
   missionMarker.visible = false;
   scene.add(missionMarker);
   const missionArrow = $('mission-arrow');
+  // ================================================================
+  //  キャンプ完成 → 次の場所へ
+  // ================================================================
+  let served = 0, playTime = 0, clearShown = false;
+  function showClear() {
+    const next = stageInfo(STAGE_NO + 1);
+    $('clear-place').textContent = '📍 ' + ST.name + ' をクリア';
+    $('clear-guests').textContent = served;
+    const min = Math.floor(playTime / 60);
+    $('clear-time').textContent = min >= 60 ? Math.floor(min / 60) + '時間' + (min % 60) + '分' : min + '分';
+    $('clear-star').textContent = star;
+    $('clear-money').textContent = money;
+    $('clear-next-text').innerHTML = '';
+    const b = document.createElement('b');
+    b.textContent = '次の場所: ' + next.name;
+    $('clear-next-text').append(b, document.createElement('br'), next.desc + '。最初から作り直そう!');
+    $('clear').classList.add('show');
+    [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => setTimeout(() => blip(f, 0.18, 'triangle', 0.08, 1.02), i * 110));
+    const p = player.ch.root.position;
+    burst(sparks, tmpA.set(p.x, p.y + 1.5, p.z), 30, 6, 7);
+  }
+  $('clear-stay').addEventListener('click', () => $('clear').classList.remove('show'));
+  $('mission').addEventListener('click', () => { if (mission >= MISSIONS.length) showClear(); });
+  $('clear-next').addEventListener('click', () => {
+    saveDisabled = true;
+    try {
+      localStorage.setItem(STAGE_KEY, JSON.stringify({ stage: STAGE_NO + 1 }));
+      localStorage.removeItem(SAVE_KEY); // 次の場所は最初から
+    } catch (e) { /* 何もしない */ }
+    location.reload();
+  });
+
   function updateMission(dt, time) {
+    playTime += dt;
     missionWait = Math.max(0, missionWait - dt);
     const m = MISSIONS[mission];
     if (missionWait < 1.1) $('mission').classList.remove('done');
@@ -3178,10 +3298,13 @@
     const key = mission + ':' + prog;
     if (key !== missionShown) {
       missionShown = key;
-      $('mission-text').textContent = cur ? cur.text : 'すべてのミッションを達成した!';
+      $('mission-text').textContent = cur ? cur.text : 'キャンプ完成! ここをタップして次の場所へ';
       $('mission-prog').textContent = prog;
-      $('mission-reward').textContent = cur ? '💰+' + cur.reward : '';
+      $('mission-reward').textContent = cur ? '💰+' + missionReward(cur) : '';
+      $('mission').classList.toggle('clickable', !cur);
     }
+    // 全部のミッションを終えたら、キャンプ完成の画面を出す(1回だけ。あとはミッションの枠から開ける)
+    if (!cur && !clearShown && missionWait <= 0) { clearShown = true; showClear(); }
     // 目印
     const t = cur && missionWait <= 0 && cur.at ? cur.at() : null;
     const p = player.ch.root.position;
@@ -3339,7 +3462,7 @@
       version: 5, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
       shops: shops.map(s => [s.index, s.paid]), axe: axeLevel,
       heats: fires.map(f => Math.round(f.heat)), wood: fires.map(f => f.wood.stock + f.wood.pending),
-      carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z, mission, missionCount, rep,
+      carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z, mission, missionCount, rep, served, playTime: Math.round(playTime), clearShown,
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない設定のときは何もしない */ }
   }
@@ -3393,6 +3516,9 @@
     }
     rep = data.rep || 0;
     star = starOf(rep);
+    served = data.served || 0;
+    playTime = data.playTime || 0;
+    clearShown = !!data.clearShown;
     if (data.version >= 5) {
       mission = Math.min(data.mission || 0, MISSIONS.length);
       missionCount = data.missionCount || 0;
@@ -3412,9 +3538,13 @@
   window.addEventListener('pagehide', () => safe('save', saveGame));
   document.addEventListener('visibilitychange', () => { if (document.hidden) safe('save', saveGame); });
   $('reset').addEventListener('click', () => {
-    if (!confirm('最初からやり直しますか?(今の進み具合は消えます)')) return;
+    if (!confirm('この場所(' + ST.name + ')を最初からやり直しますか?(今の進み具合は消えます)')) return;
     saveDisabled = true;
-    try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 何もしない */ }
+    const toFirst = STAGE_NO > 1 && confirm('最初の場所(' + STAGES[0].name + ')までもどりますか?\n「キャンセル」なら、今の場所の最初から。');
+    try {
+      localStorage.removeItem(SAVE_KEY);
+      if (toFirst) localStorage.removeItem(STAGE_KEY);
+    } catch (e) { /* 何もしない */ }
     location.reload();
   });
 
@@ -3467,6 +3597,7 @@
     missionInfo() { return { mission, count: missionCount, total: MISSIONS.length, text: MISSIONS[mission] && MISSIONS[mission].text }; },
     setMission(i) { mission = i; missionCount = 0; },
     repInfo() { return { rep, star, interval: guestInterval() }; },
+    stageInfo() { return { stage: STAGE_NO, name: ST.name, served, playTime, clearShown, campCost: CAMP_UPGRADES.map(u => u.cost) }; },
     addRep(n) { addRep(n, player.ch.root.position); },
     setHeat(v) { for (const f of fires) f.heat = v; },
     wantingSpots() { return wantingGuests().map(g => [g.ch.root.position.x, g.ch.root.position.z]); },
