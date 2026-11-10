@@ -69,9 +69,25 @@
   #fire-pill.low { animation: firelow .6s ease-in-out infinite alternate; }
   @keyframes firelow { from { background: rgba(40, 30, 25, .62); } to { background: rgba(200, 40, 30, .8); } }
   /* ミッション(目の前の小さな目標) */
+  .mission-row { display: flex; gap: 8px; align-items: center; }
+  #rep-pill { flex-direction: column; gap: 3px; padding: 5px 10px; border-radius: 14px; font-size: 16px; }
+  #rep-pill.up { animation: repup .5s ease-out 3 alternate; }
+  @keyframes repup { from { transform: scale(1); } to { transform: scale(1.25); background: rgba(240, 170, 20, .9); } }
+  #rep-pill.down { animation: repdown .4s ease-in-out 4 alternate; }
+  @keyframes repdown { to { background: rgba(200, 40, 30, .85); } }
+  #rep-bar { width: 52px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+  #rep-fill { height: 100%; width: 0; background: #ffd23f; transition: width .3s; }
+  .rep-float {
+    position: fixed; pointer-events: none;
+    transform: translate(-50%, -50%);
+    font-size: 18px; font-weight: 900; color: #ffe066;
+    text-shadow: 0 1px 0 #7a4a10, 0 2px 4px rgba(0, 0, 0, .5);
+    animation: repfloat 1.3s ease-out forwards;
+  }
+  .rep-float.minus { color: #ff6a5a; text-shadow: 0 1px 0 #5a0f0a, 0 2px 4px rgba(0, 0, 0, .5); }
+  @keyframes repfloat { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -50px; } }
   #mission {
-    align-self: flex-start;
-    max-width: 100%;
+    flex: 1; min-width: 0;
     display: flex; align-items: center; gap: 8px;
     padding: 7px 12px;
     border-radius: 14px;
@@ -189,13 +205,16 @@
       <div class="pill">💰 <span id="money">0</span></div>
     </div>
     <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div><span id="fire-pct">0%</span></div>
+    <div class="mission-row">
+    <div id="rep-pill" class="pill"><span>⭐ <span id="rep-star">1</span></span><div id="rep-bar"><div id="rep-fill"></div></div></div>
     <div id="mission"><span>🎯 <span id="mission-text"></span></span><span id="mission-prog"></span><span id="mission-reward"></span></div>
+    </div>
   </div>
   <div id="mission-arrow">➤</div>
   <div id="toast"></div>
   <div id="bars"></div>
   <div id="max">MAX</div>
-  <div id="hint">画面をなぞって歩こう</div>
+  <div id="hint" style="opacity:0"></div>
   <div id="version"></div>
   <button id="reset" type="button">はじめから</button>
   <div id="error"></div>
@@ -306,6 +325,14 @@
     { icon: '🏹', label: '弓', cost: 50, message: '弓を手に入れた! 遠くから強く撃てる', apply: () => setWeapon(2) },
     { icon: '🎯', label: 'ボウガン', cost: 140, message: 'ボウガンを手に入れた! もっと遠く、もっと強く', apply: () => setWeapon(3) },
   ];
+  // 評判(★): お客さんが満足して帰ると上がり、怒ったり凍えたりして帰ると下がる
+  const REP_STARS = [0, 20, 60, 140, 300]; // ★1〜★5になる評判ポイント
+  const REP_HAPPY = 1;           // お会計をして帰った(肉を食べた・テントに泊まった人はそれぞれ +1)
+  const REP_ANGRY = 3;           // 💢 で帰った
+  const REP_COLD = 1;            // 🥶 で帰った
+  const REP_FIRE_OUT = 5;        // 焚き火が消えた
+  const STAR_GUESTS = [1, 1.12, 1.25, 1.4, 1.55]; // ★ごとの、お客さんの来やすさ(倍)
+  const STAR_TIP = [0, 0, 1, 1, 2];               // ★ごとに、お会計で上乗せされるチップ
   const SHOP_COOLDOWN = 15;      // 1つ手に入れたあと、次が買えるようになるまでの時間(秒)
   const AXE_UPGRADES = [
     { icon: '🪓', label: '斧 Lv2', cost: 20, message: '斧が軽くなった! 速く切れる', apply: () => setAxeLevel(2) },
@@ -325,7 +352,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-6';
+  const GAME_VERSION = '2026.11.11-7';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -1373,8 +1400,7 @@
     if (tutorial !== from) return;
     tutorial = from + 1;
     if (tutorial < HINTS.length) {
-      hint.textContent = HINTS[tutorial];
-      hint.style.opacity = '1';
+      // 説明文はミッションに役目をゆずったので出さない(進み具合だけ数える)
     } else {
       hint.style.opacity = '0';
     }
@@ -1436,7 +1462,13 @@
       log.rotation.z = Math.PI / 2;
       fly(log, tmpA, () => tmpB.set(fire.x, FLOOR + 0.4, fire.z), () => feedFire(fire), 0.9, 0.3);
     }
+    const wasLit = fire.heat > 0;
     fire.heat = Math.max(0, fire.heat - (HEAT_DECAY + HEAT_DECAY_PER_GUEST * fire.warming) * dt);
+    if (wasLit && fire.heat <= 0) {
+      // 火が消えると評判が下がる
+      addRep(-REP_FIRE_OUT, { x: fire.x, y: FLOOR, z: fire.z });
+      toast('🔥 火が消えた! 評判 -' + REP_FIRE_OUT);
+    }
     fire.pop = Math.max(0, fire.pop - dt * 3);
     const power = (0.35 + fire.heat / 100 * 1.05) * (1 + fire.pop);
     for (const f of fire.flames) {
@@ -1817,7 +1849,7 @@
   const insideCount = () => guests.reduce((n, g) => n + (g.inside ? 1 : 0), 0);
   // テントや焚き火が増えるほど、お客さんが来る間隔が短くなる
   function guestInterval() {
-    return GUEST_INTERVAL / (1 + 0.25 * openTents().length + 0.6 * (fires.length - 1));
+    return GUEST_INTERVAL / (1 + 0.25 * openTents().length + 0.6 * (fires.length - 1)) / STAR_GUESTS[star - 1];
   }
 
   function spawnGuest() {
@@ -1859,6 +1891,7 @@
   }
   // 待たされすぎて、怒って帰る(お金は払わない)
   function angryLeave(g, path) {
+    addRep(-REP_ANGRY, g.ch.root.position);
     g.inside = false;
     g.state = 'leave';
     g.angry = false;
@@ -1869,6 +1902,7 @@
     blip(160, 0.2, 'sawtooth', 0.05, 0.7);
   }
   function leaveCold(g) {
+    addRep(-REP_COLD, g.ch.root.position);
     g.slot.guest = null;
     g.bar.style.display = 'none';
     g.wantsMeat = false;
@@ -2045,7 +2079,7 @@
         if (idx === 0 && arrived) {
           if (!g.paying && (deskAttended || receptionist)) {
             g.paying = true;
-            g.payLeft = COINS_PER_GUEST + (g.slept ? TENT_FEE : 0);
+            g.payLeft = COINS_PER_GUEST + STAR_TIP[star - 1] + (g.slept ? TENT_FEE : 0);
           }
           if (g.paying) {
             g.payTimer -= dt;
@@ -2059,6 +2093,7 @@
             if (g.payLeft === 0 && g.payTimer <= 0) {
               payQueue.shift();
               missionEvent('checkout');
+              addRep(REP_HAPPY + (g.ate ? 1 : 0) + (g.slept ? 1 : 0), ch.root.position);
               g.state = 'leave';
               ch.face = null;
               g.path = [...EXIT_PATH];
@@ -2673,6 +2708,7 @@
     scene.remove(item);
     const g = meatQueue.shift();
     g.wantsMeat = false;
+    g.ate = true; // 肉を食べた人は、帰るときに評判が少し多く上がる
     g.state = 'eat';
     g.eatT = 1.2;
     const gp = g.ch.root.position;
@@ -3013,6 +3049,49 @@
   // ================================================================
   const fireFill = $('fire-fill'), carryLabel = $('carry'), moneyLabel = $('money'), maxLabel = $('max');
   // ================================================================
+  //  評判(★1〜★5)
+  // ================================================================
+  let rep = 0, star = 1, repShown = '';
+  function starOf(r) {
+    let s = 1;
+    REP_STARS.forEach((t, i) => { if (r >= t) s = i + 1; });
+    return s;
+  }
+  function floatText(text, pos, minus) {
+    const el = document.createElement('div');
+    el.className = 'rep-float' + (minus ? ' minus' : '');
+    el.textContent = text;
+    document.body.appendChild(el);
+    placeLabel(el, pos.x, (pos.y || 0) + 2.2, pos.z);
+    setTimeout(() => el.remove(), 1300);
+  }
+  function addRep(n, pos) {
+    rep = Math.max(0, rep + n);
+    if (pos) floatText((n > 0 ? '+' : '') + n + '⭐', pos, n < 0);
+    const s = starOf(rep);
+    const pill = $('rep-pill');
+    if (s > star) {
+      toast('⭐ 評判が ★' + s + ' になった! お客さんが増えるよ');
+      [659, 784, 988, 1319].forEach((f, i) => setTimeout(() => blip(f, 0.14, 'triangle', 0.07, 1.05), i * 100));
+      pill.classList.remove('up', 'down'); void pill.offsetWidth; pill.classList.add('up');
+    } else if (s < star) {
+      toast('評判が ★' + s + ' に下がった…');
+      blip(200, 0.3, 'sawtooth', 0.05, 0.6);
+      pill.classList.remove('up', 'down'); void pill.offsetWidth; pill.classList.add('down');
+    }
+    star = s;
+  }
+  function updateRepHud() {
+    const lo = REP_STARS[star - 1], hi = REP_STARS[star];
+    const pct = hi == null ? 100 : (rep - lo) / (hi - lo) * 100;
+    const key = star + ':' + Math.round(pct);
+    if (key === repShown) return;
+    repShown = key;
+    $('rep-star').textContent = star;
+    $('rep-fill').style.width = pct + '%';
+  }
+
+  // ================================================================
   //  ミッション(目の前の小さな目標。達成するとごほうびのお金)
   // ================================================================
   // ev: 数える出来事(missionEvent で数える)/ done: 条件を満たしたら達成 / at: 目印を出す場所
@@ -3059,6 +3138,7 @@
     { text: '🏕️ キャンプをもう一度広げよう', done: shopDone(2, 2), reward: 60, at: shopAt(2) },
     { text: 'お客さんを見送ろう', ev: 'checkout', goal: 100, reward: 80 },
     { text: '🏕️ キャンプをいちばん大きくしよう', done: shopDone(2, 3), reward: 100, at: shopAt(2) },
+    { text: '⭐ 評判を ★5 にしよう', done: () => star >= 5, reward: 150 },
   ];
   let mission = 0, missionCount = 0, missionWait = 0, missionShown = '';
   function missionEvent(ev, n = 1) {
@@ -3231,6 +3311,7 @@
       hudBottom = $('hud').getBoundingClientRect().bottom;
       updateHud(dt);
       updateMission(dt, time);
+      updateRepHud();
       $('toast').style.top = (hudBottom + 10) + 'px';
       updatePileLabel();
       for (const n of STALL_NAMES) placeLabel(n.el, n.x, 3.1, n.z);
@@ -3258,7 +3339,7 @@
       version: 5, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
       shops: shops.map(s => [s.index, s.paid]), axe: axeLevel,
       heats: fires.map(f => Math.round(f.heat)), wood: fires.map(f => f.wood.stock + f.wood.pending),
-      carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z, mission, missionCount,
+      carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z, mission, missionCount, rep,
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない設定のときは何もしない */ }
   }
@@ -3310,6 +3391,8 @@
       player.ch.root.position.set(data.x, groundY(data.x, data.z), data.z);
       camTarget.copy(player.ch.root.position);
     }
+    rep = data.rep || 0;
+    star = starOf(rep);
     if (data.version >= 5) {
       mission = Math.min(data.mission || 0, MISSIONS.length);
       missionCount = data.missionCount || 0;
@@ -3321,8 +3404,7 @@
       while (MISSIONS[mission] && MISSIONS[mission].done && MISSIONS[mission].done()) mission++;
     }
     tutorial = data.tutorial || 0;
-    if (tutorial < HINTS.length) hint.textContent = HINTS[tutorial];
-    else hint.style.opacity = '0';
+    hint.style.opacity = '0';
     return true;
   }
   safe('load', () => { if (loadGame()) toast('つづきから'); });
@@ -3384,6 +3466,8 @@
     addMoney(n) { money += n; },
     missionInfo() { return { mission, count: missionCount, total: MISSIONS.length, text: MISSIONS[mission] && MISSIONS[mission].text }; },
     setMission(i) { mission = i; missionCount = 0; },
+    repInfo() { return { rep, star, interval: guestInterval() }; },
+    addRep(n) { addRep(n, player.ch.root.position); },
     setHeat(v) { for (const f of fires) f.heat = v; },
     wantingSpots() { return wantingGuests().map(g => [g.ch.root.position.x, g.ch.root.position.z]); },
     meatQueueLen() { return meatQueue.length; },
