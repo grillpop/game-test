@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ひよこ100万羽">
+<meta name="theme-color" content="#bfe7a0">
+<title>ひよこ100万羽</title>
+<style>
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: #bfe7a0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  .stick { position: fixed; border-radius: 50%; pointer-events: none; display: none; transform: translate(-50%, -50%); }
+  #stick-base { width: 112px; height: 112px; background: rgba(255, 255, 255, .3); border: 3px solid rgba(255, 255, 255, .7); }
+  #stick-knob { width: 52px; height: 52px; background: rgba(255, 255, 255, .95); box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
+
+  /* 画面上の表示 */
+  #hud {
+    position: fixed; top: calc(env(safe-area-inset-top) + 8px); left: 10px; right: 10px;
+    display: flex; gap: 6px; align-items: stretch; pointer-events: none;
+  }
+  .pill {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    padding: 4px 10px; border-radius: 999px;
+    background: rgba(40, 50, 30, .5); border: 1px solid rgba(255, 255, 255, .2);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    color: #fff; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  #chick-pill { flex: 1.6; font-size: 20px; background: rgba(240, 160, 20, .82); }
+  #chick-pill.pop { animation: pop .25s ease-out; }
+  @keyframes pop { 50% { transform: scale(1.12); } }
+  #feed-pill, #parts-pill { flex: 1; }
+  #time-pill { flex: .8; }
+  #time-pill.low { background: rgba(210, 50, 40, .85); }
+  #combo {
+    position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 64px);
+    text-align: center; pointer-events: none; color: #fff; font-weight: 900; font-size: 30px;
+    text-shadow: 0 2px 0 #d9480f, 0 4px 10px rgba(0, 0, 0, .35); opacity: 0; transition: opacity .3s;
+  }
+  #combo.show { opacity: 1; }
+  #combo.bump { animation: bump .18s ease-out; }
+  @keyframes bump { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  #toast {
+    position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 108px);
+    text-align: center; pointer-events: none; color: #fff; font-size: 22px; font-weight: 900;
+    text-shadow: 0 2px 0 #b45309, 0 4px 8px rgba(0, 0, 0, .35);
+    opacity: 0; transform: scale(.8); transition: opacity .2s, transform .2s;
+  }
+  #toast.show { opacity: 1; transform: scale(1); }
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 44px);
+    text-align: center; pointer-events: none; color: #fff; font-size: 17px; font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, .5); transition: opacity .4s;
+  }
+  .pop-text {
+    position: fixed; pointer-events: none; transform: translate(-50%, -50%); white-space: nowrap;
+    font-weight: 900; font-size: 18px; color: #fff; text-shadow: 0 2px 0 rgba(120, 60, 0, .8), 0 3px 6px rgba(0, 0, 0, .4);
+    display: none;
+  }
+  .hp-bar {
+    position: fixed; width: 44px; height: 6px; margin-left: -22px; border-radius: 3px;
+    background: rgba(0, 0, 0, .35); overflow: hidden; pointer-events: none; display: none;
+  }
+  .hp-bar div { height: 100%; background: #ff5a3c; }
+  #arrow {
+    position: fixed; display: none; width: 44px; height: 44px; margin: -22px 0 0 -22px;
+    font-size: 34px; line-height: 44px; text-align: center; color: #ffd23f;
+    text-shadow: 0 0 3px #7a4a10, 0 2px 4px rgba(0, 0, 0, .5); pointer-events: none;
+  }
+  #version { position: fixed; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 6px); color: rgba(30, 60, 20, .55); font-size: 11px; pointer-events: none; }
+  #error {
+    position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 70px);
+    padding: 8px 10px; border-radius: 10px; background: rgba(180, 30, 30, .9); color: #fff;
+    font-size: 12px; white-space: pre-wrap; display: none; pointer-events: none;
+  }
+  #result {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(30, 40, 20, .5);
+  }
+  #result.show { display: flex; }
+  #result .card {
+    width: min(86vw, 360px); padding: 22px 20px 18px; border-radius: 22px; background: #fffbea; color: #5a3a10;
+    text-align: center; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); animation: cardin .45s cubic-bezier(.2, 1.6, .4, 1);
+  }
+  @keyframes cardin { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #result h1 { font-size: 22px; color: #c2410c; }
+  #result .big { font-size: 46px; font-weight: 900; margin: 6px 0 10px; color: #e08a00; }
+  #result .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-bottom: 14px; font-size: 15px; font-weight: 800; }
+  #result .stats div { background: #f6ead0; border-radius: 10px; padding: 6px 4px; }
+  #result button { display: block; width: 100%; margin-top: 8px; padding: 12px; border: 0; border-radius: 14px; font-size: 18px; font-weight: 900; }
+  #again { background: #ff9f1c; color: #fff; box-shadow: 0 3px 0 #c2410c; }
+  #keep { background: #ece2c6; color: #6a4a2c; font-size: 15px !important; }
+</style>
+</head>
+<body>
+  <div id="stick-base" class="stick"></div>
+  <div id="stick-knob" class="stick"></div>
+  <div id="hud">
+    <div id="chick-pill" class="pill">🐤 <span id="chicks">0</span></div>
+    <div id="feed-pill" class="pill">🌾 <span id="feed">0</span></div>
+    <div id="parts-pill" class="pill">⚙️ <span id="parts">0</span></div>
+    <div id="time-pill" class="pill">⏱ <span id="time">60</span></div>
+  </div>
+  <div id="combo"></div>
+  <div id="toast"></div>
+  <div id="hint">画面をなぞって ひよこを動かそう</div>
+  <div id="arrow">➤</div>
+  <div id="version"></div>
+  <div id="error"></div>
+  <div id="result"><div class="card">
+    <h1>⏱ 60秒 しゅうりょう!</h1>
+    <div class="big">🐤 <span id="r-chicks">0</span>羽</div>
+    <div class="stats">
+      <div>📦 <span id="r-broken">0</span>こ</div>
+      <div>🔥 最大 <span id="r-combo">0</span>コンボ</div>
+      <div>🏠 孵化場 Lv<span id="r-lv">0</span></div>
+      <div>🌾 <span id="r-feed">0</span></div>
+    </div>
+    <button id="again" type="button">もう一回 ▶</button>
+    <button id="keep" type="button">このまま続けて遊ぶ</button>
+  </div></div>
+
+<script type="module">
+  import * as THREE from '../vendor/three.module.min.js';
+
+  // ================================================================
+  //  設定(ここの数字を変えると、テンポや爽快感を調整できます)
+  // ================================================================
+  const GAME_TIME = 60;          // 1回の遊びの長さ(秒)
+  const START_CHICKS = 4;        // 最初のひよこ(リーダーとは別)
+  const LEADER_SPEED = 7.5;      // リーダーの速さ
+  const WORLD = 44;              // 歩ける範囲(-WORLD〜WORLD)
+  const MAX_DISPLAY = 360;       // 画面に描くひよこの最大数(これより多いときは、1羽が何羽ぶんかを表す)
+  const SPACING = 0.34;          // 群れの中のひよこの間かく
+  const PECK_DPS = 1.3;          // ひよこ1羽が1秒に与えるダメージ
+  const MAX_TARGETS = 8;         // 同時に攻撃できる物の数
+  const EGG_COST = 2;            // 卵1つに使うエサ
+  const SELF_HATCH = (n) => 2.5 + Math.sqrt(n) * 0.45; // 群れが自分で卵をかえす速さ(1秒あたり)
+  // 壊せる物(2種類)
+  const CRATE_TIERS = [ // 木箱: 遠くほど固くて、たくさん出る
+    { hp: 8, feed: 9, parts: 4, color: '#ffffff', size: 0.85 },   // color は木目の上にかける色
+    { hp: 45, feed: 34, parts: 12, color: '#d9a27a', size: 1.0 },
+    { hp: 180, feed: 110, parts: 40, color: '#a9b4c0', size: 1.15 },
+  ];
+  const CRATE_RESPAWN = 7;       // 木箱が別の場所にまた出るまでの秒数
+  const BIG = { hp: 900, feed: 900, parts: 320, respawn: 25 }; // でっかいコンテナ
+  // 孵化場(パーツで建てる・強くする)。rate: 1秒に生むひよこ(1羽にエサ1)
+  const HATCHERY_LEVELS = [
+    { cost: 40, rate: 4 },
+    { cost: 90, rate: 12 },
+    { cost: 300, rate: 25 },
+    { cost: 900, rate: 50 },
+  ];
+  const HATCHERY_POS = { x: 5, z: -3 };
+
+  const CAM_YAW = Math.PI / 4;
+  const SCREEN_RIGHT = { x: Math.cos(CAM_YAW), z: -Math.sin(CAM_YAW) };
+  const SCREEN_DOWN = { x: Math.sin(CAM_YAW), z: Math.cos(CAM_YAW) };
+  const STICK_RADIUS = 56;
+
+  const $ = (id) => document.getElementById(id);
+  const GAME_VERSION = '2026.11.12-h1';
+  $('version').textContent = '🐤 v' + GAME_VERSION;
+
+  const errorsSeen = [];
+  function reportError(where, err) {
+    const text = where + ': ' + (err && err.message ? err.message : String(err));
+    if (errorsSeen.includes(text)) return;
+    errorsSeen.push(text);
+    console.error(where, err);
+    const stack = err && err.stack ? '\n' + String(err.stack).split('\n').slice(0, 3).join('\n') : '';
+    $('error').textContent = 'エラー(v' + GAME_VERSION + ') ' + text + stack;
+    $('error').style.display = 'block';
+  }
+  window.addEventListener('error', (e) => reportError('window', e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => reportError('promise', e.reason));
+  function safe(name, fn) { try { fn(); } catch (err) { reportError(name, err); } }
+
+  // ================================================================
+  //  3Dの土台
+  // ================================================================
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.prepend(renderer.domElement);
+  const SKY = '#bfe7a0';
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(SKY);
+  scene.fog = new THREE.Fog(SKY, 45, 95);
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 160);
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.fov = w < h ? 42 : 30;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  scene.add(new THREE.HemisphereLight('#fffbe8', '#7a9a50', 1.6));
+  const sun = new THREE.DirectionalLight('#fff1d0', 2.0);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.03;
+  scene.add(sun, sun.target);
+  const SUN_OFFSET = new THREE.Vector3(-10, 24, 6);
+
+  let seed = 7;
+  function rand() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+  const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
+  const tmpA = new THREE.Vector3();
+  function setInst(mesh, i, x, y, z, sx, sy, sz, ry = 0, rx = 0, rz = 0) {
+    _q.setFromEuler(_e.set(rx, ry, rz));
+    mesh.setMatrixAt(i, _m4.compose(_p.set(x, y, z), _q, _s.set(sx, sy, sz)));
+  }
+  function canvasTexture(size, draw, repeat = 1) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    draw(c.getContext('2d'), size);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    if (repeat !== 1) { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(repeat, repeat); }
+    return tex;
+  }
+  // いくつかの形を1つにまとめる(色は頂点に焼きこむ)。描く回数を減らして軽くする
+  function mergeGeometries(list) {
+    let count = 0;
+    const gs = list.map(({ geo, m }) => {
+      const g = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(m);
+      count += g.attributes.position.count;
+      return g;
+    });
+    const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3), col = new Float32Array(count * 3);
+    let o = 0;
+    gs.forEach((g, gi) => {
+      const n = g.attributes.position.count;
+      pos.set(g.attributes.position.array, o * 3);
+      nor.set(g.attributes.normal.array, o * 3);
+      const c = new THREE.Color(list[gi].color || '#ffffff');
+      for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], (o + i) * 3);
+      o += n;
+    });
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return out;
+  }
+  const M = (x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) =>
+    new THREE.Matrix4().compose(V(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), V(sx, sy, sz));
+
+  // ================================================================
+  //  地面(草原と柵)
+  // ================================================================
+  const groundTex = canvasTexture(256, (g, n) => {
+    g.fillStyle = '#9fd977'; g.fillRect(0, 0, n, n);
+    g.fillStyle = '#93cf6b'; g.fillRect(0, 0, n / 2, n / 2); g.fillRect(n / 2, n / 2, n / 2, n / 2);
+    for (let i = 0; i < 160; i++) {
+      g.fillStyle = i % 3 ? 'rgba(70,140,50,.35)' : 'rgba(255,255,220,.35)';
+      g.fillRect(Math.random() * n, Math.random() * n, 3, 7);
+    }
+  }, 22);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 2 + 30, WORLD * 2 + 30), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  {
+    // まわりの柵(丸太の杭を1回で描く)
+    let n = 0;
+    for (let s = -WORLD; s < WORLD; s += 1.2) n += 4; // 杭の数を先に数える(多く描くと形がくずれる)
+    const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.22, 1.1, 7), new THREE.MeshStandardMaterial({ color: '#a8743f', roughness: 0.9 }), n);
+    let k = 0;
+    for (let s = -WORLD; s < WORLD; s += 1.2) {
+      for (const [x, z] of [[s, -WORLD - 0.6], [s, WORLD + 0.6], [-WORLD - 0.6, s], [WORLD + 0.6, s]]) setInst(posts, k++, x, 0.55, z, 1, 1, 1);
+    }
+    posts.count = k;
+    posts.castShadow = true;
+    scene.add(posts);
+    // 飾りの木と花
+    const trunks = [], leaves = [], flowers = [];
+    for (let i = 0; i < 70; i++) {
+      const a = rand() * Math.PI * 2, r = WORLD + 3 + rand() * 10;
+      trunks.push([Math.cos(a) * r, Math.sin(a) * r, 0.8 + rand() * 0.6]);
+    }
+    for (let i = 0; i < 260; i++) flowers.push([(rand() * 2 - 1) * WORLD, (rand() * 2 - 1) * WORLD, rand()]);
+    const trunkMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.32, 1.4, 6), new THREE.MeshStandardMaterial({ color: '#8a5a30' }), trunks.length);
+    const leafMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, 0), new THREE.MeshStandardMaterial({ color: '#4caf50', flatShading: true }), trunks.length);
+    trunks.forEach(([x, z, s], i) => { setInst(trunkMesh, i, x, 0.7 * s, z, s, s, s); setInst(leafMesh, i, x, 2.3 * s, z, s, s * 1.1, s); });
+    leafMesh.castShadow = trunkMesh.castShadow = true;
+    const flowerMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 5, 4), new THREE.MeshBasicMaterial({ color: '#ffffff' }), flowers.length);
+    const fcol = ['#ffffff', '#ffe066', '#ff9ec7'].map(c => new THREE.Color(c));
+    flowers.forEach(([x, z, c], i) => { setInst(flowerMesh, i, x, 0.06, z, 1, 0.6, 1); flowerMesh.setColorAt(i, fcol[Math.floor(c * 3)]); });
+    scene.add(trunkMesh, leafMesh, flowerMesh);
+  }
+
+  // ================================================================
+  //  ひよこの形(1つにまとめた形を、たくさん並べて描く)
+  // ================================================================
+  const YELLOW = '#ffd23a', ORANGE = '#ff8a1c';
+  const chickGeo = mergeGeometries([
+    { geo: new THREE.SphereGeometry(0.22, 9, 7), m: M(0, 0.22, 0, 1, 0.9, 1.1), color: YELLOW },          // からだ
+    { geo: new THREE.SphereGeometry(0.16, 9, 7), m: M(0, 0.44, 0.12), color: YELLOW },                    // あたま
+    { geo: new THREE.ConeGeometry(0.06, 0.12, 6), m: M(0, 0.43, 0.3, 1, 1, 1, Math.PI / 2), color: ORANGE }, // くちばし
+    { geo: new THREE.SphereGeometry(0.03, 5, 4), m: M(0.08, 0.48, 0.24), color: '#2b1d10' },              // 目
+    { geo: new THREE.SphereGeometry(0.03, 5, 4), m: M(-0.08, 0.48, 0.24), color: '#2b1d10' },
+    { geo: new THREE.SphereGeometry(0.09, 6, 5), m: M(0.2, 0.24, -0.02, 0.5, 0.8, 1.2), color: '#ffc21a' }, // はね
+    { geo: new THREE.SphereGeometry(0.09, 6, 5), m: M(-0.2, 0.24, -0.02, 0.5, 0.8, 1.2), color: '#ffc21a' },
+    { geo: new THREE.ConeGeometry(0.05, 0.12, 5), m: M(0, 0.62, 0.1), color: '#ffcf2a' },                  // あたまの毛
+  ]);
+  const chickMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const flockMesh = new THREE.InstancedMesh(chickGeo, chickMat, MAX_DISPLAY);
+  flockMesh.castShadow = true;
+  flockMesh.frustumCulled = false;
+  scene.add(flockMesh);
+
+  // リーダー(赤いはちまきの、大きめのひよこ)
+  const leader = new THREE.Group();
+  const leaderBody = new THREE.Mesh(chickGeo, chickMat);
+  leaderBody.scale.setScalar(1.7);
+  leaderBody.castShadow = true;
+  leader.add(leaderBody);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.05, 6, 16), new THREE.MeshLambertMaterial({ color: '#e63946' }));
+  band.rotation.x = Math.PI / 2;
+  band.position.set(0, 0.8, 0.2);
+  leader.add(band);
+  scene.add(leader);
+  const L = { x: 0, z: 2, vx: 0, vz: 0, face: Math.PI, moving: false };
+  leader.position.set(L.x, 0, L.z);
+
+  // ================================================================
+  //  使い回しの粒(破片・エサ・パーツ・卵・けむり)
+  // ================================================================
+  function makePool(geo, material, max, opts = {}) {
+    const mesh = new THREE.InstancedMesh(geo, material, max);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    mesh.castShadow = !!opts.shadow;
+    scene.add(mesh);
+    return { mesh, max, items: [] };
+  }
+  const debris = makePool(new THREE.BoxGeometry(0.22, 0.08, 0.14), new THREE.MeshLambertMaterial({ color: '#c58a4a' }), 260, { shadow: true });
+  const puffs = makePool(new THREE.IcosahedronGeometry(0.25, 0), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 }), 120);
+  const feedPool = makePool(new THREE.IcosahedronGeometry(0.11, 0), new THREE.MeshLambertMaterial({ color: '#ffcc33', emissive: '#553300' }), 900);
+  const partsPool = makePool(new THREE.CylinderGeometry(0.12, 0.12, 0.07, 6), new THREE.MeshStandardMaterial({ color: '#9aa7b4', metalness: 0.6, roughness: 0.35 }), 400);
+  const eggPool = makePool(new THREE.SphereGeometry(0.17, 9, 7), new THREE.MeshLambertMaterial({ color: '#fff7e6' }), 60, { shadow: true });
+  const runnerPool = makePool(chickGeo, chickMat, 60, { shadow: true });
+
+  function burstDebris(x, y, z, n, color, speed = 6) {
+    for (let i = 0; i < n; i++) {
+      if (debris.items.length >= debris.max) debris.items.shift();
+      const a = Math.random() * Math.PI * 2, s = speed * (0.4 + Math.random());
+      debris.items.push({ x, y, z, vx: Math.cos(a) * s, vy: 3 + Math.random() * 5, vz: Math.sin(a) * s, r: Math.random() * 6, vr: (Math.random() - 0.5) * 20, t: 0, life: 0.8 + Math.random() * 0.5, sc: 0.7 + Math.random() * 0.9 });
+    }
+  }
+  function burstPuff(x, y, z, n, size = 1) {
+    for (let i = 0; i < n; i++) {
+      if (puffs.items.length >= puffs.max) puffs.items.shift();
+      const a = Math.random() * Math.PI * 2, s = 1 + Math.random() * 2.5;
+      puffs.items.push({ x, y, z, vx: Math.cos(a) * s, vy: 0.5 + Math.random() * 2, vz: Math.sin(a) * s, t: 0, life: 0.35 + Math.random() * 0.25, sc: size * (0.6 + Math.random() * 0.8) });
+    }
+  }
+  // エサ・パーツを飛び散らせる。1粒が何個ぶんかを決めて、粒の数を抑える
+  let feed = 0, parts = 0;
+  function spill(kind, amount, x, z, spread = 1) {
+    const pool = kind === 'feed' ? feedPool : partsPool;
+    const want = Math.min(Math.ceil(amount), kind === 'feed' ? 40 : 18) * (spread > 2 ? 2 : 1);
+    const room = pool.max - pool.items.length;
+    const n = Math.max(0, Math.min(want, room));
+    if (n === 0) { if (kind === 'feed') feed += amount; else parts += amount; return; }
+    const each = amount / n;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = (2.5 + Math.random() * 5) * spread;
+      pool.items.push({ kind, value: each, x, y: 0.6, z, vx: Math.cos(a) * s, vy: 5 + Math.random() * 6, vz: Math.sin(a) * s, t: 0, delay: 0.35 + Math.random() * 0.35, r: Math.random() * 6 });
+    }
+  }
+
+  // ================================================================
+  //  効果音(その場で作る。iPhone は触るたびに再開して、最初に無音を鳴らす)
+  // ================================================================
+  let audio = null, audioPrimed = false;
+  function unlockAudio() {
+    try {
+      if (!audio) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; audio = new AC(); }
+      if (audio.state !== 'running') audio.resume().catch(() => {});
+      if (!audioPrimed || audio.state !== 'running') {
+        const src = audio.createBufferSource();
+        src.buffer = audio.createBuffer(1, 1, 22050);
+        src.connect(audio.destination);
+        src.start(0);
+        audioPrimed = true;
+      }
+    } catch (e) { /* 何もしない */ }
+  }
+  ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'click', 'keydown'].forEach(ev =>
+    window.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && audio && audio.state !== 'running') audio.resume().catch(() => {}); });
+  let blipBudget = 0;
+  function blip(freq, dur = 0.06, type = 'triangle', vol = 0.06, slide = 1.5) {
+    if (!audio || audio.state !== 'running' || blipBudget <= 0) return;
+    blipBudget--;
+    const t = audio.currentTime;
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(audio.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  function boom(vol = 0.18) {
+    if (!audio || audio.state !== 'running') return;
+    const t = audio.currentTime, len = 0.35;
+    const buf = audio.createBuffer(1, Math.floor(audio.sampleRate * len), audio.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.5);
+    const src = audio.createBufferSource(), g = audio.createGain(), f = audio.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 900;
+    src.buffer = buf; g.gain.value = vol;
+    src.connect(f).connect(g).connect(audio.destination);
+    src.start(t);
+  }
+
+  // ================================================================
+  //  壊せる物: 木箱(たくさん)と、でっかいコンテナ(少し)
+  // ================================================================
+  const crateTex = canvasTexture(128, (g, n) => {
+    g.fillStyle = '#e8b878'; g.fillRect(0, 0, n, n);
+    g.fillStyle = 'rgba(120,70,30,.35)';
+    for (let i = 0; i < 4; i++) g.fillRect(0, i * 32 + 30, n, 3);
+    g.strokeStyle = '#8a5528'; g.lineWidth = 12; g.strokeRect(6, 6, n - 12, n - 12);
+    g.beginPath(); g.moveTo(10, 10); g.lineTo(n - 10, n - 10); g.stroke();
+  });
+  const CRATE_MAX = 170;
+  const crateMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.8 }), CRATE_MAX);
+  crateMesh.castShadow = crateMesh.receiveShadow = true;
+  crateMesh.frustumCulled = false;
+  scene.add(crateMesh);
+  const targets = []; // 壊せる物すべて
+  function placeCrate(x, z, tierIdx) {
+    const t = CRATE_TIERS[tierIdx];
+    const c = { kind: 'crate', tier: tierIdx, x, z, r: t.size * 0.62, size: t.size, hp: t.hp, maxHp: t.hp, alive: true, hit: 0, respawn: 0, spin: rand() * Math.PI, pop: 0 };
+    targets.push(c);
+    return c;
+  }
+  function tierAt(x, z) {
+    const d = Math.hypot(x, z);
+    return d < 13 ? 0 : d < 26 ? 1 : 2;
+  }
+  // 最初の数秒で壊せるように、スタートのすぐそばに木箱を置く
+  [[1.2, -0.4], [-1.6, -0.8], [0.4, -2.6], [-2.8, 1.4], [2.8, 1.6]].forEach(([x, z]) => placeCrate(x, z, 0));
+  function freeSpot(minFromLeader) {
+    for (let k = 0; k < 40; k++) {
+      const x = (rand() * 2 - 1) * (WORLD - 2), z = (rand() * 2 - 1) * (WORLD - 2);
+      if (Math.hypot(x - HATCHERY_POS.x, z - HATCHERY_POS.z) < 4.5) continue;
+      if (Math.hypot(x - L.x, z - L.z) < minFromLeader) continue;
+      if (targets.some(t => t.alive && Math.hypot(t.x - x, t.z - z) < t.r + 1.2)) continue;
+      return { x, z };
+    }
+    return { x: (rand() * 2 - 1) * WORLD, z: (rand() * 2 - 1) * WORLD };
+  }
+  // 木箱は、ところどころ固まって置く(まとめて壊せると気持ちいい)
+  while (targets.length < 150) {
+    const c = freeSpot(4);
+    const n = 1 + Math.floor(rand() * 5);
+    for (let i = 0; i < n && targets.length < 150; i++) {
+      const x = c.x + (rand() - 0.5) * 3.2, z = c.z + (rand() - 0.5) * 3.2;
+      if (Math.abs(x) > WORLD - 1 || Math.abs(z) > WORLD - 1 || Math.hypot(x - HATCHERY_POS.x, z - HATCHERY_POS.z) < 4.5 || Math.hypot(x - L.x, z - L.z) < 2) continue;
+      placeCrate(x, z, tierAt(x, z));
+    }
+  }
+  // でっかいコンテナ
+  const bigMat = new THREE.MeshStandardMaterial({ color: '#d64545', roughness: 0.55, metalness: 0.2 });
+  const ribMat = new THREE.MeshStandardMaterial({ color: '#a83232', roughness: 0.6 });
+  function makeBig(x, z) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.2, 2.2), bigMat);
+    body.position.y = 1.1;
+    g.add(body);
+    for (let i = -3; i <= 3; i++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.26, 2.26), ribMat);
+      rib.position.set(i * 0.48, 1.1, 0);
+      g.add(rib);
+    }
+    const star = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.05, 5), new THREE.MeshBasicMaterial({ color: '#ffe066' }));
+    star.position.set(0, 2.24, 0);
+    g.add(star);
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    g.position.set(x, 0, z);
+    scene.add(g);
+    const t = { kind: 'big', x, z, r: 1.9, hp: BIG.hp, maxHp: BIG.hp, alive: true, hit: 0, respawn: 0, g, pop: 0 };
+    targets.push(t);
+    return t;
+  }
+  [[-9, -14], [16, 9], [-20, 12], [10, -24]].forEach(([x, z]) => {
+    for (let i = targets.length - 1; i >= 0; i--) { const t = targets[i]; if (t.kind === 'crate' && Math.hypot(t.x - x, t.z - z) < 3) targets.splice(i, 1); }
+    makeBig(x, z);
+  });
+
+  // ================================================================
+  //  孵化場(パーツで建てて、強くする。エサを使ってひよこを生む)
+  // ================================================================
+  const hatch = { level: 0, paid: 0, acc: 0, pop: 0, group: new THREE.Group(), parts: [] };
+  hatch.group.position.set(HATCHERY_POS.x, 0, HATCHERY_POS.z);
+  scene.add(hatch.group);
+  const HM = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, ...o });
+  function hmesh(geo, mat, x, y, z, ry = 0) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.rotation.y = ry;
+    m.castShadow = m.receiveShadow = true;
+    hatch.group.add(m);
+    return m;
+  }
+  function incubator(x, z) {
+    hmesh(new THREE.CylinderGeometry(0.55, 0.6, 0.35, 12), HM('#e9e2d0'), x, 0.17, z);
+    const dome = hmesh(new THREE.SphereGeometry(0.52, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.55, roughness: 0.1 }), x, 0.34, z);
+    for (let i = 0; i < 3; i++) hmesh(new THREE.SphereGeometry(0.13, 8, 6), HM('#fff7e6'), x + Math.cos(i * 2.1) * 0.22, 0.45, z + Math.sin(i * 2.1) * 0.22).scale.set(1, 1.3, 1);
+    return dome;
+  }
+  // レベルごとに、建物の形や設備が実際に増える
+  function buildHatchery(level) {
+    hatch.group.clear();
+    const s = [0, 1, 1.25, 1.5, 1.75][level];
+    const roofColor = ['#c0392b', '#c0392b', '#c0392b', '#e0a800', '#e0a800'][level];
+    hmesh(new THREE.BoxGeometry(4.6 * s, 0.2, 3.6 * s), HM('#c9a06a'), 0, 0.1, 0);                         // 土台
+    hmesh(new THREE.BoxGeometry(2.2 * s, 1.5 * s, 1.8 * s), HM('#f4e3c1'), -0.6 * s, 0.2 + 0.75 * s, -0.4 * s); // 小屋
+    const roof = hmesh(new THREE.CylinderGeometry(0.01, 1.55 * s, 1.0 * s, 4, 1), HM(roofColor), -0.6 * s, 0.2 + 1.5 * s + 0.5 * s, -0.4 * s, Math.PI / 4);
+    roof.scale.set(1, 1, 0.85);
+    hmesh(new THREE.BoxGeometry(0.6 * s, 0.9 * s, 0.05), HM('#8a5a30'), -0.6 * s, 0.2 + 0.45 * s, 0.52 * s);       // とびら
+    incubator(1.3 * s, 0.7 * s);
+    if (level >= 2) {
+      hmesh(new THREE.CylinderGeometry(0.6, 0.6, 2.6, 12), HM('#dfe6ea', { metalness: 0.3 }), 1.4 * s, 1.5, -0.9 * s); // サイロ
+      hmesh(new THREE.ConeGeometry(0.68, 0.6, 12), HM('#9aa7b4', { metalness: 0.4 }), 1.4 * s, 3.1, -0.9 * s);
+      incubator(-1.5 * s, 0.9 * s);
+    }
+    if (level >= 3) {
+      hmesh(new THREE.BoxGeometry(3.8 * s, 0.18, 0.5), HM('#444b52'), 0, 0.32, 1.45 * s);                         // ベルトコンベア
+      for (let i = -3; i <= 3; i++) hmesh(new THREE.SphereGeometry(0.11, 8, 6), HM('#fff7e6'), i * 0.5 * s, 0.5, 1.45 * s);
+      incubator(0.1 * s, 0.75 * s);
+      hmesh(new THREE.CylinderGeometry(0.18, 0.22, 1.6, 8), HM('#b0b8c0'), -1.6 * s, 2.4 * s, -0.9 * s);         // えんとつ
+    }
+    if (level >= 4) {
+      incubator(-1.0 * s, -1.5 * s);
+      incubator(1.9 * s, 0.2 * s);
+      const sign = hmesh(new THREE.BoxGeometry(1.8, 0.7, 0.1), HM('#ffd23a', { emissive: '#664400' }), -0.6 * s, 0.2 + 2.6 * s, 0.4 * s);
+      sign.rotation.x = -0.2;
+    }
+  }
+  // 建てる場所の枠
+  function zoneCanvas(size, draw) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g = c.getContext('2d');
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return { tex, redraw: (...a) => { g.clearRect(0, 0, size, size); draw(g, size, ...a); tex.needsUpdate = true; } };
+  }
+  function zText(g, n, text, size, y) {
+    g.save(); g.translate(n / 2, n / 2); g.rotate(-CAM_YAW);
+    g.font = `900 ${size}px -apple-system, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 8; g.strokeStyle = 'rgba(60,35,20,.6)'; g.strokeText(text, 0, y);
+    g.fillStyle = '#fff'; g.fillText(text, 0, y); g.restore();
+  }
+  const ZONE = { x: HATCHERY_POS.x - 2.6, z: HATCHERY_POS.z + 3.2, half: 1.3 };
+  const zc = zoneCanvas(256, (g, n) => {
+    const lv = HATCHERY_LEVELS[hatch.level];
+    g.fillStyle = 'rgba(60,40,20,.35)'; g.strokeStyle = '#fff'; g.lineWidth = 10;
+    g.beginPath(); g.roundRect(14, 14, n - 28, n - 28, 40); g.fill(); g.stroke();
+    if (!lv) { zText(g, n, '🏠 MAX', 54, 0); return; }
+    g.save(); g.beginPath(); g.roundRect(14, 14, n - 28, n - 28, 40); g.clip();
+    g.fillStyle = 'rgba(255,200,60,.8)'; const k = hatch.paid / lv.cost; g.fillRect(0, n - 14 - (n - 28) * k, n, n); g.restore();
+    zText(g, n, hatch.level === 0 ? '🏠' : '⬆️', 74, -46);
+    zText(g, n, hatch.level === 0 ? '孵化場' : 'Lv' + (hatch.level + 1), 40, 10);
+    zText(g, n, '⚙️' + Math.ceil(lv.cost - hatch.paid), 46, 60);
+  });
+  const zoneMat = new THREE.MeshBasicMaterial({ map: zc.tex, transparent: true, depthWrite: false });
+  const zoneMesh = new THREE.Mesh(new THREE.PlaneGeometry(ZONE.half * 2, ZONE.half * 2), zoneMat);
+  zoneMesh.rotation.x = -Math.PI / 2;
+  zoneMesh.position.set(ZONE.x, 0.02, ZONE.z);
+  scene.add(zoneMesh);
+  zc.redraw();
+  // 建てる前は、点線の四角だけ見せる
+  const plot = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.6), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.25, depthWrite: false }));
+  plot.rotation.x = -Math.PI / 2;
+  plot.position.set(HATCHERY_POS.x, 0.015, HATCHERY_POS.z);
+  scene.add(plot);
+
+  // ================================================================
+  //  ゲームの状態
+  // ================================================================
+  let chicks = START_CHICKS;
+  let started = false, timeLeft = GAME_TIME, ended = false, endless = false, elapsed = 0;
+  let broken = 0, combo = 0, comboT = 0, maxCombo = 0, hatchAcc = 0, shake = 0;
+  const marks = { firstBreak: null, ten: null, hatchery: null, hundred: null, big: null }; // テンポの記録(テスト用)
+  const fmt = (n) => n >= 1e8 ? (n / 1e8).toFixed(1) + '億' : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e6 ? 0 : 1) + '万' : Math.floor(n).toLocaleString();
+
+  // ---- 群れ(表示用のひよこ)----
+  const disp = []; // 画面に描くひよこ(最大 MAX_DISPLAY)
+  const flock = { cx: L.x, cz: L.z, r: 0.5, scale: 1 };
+  function displayCount() { return Math.min(Math.floor(chicks), MAX_DISPLAY); }
+  function addDisplay(x, z) {
+    if (disp.length >= MAX_DISPLAY) return;
+    disp.push({ x, z, y: 0, vy: 0, hop: Math.random() * 6, t: null, face: 0 });
+  }
+  for (let i = 0; i < START_CHICKS; i++) addDisplay(L.x + (Math.random() - 0.5), L.z + 1 + Math.random());
+
+  // ================================================================
+  //  入力
+  // ================================================================
+  const stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+  const keys = {};
+  const cvs = renderer.domElement;
+  const stickBase = $('stick-base'), stickKnob = $('stick-knob');
+  function showStick() {
+    stickBase.style.display = stickKnob.style.display = stick.active ? 'block' : 'none';
+    stickBase.style.left = stick.ox + 'px'; stickBase.style.top = stick.oy + 'px';
+    stickKnob.style.left = (stick.ox + stick.dx) + 'px'; stickKnob.style.top = (stick.oy + stick.dy) + 'px';
+  }
+  cvs.addEventListener('pointerdown', (e) => {
+    if (stick.active) return;
+    e.preventDefault();
+    Object.assign(stick, { active: true, id: e.pointerId, ox: e.clientX, oy: e.clientY, dx: 0, dy: 0 });
+    try { cvs.setPointerCapture(e.pointerId); } catch (err) { /* 指の情報が取れないときは、そのまま続ける */ }
+    showStick();
+  });
+  cvs.addEventListener('pointermove', (e) => {
+    if (!stick.active || e.pointerId !== stick.id) return;
+    let dx = e.clientX - stick.ox, dy = e.clientY - stick.oy;
+    const len = Math.hypot(dx, dy);
+    if (len > STICK_RADIUS) {
+      stick.ox += dx - dx / len * STICK_RADIUS; stick.oy += dy - dy / len * STICK_RADIUS;
+      dx = dx / len * STICK_RADIUS; dy = dy / len * STICK_RADIUS;
+    }
+    stick.dx = dx; stick.dy = dy;
+    showStick();
+  });
+  function endStick(e) { if (e.pointerId !== stick.id) return; Object.assign(stick, { active: false, id: null, dx: 0, dy: 0 }); showStick(); }
+  cvs.addEventListener('pointerup', endStick);
+  cvs.addEventListener('pointercancel', endStick);
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+  window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+  let bot = false; // 自動テスト用: 近くの物へ自動で向かう
+  function readInput() {
+    if (bot) return botInput();
+    let sx = 0, sy = 0;
+    if (stick.active) { sx = stick.dx / STICK_RADIUS; sy = stick.dy / STICK_RADIUS; if (Math.hypot(sx, sy) < 0.15) sx = sy = 0; }
+    if (keys.ArrowLeft || keys.a) sx -= 1;
+    if (keys.ArrowRight || keys.d) sx += 1;
+    if (keys.ArrowUp || keys.w) sy -= 1;
+    if (keys.ArrowDown || keys.s) sy += 1;
+    const len = Math.hypot(sx, sy);
+    if (len > 1) { sx /= len; sy /= len; }
+    return { ix: sx * SCREEN_RIGHT.x + sy * SCREEN_DOWN.x, iz: sx * SCREEN_RIGHT.z + sy * SCREEN_DOWN.z };
+  }
+  function botInput() {
+    let tx, tz;
+    const lv = HATCHERY_LEVELS[hatch.level];
+    if (lv && parts >= lv.cost - hatch.paid) { tx = ZONE.x; tz = ZONE.z; }
+    else {
+      let best = null, bd = Infinity;
+      for (const t of targets) {
+        if (!t.alive) continue;
+        if (t.kind === 'big' && chicks < 120) continue;
+        const d = Math.hypot(t.x - L.x, t.z - L.z) + (t.kind === 'big' ? -6 : 0);
+        if (d < bd) { bd = d; best = t; }
+      }
+      if (!best) return { ix: 0, iz: 0 };
+      if (Math.hypot(best.x - L.x, best.z - L.z) < flock.r + best.r + 0.5) return { ix: 0, iz: 0 };
+      tx = best.x; tz = best.z;
+    }
+    const dx = tx - L.x, dz = tz - L.z, d = Math.hypot(dx, dz) || 1;
+    if (d < 0.4) return { ix: 0, iz: 0 };
+    return { ix: dx / d, iz: dz / d };
+  }
+
+  // ================================================================
+  //  更新
+  // ================================================================
+  function updateLeader(dt) {
+    const { ix, iz } = readInput();
+    const moving = Math.hypot(ix, iz) > 0.01;
+    if (moving && !started) start();
+    const sp = LEADER_SPEED * (1 + Math.min(0.4, Math.log10(1 + chicks) * 0.08));
+    L.vx += (ix * sp - L.vx) * Math.min(1, dt * 14);
+    L.vz += (iz * sp - L.vz) * Math.min(1, dt * 14);
+    L.x += L.vx * dt; L.z += L.vz * dt;
+    // 箱にはぶつかる
+    for (const t of targets) {
+      if (!t.alive) continue;
+      const dx = L.x - t.x, dz = L.z - t.z, d = Math.hypot(dx, dz), min = t.r + 0.35;
+      if (d < min && d > 1e-4) { L.x = t.x + dx / d * min; L.z = t.z + dz / d * min; }
+    }
+    L.x = Math.max(-WORLD + 0.5, Math.min(WORLD - 0.5, L.x));
+    L.z = Math.max(-WORLD + 0.5, Math.min(WORLD - 0.5, L.z));
+    L.moving = moving;
+    if (moving) L.face = Math.atan2(L.vx, L.vz);
+  }
+
+  let attackList = [];
+  function updateFlock(dt, time) {
+    // 群れの中心はリーダーを少し遅れて追う
+    const k = Math.min(1, dt * 5);
+    flock.cx += (L.x - flock.cx) * k;
+    flock.cz += (L.z - flock.cz) * k;
+    const D = displayCount();
+    while (disp.length < D) addDisplay(flock.cx + (Math.random() - 0.5) * 2, flock.cz + (Math.random() - 0.5) * 2);
+    if (disp.length > D) disp.length = D;
+    flock.scale = 1 + Math.max(0, Math.log10(Math.max(1, chicks / MAX_DISPLAY))) * 0.35; // 表示より多いぶん、1羽を大きく見せる
+    flock.r = SPACING * Math.sqrt(D + 1) * flock.scale + 0.3;
+
+    // 攻撃できる物を探す(群れの届く範囲)
+    const reach = flock.r + 1.6;
+    attackList = [];
+    for (const t of targets) {
+      if (!t.alive) continue;
+      const d = Math.hypot(t.x - L.x, t.z - L.z) - t.r;
+      if (d < reach) attackList.push({ t, d });
+    }
+    attackList.sort((a, b) => a.d - b.d);
+    // 少ないうちは近い物に集中して早く壊す。増えるほど同時に攻撃できる数が増える
+    const maxT = Math.max(1, Math.min(MAX_TARGETS, Math.ceil(chicks / 10)));
+    if (attackList.length > maxT) attackList.length = maxT;
+    // ダメージ: ひよこ全員の力を、届く物で分け合う(まとめて壊れる)
+    if (attackList.length) {
+      const dps = chicks * PECK_DPS / attackList.length;
+      for (const a of attackList) damage(a.t, dps * dt);
+    }
+
+    // 1羽ずつの動き(群れの中の自分の場所か、攻撃中の箱のまわりへ寄るだけ)
+    const n = disp.length;
+    const alive = attackList.filter(a => a.t.alive);
+    for (let i = 0; i < n; i++) {
+      const c = disp[i];
+      let gx, gz, pecking = false;
+      if (alive.length && i % 5 !== 0) {
+        const t = alive[i % alive.length].t;
+        const ang = i * 2.39996 + time * 0.3;
+        const rr = t.r + 0.25 + ((i >> 2) % 4) * 0.28 * flock.scale;
+        gx = t.x + Math.cos(ang) * rr; gz = t.z + Math.sin(ang) * rr;
+        pecking = Math.hypot(c.x - gx, c.z - gz) < 0.6;
+        c.face = Math.atan2(t.x - c.x, t.z - c.z);
+      } else {
+        const ang = i * 2.39996, rr = SPACING * Math.sqrt(i + 0.5) * flock.scale;
+        gx = flock.cx + Math.cos(ang) * rr - L.vx * 0.06; gz = flock.cz + Math.sin(ang) * rr - L.vz * 0.06;
+      }
+      const dx = gx - c.x, dz = gz - c.z, dist = Math.hypot(dx, dz);
+      const follow = Math.min(1, dt * (pecking ? 10 : 6 + Math.min(6, dist)));
+      c.x += dx * follow; c.z += dz * follow;
+      if (!pecking && dist > 0.05) c.face += ((Math.atan2(dx, dz) - c.face + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 10);
+      c.hop += dt * (pecking ? 22 : L.moving ? 16 : 5);
+      c.y = pecking ? Math.abs(Math.sin(c.hop)) * 0.12 : Math.abs(Math.sin(c.hop)) * (L.moving ? 0.14 : 0.03);
+      const tilt = pecking ? Math.max(0, Math.sin(c.hop)) * 0.6 : 0;
+      const s = flock.scale;
+      setInst(flockMesh, i, c.x, c.y, c.z, s, s, s, c.face, tilt);
+    }
+    flockMesh.count = n;
+    flockMesh.instanceMatrix.needsUpdate = true;
+
+    // リーダー
+    leader.position.set(L.x, L.moving ? Math.abs(Math.sin(time * 14)) * 0.12 : 0, L.z);
+    leader.rotation.y += ((L.face - leader.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 12);
+  }
+
+  function damage(t, amount) {
+    if (!t.alive) return;
+    t.hp -= amount;
+    t.hit = 0.12;
+    if (Math.random() < 0.25) burstPuff(t.x + (Math.random() - 0.5) * t.r * 2, 0.4, t.z + (Math.random() - 0.5) * t.r * 2, 1, 0.5);
+    if (t.hp <= 0) destroy(t);
+  }
+  function destroy(t) {
+    t.alive = false;
+    broken++;
+    if (marks.firstBreak === null) marks.firstBreak = elapsed;
+    combo = comboT > 0 ? combo + 1 : 1;
+    comboT = 1.6;
+    maxCombo = Math.max(maxCombo, combo);
+    if (t.kind === 'crate') {
+      const tier = CRATE_TIERS[t.tier];
+      t.respawn = CRATE_RESPAWN;
+      burstDebris(t.x, 0.5, t.z, 7 + t.tier * 3, tier.color);
+      burstPuff(t.x, 0.5, t.z, 4, 0.8);
+      spill('feed', tier.feed, t.x, t.z);
+      spill('parts', tier.parts, t.x, t.z);
+      blip(320 + Math.min(combo, 30) * 25, 0.08, 'square', 0.05, 0.6);
+      if (combo >= 10 && combo % 5 === 0) shake = Math.max(shake, 0.15);
+      popText('+' + fmt(tier.feed) + '🌾', t.x, 1.2, t.z);
+    } else {
+      t.respawn = BIG.respawn;
+      t.g.visible = false;
+      if (marks.big === null) marks.big = elapsed;
+      burstDebris(t.x, 1, t.z, 60, '#d64545', 10);
+      burstPuff(t.x, 1, t.z, 24, 2);
+      spill('feed', BIG.feed, t.x, t.z, 2.4);
+      spill('parts', BIG.parts, t.x, t.z, 2.4);
+      shake = 0.5;
+      boom(0.25);
+      toast('💥 ドカーン!');
+      popText('+' + fmt(BIG.feed) + '🌾', t.x, 2.5, t.z, true);
+    }
+    showCombo();
+  }
+
+  function updateTargets(dt, time) {
+    let k = 0;
+    for (const t of targets) {
+      if (!t.alive) {
+        t.respawn -= dt;
+        if (t.respawn <= 0) {
+          // 別の場所にまた出る(リーダーの近くには出さない)
+          const s = freeSpot(10);
+          t.x = s.x; t.z = s.z;
+          t.alive = true; t.pop = 0.35;
+          if (t.kind === 'crate') { t.tier = tierAt(t.x, t.z); const tr = CRATE_TIERS[t.tier]; t.maxHp = t.hp = tr.hp * (1 + elapsed / 90); t.size = tr.size; t.r = tr.size * 0.62; }
+          else { t.maxHp = t.hp = BIG.hp * (1 + elapsed / 60); t.g.visible = true; t.g.position.set(t.x, 0, t.z); }
+        }
+        if (!t.alive) continue;
+      }
+      t.hit = Math.max(0, t.hit - dt);
+      t.pop = Math.max(0, t.pop - dt);
+      const squash = t.hit > 0 ? 1 + Math.sin(time * 60) * 0.06 : 1;
+      const grow = t.pop > 0 ? 1 - t.pop / 0.35 : 1;
+      if (t.kind === 'crate') {
+        const s = t.size * grow;
+        setInst(crateMesh, k, t.x, s / 2 * squash, t.z, s * (2 - squash), s * squash, s * (2 - squash), t.spin);
+        crateMesh.setColorAt(k, _col.set(CRATE_TIERS[t.tier].color).lerp(_white, t.hit > 0 ? 0.5 : 0.15));
+        k++;
+      } else {
+        t.g.scale.set((2 - squash) * grow, squash * grow, (2 - squash) * grow);
+      }
+    }
+    crateMesh.count = k;
+    crateMesh.instanceMatrix.needsUpdate = true;
+    if (crateMesh.instanceColor) crateMesh.instanceColor.needsUpdate = true;
+  }
+  const _col = new THREE.Color(), _white = new THREE.Color('#ffffff');
+
+  // 破片・けむり・エサ・パーツ
+  function updateParticles(dt) {
+    const g = 22;
+    let i = 0;
+    debris.items = debris.items.filter(d => (d.t += dt) < d.life);
+    for (const d of debris.items) {
+      d.vy -= g * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt; d.r += d.vr * dt;
+      if (d.y < 0.05) { d.y = 0.05; d.vy *= -0.3; d.vx *= 0.6; d.vz *= 0.6; }
+      const s = d.sc * Math.min(1, (d.life - d.t) * 4);
+      setInst(debris.mesh, i++, d.x, d.y, d.z, s, s, s, d.r, d.r * 0.7);
+    }
+    debris.mesh.count = i; debris.mesh.instanceMatrix.needsUpdate = true;
+    i = 0;
+    puffs.items = puffs.items.filter(d => (d.t += dt) < d.life);
+    for (const d of puffs.items) {
+      d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+      const s = d.sc * (0.6 + d.t / d.life);
+      setInst(puffs.mesh, i++, d.x, d.y, d.z, s, s, s);
+    }
+    puffs.mesh.count = i; puffs.mesh.instanceMatrix.needsUpdate = true;
+    for (const pool of [feedPool, partsPool]) {
+      i = 0;
+      const keep = [];
+      for (const d of pool.items) {
+        d.t += dt;
+        if (d.t < d.delay) {
+          // 勢いよく飛び散る
+          d.vy -= g * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+          if (d.y < 0.1) { d.y = 0.1; d.vy *= -0.45; d.vx *= 0.7; d.vz *= 0.7; }
+        } else {
+          // 磁石のように、リーダーへ一斉に吸い込まれる
+          const pay = d.kind === 'pay'; // 孵化場に払ったパーツは、孵化場へ飛んでいく
+          const tx = pay ? HATCHERY_POS.x : L.x, tz = pay ? HATCHERY_POS.z : L.z, ty = pay ? 1.2 : 0.6;
+          const dx = tx - d.x, dy = ty - d.y, dz = tz - d.z, dist = Math.hypot(dx, dy, dz);
+          const sp = 6 + (d.t - d.delay) * 40;
+          if (dist < 0.5 || sp * dt >= dist) { if (!pay) collect(d); continue; }
+          d.x += dx / dist * sp * dt; d.y += dy / dist * sp * dt + Math.sin(d.t * 10) * 0.01; d.z += dz / dist * sp * dt;
+        }
+        d.r += dt * 8;
+        setInst(pool.mesh, i++, d.x, d.y, d.z, 1, 1, 1, d.r, d.r);
+        keep.push(d);
+      }
+      pool.items = keep;
+      pool.mesh.count = i; pool.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+  let collectPitch = 0;
+  function collect(d) {
+    if (d.kind === 'feed') feed += d.value; else parts += d.value;
+    collectPitch = Math.min(collectPitch + 1, 40);
+    if (Math.random() < 0.35) blip(700 + collectPitch * 22, 0.04, 'sine', 0.035, 1.3);
+  }
+
+  // ひよこが増える: 群れは自分で卵をかえし、孵化場はエサを使ってどんどん生む
+  function updateHatching(dt) {
+    collectPitch = Math.max(0, collectPitch - dt * 30);
+    hatchAcc += dt * SELF_HATCH(chicks);
+    let eggs = Math.floor(hatchAcc);
+    if (eggs > 0) {
+      eggs = Math.min(eggs, Math.floor(feed / EGG_COST));
+      hatchAcc -= Math.floor(hatchAcc);
+      if (eggs > 0) {
+        feed -= eggs * EGG_COST;
+        // 卵の見た目(足りないときは1つの卵が何羽ぶんかを持つ)
+        const slots = Math.max(1, Math.min(eggs, eggPool.max - eggPool.items.length));
+        for (let k = 0; k < slots; k++) {
+          const n = Math.floor(eggs / slots) + (k < eggs % slots ? 1 : 0);
+          if (eggPool.items.length >= eggPool.max) { chicks += n; continue; }
+          const a = Math.random() * Math.PI * 2, r = Math.random() * flock.r;
+          eggPool.items.push({ x: flock.cx + Math.cos(a) * r, z: flock.cz + Math.sin(a) * r, t: 0, n });
+        }
+      }
+    }
+    // 孵化場
+    const lv = HATCHERY_LEVELS[hatch.level - 1];
+    if (lv) {
+      hatch.acc += dt * lv.rate;
+      let born = Math.min(Math.floor(hatch.acc), Math.floor(feed));
+      hatch.acc -= Math.floor(hatch.acc);
+      if (born > 0) {
+        feed -= born;
+        chicks += born;
+        // 生まれたひよこが群れへ走っていく(見た目だけ)
+        const vis = Math.min(born, 3);
+        for (let k = 0; k < vis && runnerPool.items.length < runnerPool.max; k++) {
+          runnerPool.items.push({ x: HATCHERY_POS.x - 0.6 + (Math.random() - 0.5), z: HATCHERY_POS.z + 1.4, t: 0 });
+        }
+      }
+    }
+  }
+  function updateEggs(dt, time) {
+    let i = 0;
+    const keep = [];
+    for (const e of eggPool.items) {
+      e.t += dt;
+      if (e.t > 0.45) {
+        chicks += e.n;
+        burstPuff(e.x, 0.3, e.z, 2, 0.4);
+        blip(1100 + Math.random() * 300, 0.05, 'sine', 0.04, 1.6);
+        bumpChicks();
+        continue;
+      }
+      const wob = Math.sin(e.t * 50) * 0.25 * (e.t / 0.45);
+      const s = Math.min(1, e.t * 8);
+      setInst(eggPool.mesh, i++, e.x, 0.2, e.z, s, s * 1.3, s, 0, 0, wob);
+      keep.push(e);
+    }
+    eggPool.items = keep;
+    eggPool.mesh.count = i; eggPool.mesh.instanceMatrix.needsUpdate = true;
+    i = 0;
+    const keepR = [];
+    for (const r of runnerPool.items) {
+      r.t += dt;
+      const dx = flock.cx - r.x, dz = flock.cz - r.z, d = Math.hypot(dx, dz);
+      if (d < flock.r * 0.8 || r.t > 4) continue;
+      r.x += dx / d * 11 * dt; r.z += dz / d * 11 * dt;
+      setInst(runnerPool.mesh, i++, r.x, Math.abs(Math.sin(r.t * 18)) * 0.15, r.z, 0.9, 0.9, 0.9, Math.atan2(dx, dz));
+      keepR.push(r);
+    }
+    runnerPool.items = keepR;
+    runnerPool.mesh.count = i; runnerPool.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // 孵化場の枠に立つと、パーツを払って建てる・強くする
+  let payT = 0;
+  function updateHatchery(dt, time) {
+    const lv = HATCHERY_LEVELS[hatch.level];
+    const inZone = Math.abs(L.x - ZONE.x) < ZONE.half && Math.abs(L.z - ZONE.z) < ZONE.half;
+    zoneMesh.scale.setScalar(inZone ? 1.08 : 1);
+    zoneMat.color.set(inZone ? '#fff3b0' : '#ffffff');
+    if (lv && inZone && parts >= 1) {
+      // 払う速さ: 何秒も待たないように、1秒以内で払い終わる
+      const pay = Math.min(parts, Math.max(1, lv.cost * dt * 1.6), lv.cost - hatch.paid);
+      parts -= pay; hatch.paid += pay;
+      payT -= dt;
+      if (payT <= 0) {
+        payT = 0.05;
+        blip(500 + hatch.paid / lv.cost * 600, 0.04, 'sine', 0.04);
+        // パーツが孵化場へ飛んでいく(見た目)
+        if (partsPool.items.length < partsPool.max) partsPool.items.push({ kind: 'pay', value: 0, x: L.x, y: 1, z: L.z, vx: (HATCHERY_POS.x - L.x) * 1.4, vy: 7, vz: (HATCHERY_POS.z - L.z) * 1.4, t: 0, delay: 0.32, r: 0 });
+      }
+      zc.redraw();
+      if (hatch.paid >= lv.cost - 1e-6) {
+        hatch.level++;
+        hatch.paid = 0;
+        hatch.pop = 0.5;
+        buildHatchery(hatch.level);
+        plot.visible = false;
+        if (hatch.level === 1 && marks.hatchery === null) marks.hatchery = elapsed;
+        toast(hatch.level === 1 ? '🏠 孵化場ができた!' : '🏠 孵化場 Lv' + hatch.level + '!');
+        shake = Math.max(shake, 0.25);
+        burstPuff(HATCHERY_POS.x, 1, HATCHERY_POS.z, 16, 1.5);
+        [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.12, 'triangle', 0.07, 1.05); }, i * 80));
+        zc.redraw();
+      }
+    }
+    if (hatch.pop > 0) {
+      hatch.pop = Math.max(0, hatch.pop - dt);
+      const k = hatch.pop / 0.5;
+      const s = 1 + Math.sin(k * Math.PI) * 0.25 - k * 0.3;
+      hatch.group.scale.set(s, 1 + Math.sin(k * Math.PI * 2) * 0.2 + (1 - s) * 0.5, s);
+    } else hatch.group.scale.set(1, 1, 1);
+  }
+
+  // ================================================================
+  //  画面の文字
+  // ================================================================
+  const popPool = [];
+  for (let i = 0; i < 10; i++) { const el = document.createElement('div'); el.className = 'pop-text'; document.body.appendChild(el); popPool.push({ el, t: 0, x: 0, y: 0, z: 0 }); }
+  let popIdx = 0;
+  function popText(text, x, y, z, big) {
+    const p = popPool[popIdx++ % popPool.length];
+    p.el.textContent = text; p.t = 0.8; p.x = x; p.y = y; p.z = z;
+    p.el.style.fontSize = big ? '30px' : '17px';
+    p.el.style.display = 'block';
+  }
+  const hpBars = [];
+  for (let i = 0; i < MAX_TARGETS; i++) { const el = document.createElement('div'); el.className = 'hp-bar'; el.innerHTML = '<div></div>'; document.body.appendChild(el); hpBars.push(el); }
+  function project(x, y, z) {
+    tmpA.set(x, y, z).project(camera);
+    return { sx: (tmpA.x + 1) / 2 * window.innerWidth, sy: (1 - tmpA.y) / 2 * window.innerHeight, behind: tmpA.z > 1 };
+  }
+  let toastT = 0;
+  function toast(text) { $('toast').textContent = text; $('toast').classList.add('show'); toastT = 2; }
+  function showCombo() {
+    const el = $('combo');
+    if (combo < 3) return;
+    el.textContent = combo + ' COMBO!';
+    el.classList.add('show');
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  }
+  let shownChicks = -1;
+  function bumpChicks() { const el = $('chick-pill'); el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+  function updateHud(dt) {
+    const c = Math.floor(chicks);
+    if (c !== shownChicks) { shownChicks = c; $('chicks').textContent = fmt(c); }
+    $('feed').textContent = fmt(feed);
+    $('parts').textContent = fmt(parts);
+    $('time').textContent = endless ? '∞' : Math.ceil(timeLeft);
+    $('time-pill').classList.toggle('low', !endless && started && timeLeft < 10);
+    if (comboT > 0) { comboT -= dt; if (comboT <= 0) { combo = 0; $('combo').classList.remove('show'); } }
+    if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
+    for (const p of popPool) {
+      if (p.t <= 0) continue;
+      p.t -= dt;
+      const s = project(p.x, p.y + (0.8 - p.t) * 1.5, p.z);
+      p.el.style.left = s.sx + 'px'; p.el.style.top = s.sy + 'px';
+      p.el.style.opacity = Math.min(1, p.t * 3);
+      if (p.t <= 0) p.el.style.display = 'none';
+    }
+    hpBars.forEach((el, i) => {
+      const a = attackList[i];
+      if (!a || !a.t.alive || a.t.hp >= a.t.maxHp) { el.style.display = 'none'; return; }
+      const s = project(a.t.x, a.t.kind === 'big' ? 2.8 : a.t.size + 0.35, a.t.z);
+      el.style.display = 'block';
+      el.style.left = s.sx + 'px'; el.style.top = s.sy + 'px';
+      el.style.width = (a.t.kind === 'big' ? 90 : 44) + 'px';
+      el.style.marginLeft = (a.t.kind === 'big' ? -45 : -22) + 'px';
+      el.firstChild.style.width = Math.max(0, a.t.hp / a.t.maxHp * 100) + '%';
+    });
+  }
+  // 案内(画面下の文字と、行き先の矢印)
+  const marker = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.85, 12), new THREE.MeshBasicMaterial({ color: '#ffc928' }));
+  marker.rotation.x = Math.PI;
+  marker.visible = false;
+  scene.add(marker);
+  function updateGuide(time) {
+    let text = '', goal = null;
+    const lv = HATCHERY_LEVELS[hatch.level];
+    if (!started) text = '画面をなぞって ひよこを動かそう';
+    else if (lv && parts >= lv.cost - hatch.paid) { text = hatch.level === 0 ? '⚙️がたまった! 孵化場をたてよう' : '⚙️がたまった! 孵化場を強くしよう'; goal = ZONE; }
+    else if (hatch.level === 0 && elapsed < 25) text = '木箱に近づくと 自動でつつくよ';
+    else if (hatch.level >= 1 && hatch.pop > 0 || (hatch.level === 1 && elapsed - (marks.hatchery || 0) < 4)) text = '孵化場が エサでひよこを自動で生むよ';
+    else if (chicks >= 120) {
+      const big = targets.filter(t => t.kind === 'big' && t.alive).sort((a, b) => Math.hypot(a.x - L.x, a.z - L.z) - Math.hypot(b.x - L.x, b.z - L.z))[0];
+      if (big && Math.hypot(big.x - L.x, big.z - L.z) > flock.r + 3) { text = '💥 でっかいコンテナを こわそう!'; goal = big; }
+    }
+    $('hint').textContent = text;
+    $('hint').style.opacity = text ? 1 : 0;
+    const arrow = $('arrow');
+    if (!goal) { marker.visible = false; arrow.style.display = 'none'; return; }
+    marker.visible = true;
+    marker.position.set(goal.x, (goal.kind === 'big' ? 3.4 : 1.6) + Math.abs(Math.sin(time * 4)) * 0.5, goal.z);
+    marker.rotation.y = time * 2;
+    const s = project(goal.x, 1, goal.z), W = window.innerWidth, H = window.innerHeight, top = 90;
+    if (!s.behind && s.sx > 30 && s.sx < W - 30 && s.sy > top && s.sy < H - 90) { arrow.style.display = 'none'; return; }
+    const c = project(L.x, 0, L.z);
+    let dx = s.sx - c.sx, dy = s.sy - c.sy;
+    if (s.behind) { dx = -dx; dy = -dy; }
+    const k = Math.min(Math.abs((dx > 0 ? W - 30 - c.sx : c.sx - 30) / (dx || 1e-6)), Math.abs((dy > 0 ? H - 90 - c.sy : c.sy - top) / (dy || 1e-6)));
+    arrow.style.display = 'block';
+    arrow.style.left = (c.sx + dx * k) + 'px'; arrow.style.top = (c.sy + dy * k) + 'px';
+    arrow.style.transform = 'rotate(' + Math.atan2(dy, dx) + 'rad)';
+  }
+
+  // ================================================================
+  //  1回の遊び(60秒)
+  // ================================================================
+  function start() { started = true; }
+  function finish() {
+    ended = true;
+    for (const e of eggPool.items) chicks += e.n; // かえりかけの卵も数に入れてから結果を出す
+    eggPool.items = [];
+    $('r-chicks').textContent = fmt(chicks);
+    $('r-broken').textContent = broken;
+    $('r-combo').textContent = maxCombo;
+    $('r-lv').textContent = hatch.level;
+    $('r-feed').textContent = fmt(feed);
+    $('result').classList.add('show');
+    Object.assign(stick, { active: false, id: null, dx: 0, dy: 0 }); showStick();
+    [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.16, 'triangle', 0.08, 1.02); }, i * 110));
+  }
+  $('again').addEventListener('click', () => location.reload());
+  $('keep').addEventListener('click', () => { endless = true; ended = false; $('result').classList.remove('show'); });
+
+  function logic(dt, time) {
+    blipBudget = Math.min(blipBudget + dt * 40, 6);
+    if (started && !ended) {
+      elapsed += dt;
+      if (!endless) { timeLeft = Math.max(0, GAME_TIME - elapsed); if (timeLeft <= 0) finish(); }
+    }
+    const play = !ended;
+    if (play) safe('leader', () => updateLeader(dt));
+    safe('flock', () => updateFlock(play ? dt : 0, time));
+    safe('targets', () => updateTargets(dt, time));
+    safe('particles', () => updateParticles(dt));
+    if (play) safe('hatch', () => { updateHatching(dt); updateHatchery(dt, time); });
+    safe('eggs', () => updateEggs(dt, time));
+    if (marks.ten === null && chicks >= 10) marks.ten = elapsed;
+    if (marks.hundred === null && chicks >= 100) marks.hundred = elapsed;
+  }
+
+  // ================================================================
+  //  メインループ
+  // ================================================================
+  const camTarget = V(L.x, 0, L.z);
+  let camDist = 12;
+  let last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const time = now / 1000;
+    logic(dt, time);
+    // カメラ: 群れが大きくなるほど引いて、全体が見えるようにする
+    camTarget.x += (L.x - camTarget.x) * Math.min(1, dt * 6);
+    camTarget.z += (L.z - camTarget.z) * Math.min(1, dt * 6);
+    const want = 11 + flock.r * 2.1;
+    camDist += (want - camDist) * Math.min(1, dt * 1.5);
+    camera.position.set(camTarget.x + Math.sin(CAM_YAW) * camDist * 0.75, camDist * 1.05, camTarget.z + Math.cos(CAM_YAW) * camDist * 0.75);
+    camera.lookAt(camTarget.x, 0, camTarget.z);
+    if (shake > 0) {
+      shake = Math.max(0, shake - dt);
+      camera.position.x += (Math.random() - 0.5) * shake * 1.2;
+      camera.position.y += (Math.random() - 0.5) * shake * 1.2;
+    }
+    const sh = Math.max(20, camDist * 1.3);
+    Object.assign(sun.shadow.camera, { left: -sh, right: sh, top: sh, bottom: -sh, near: 1, far: 120 });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.position.copy(camTarget).add(SUN_OFFSET);
+    sun.target.position.copy(camTarget);
+    safe('hud', () => { updateHud(dt); updateGuide(time); });
+    safe('render', () => renderer.render(scene, camera));
+    adaptQuality(now);
+  }
+  let qFrames = 0, qStart = performance.now(), pixelRatio = renderer.getPixelRatio();
+  function adaptQuality(now) {
+    qFrames++;
+    const el = now - qStart;
+    if (el < 3000) return;
+    const fps = qFrames / (el / 1000);
+    qFrames = 0; qStart = now;
+    if (document.hidden) return;
+    if (fps < 40 && pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
+  }
+  document.addEventListener('visibilitychange', () => { last = performance.now(); qStart = last; qFrames = 0; });
+  renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    $('hint').textContent = '画面が止まりました。ページを再読み込みしてください';
+    $('hint').style.opacity = 1;
+  });
+  requestAnimationFrame(frame);
+
+  // 自動テスト用
+  window.__renderer = renderer;
+  window.__game = {
+    get state() {
+      return { chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts), elapsed, timeLeft, started, ended, broken, maxCombo, hatchery: hatch.level, marks: { ...marks }, errors: errorsSeen.slice(), display: disp.length, drops: feedPool.items.length + partsPool.items.length, x: L.x, z: L.z, attacking: attackList.map(a => [a.t.kind, Math.round(a.t.hp), a.t.alive]), near: targets.filter(t => t.alive).map(t => [t.kind, +Math.hypot(t.x - L.x, t.z - L.z).toFixed(1), Math.round(t.hp)]).sort((a, b) => a[1] - b[1]).slice(0, 3), flockR: flock.r };
+    },
+    bot(on) { bot = on; },
+    // 描かずに時間を進める(テンポの調整用)
+    fastForward(sec, step = 1 / 30) { for (let t = 0; t < sec && !ended; t += step) logic(step, performance.now() / 1000 + t); return this.state; },
+  };
+</script>
+</body>
+</html>
