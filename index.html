@@ -227,10 +227,10 @@
   const CAPACITY_PER_TENT = 2;   // テント1つで増える人数
   const CAPACITY_PER_FIRE = 6;   // 焚き火が1つ増える(拡張する)と増える人数
   const CHECKOUT_QUEUE_LEN = 8;  // 帰りに受付でお会計を待てる人数
-  // 待たされすぎると怒って帰る(秒)。6割をすぎると 💢 が出る
-  const ENTRY_PATIENCE = 45;     // 入口の外で、入れてもらえるのを待つ
-  const MEAT_PATIENCE = 30;      // 配膳台で肉を待つ(怒って帰るとお会計もしない)
-  const CHECKOUT_PATIENCE = 25;  // 帰りのお会計を待つ(怒って帰るとお金を払わない)
+  // 待たされすぎると怒って帰る。ここの秒数で 💢 が出て、同じ時間だけ 💢 のまま待ってから帰る(合計で2倍)
+  const ENTRY_ANGRY = 40;        // 入口の外で、入れてもらえるのを待つ
+  const MEAT_ANGRY = 30;         // 配膳台で肉を待つ(怒って帰るとお会計もしない)
+  const CHECKOUT_ANGRY = 20;     // 帰りのお会計を待つ(怒って帰るとお金を払わない)
   const MEAT_QUEUE_LEN = 8;      // 🍽️ 配膳台に並べる人数
   const GUEST_SPEED = 3;         // 人の歩く速さ
   const HELPER_SPEED = 4.2;      // 仲間の歩く速さ
@@ -300,7 +300,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-4';
+  const GAME_VERSION = '2026.11.11-5';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -1893,7 +1893,8 @@
         const arrived = walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15;
         ch.face = { x: ch.root.position.x + 1, z: ch.root.position.z };
         g.wait = (g.wait || 0) + dt;
-        if (g.wait > ENTRY_PATIENCE) {
+        g.angry = g.wait > ENTRY_ANGRY;
+        if (g.wait > ENTRY_ANGRY * 2) {
           // 待ちきれずに帰る
           entryQueue.splice(idx, 1);
           angryLeave(g, [{ x: ch.root.position.x - 2, z: 4.4 }, { x: -24, z: 4.4 }]);
@@ -1967,8 +1968,8 @@
         g.atCounter = (walkPath(ch, [spot], GUEST_SPEED, dt) || flat(ch.root.position, spot) < 0.15) && idx === 0;
         ch.face = idx === 0 ? MEAT_COUNTER : { x: ch.root.position.x - 1, z: ch.root.position.z };
         g.wait = (g.wait || 0) + dt;
-        g.angry = g.wait > MEAT_PATIENCE * 0.6;
-        if (g.wait > MEAT_PATIENCE) {
+        g.angry = g.wait > MEAT_ANGRY;
+        if (g.wait > MEAT_ANGRY * 2) {
           meatQueue.splice(idx, 1);
           g.wantsMeat = false;
           if (g.tent) { g.tent.reserved--; g.tent = null; }
@@ -2038,8 +2039,8 @@
         }
         if (!g.paying) {
           g.wait = (g.wait || 0) + dt;
-          g.angry = g.wait > CHECKOUT_PATIENCE * 0.6;
-          if (g.wait > CHECKOUT_PATIENCE) {
+          g.angry = g.wait > CHECKOUT_ANGRY;
+          if (g.wait > CHECKOUT_ANGRY * 2) {
             payQueue.splice(payQueue.indexOf(g), 1);
             angryLeave(g, [{ x: ch.root.position.x - 0.5, z: 4.4 }, { x: -24, z: 4.4 }]);
           }
@@ -2527,10 +2528,12 @@
   }
 
   // ---- 焼き台 ----
-  const GRILL = { x: -6.1, z: 7.0 };
-  const grillZone = addZone(-4.4, 7.0, 1.8, iconZone('🍖'));
+  // 焼き台は2台を並べて置き、手前の 🍖 の枠1つで両方を使う(網は合わせて18枠)
+  const GRILL = { x: -6.1, z: 7.2 };                     // 2台のまん中
+  const GRILL_UNITS = [{ x: -6.1, z: 6.6 }, { x: -6.1, z: 7.8 }];
+  const grillZone = addZone(-4.4, 7.2, 2.2, iconZone('🍖'));
   const grillSlots = [];
-  {
+  for (const unit of GRILL_UNITS) {
     const g = new THREE.Group();
     mesh(new THREE.BoxGeometry(0.95, 0.55, 1.15), mat('#8f949c', { flatShading: true }), 0, 0.275, 0, g);
     const coals = mesh(new THREE.BoxGeometry(0.82, 0.04, 1.0), new THREE.MeshBasicMaterial({ color: '#ff7a2e' }), 0, 0.56, 0, g);
@@ -2539,11 +2542,11 @@
       const bar = mesh(new THREE.BoxGeometry(0.03, 0.03, 1.1), mat('#2d2f36'), i * 0.2, 0.6, 0, g);
       bar.castShadow = false;
     }
-    g.position.set(GRILL.x, FLOOR, GRILL.z);
+    g.position.set(unit.x, FLOOR, unit.z);
     scene.add(g);
-    boxes.push({ x: GRILL.x, z: GRILL.z, hx: 0.55, hz: 0.65 });
-    for (const sx of [-0.28, 0, 0.28]) for (const sz of [-0.34, 0, 0.34]) { // 9枠
-      grillSlots.push({ x: GRILL.x + sx, z: GRILL.z + sz, item: null, reserved: false, t: 0 });
+    boxes.push({ x: unit.x, z: unit.z, hx: 0.55, hz: 0.6 });
+    for (const sx of [-0.28, 0, 0.28]) for (const sz of [-0.34, 0, 0.34]) { // 1台に9枠
+      grillSlots.push({ x: unit.x + sx, z: unit.z + sz, item: null, reserved: false, t: 0 });
     }
   }
   const grillPos = (slot, out) => out.set(slot.x, FLOOR + 0.68, slot.z);
@@ -2735,7 +2738,7 @@
       if (walkPath(ch, h.path, HELPER_SPEED, dt)) h.state = 'hunt';
     } else if (h.state === 'hunt') {
       if (countKind(h.carrier, 'raw') >= 4 || carrierFull(h.carrier)) {
-        if (h.carrier.pending === 0) { h.state = 'back'; h.path = routeFront(p, { x: -4.4, z: 7.0 }); }
+        if (h.carrier.pending === 0) { h.state = 'back'; h.path = routeFront(p, { x: -4.4, z: 7.2 }); }
       } else {
         const w = weapon();
         if (!h.boar || !h.boar.alive) h.boar = nearestBoar(p, 100);
@@ -2785,7 +2788,7 @@
     const has = countKind(w.carrier, 'cooked');
     const grillHasCooked = grillSlots.some(sl => sl.item && sl.item.userData.kind === 'cooked');
     if (w.state === 'toGrill') {
-      if (walkPath(ch, [{ x: -4.4, z: 7.0 }], HELPER_SPEED, dt)) { w.state = 'take'; ch.face = GRILL; }
+      if (walkPath(ch, [{ x: -4.4, z: 7.2 }], HELPER_SPEED, dt)) { w.state = 'take'; ch.face = GRILL; }
     } else if (w.state === 'take') {
       ch.vx = ch.vz = 0;
       if (w.timer <= 0) {
