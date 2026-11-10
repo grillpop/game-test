@@ -427,7 +427,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-9';
+  const GAME_VERSION = '2026.11.11-10';
   $('version').textContent = '📍' + ST.name + '  v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -1449,14 +1449,34 @@
   // ================================================================
   //  効果音(ファイルを使わず、その場で音を作る)
   // ================================================================
-  let audio = null;
+  // iPhone は、画面に触った瞬間にしか音の準備(再開)を許してくれない。
+  // 1回目の操作が「音の許可」と数えられないこともあるので、触るたびに止まっていないか確かめて再開する
+  let audio = null, audioPrimed = false;
   function unlockAudio() {
-    if (audio) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC) audio = new AC();
+    try {
+      if (!audio) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audio = new AC();
+      }
+      if (audio.state !== 'running') audio.resume().catch(() => {});
+      if (!audioPrimed || audio.state !== 'running') {
+        // 無音の音を1回鳴らすと、iPhone で確実に音が出る状態になる
+        const buf = audio.createBuffer(1, 1, 22050);
+        const src = audio.createBufferSource();
+        src.buffer = buf;
+        src.connect(audio.destination);
+        src.start(0);
+        audioPrimed = true;
+      }
+    } catch (e) { /* 音が出せない環境では何もしない */ }
   }
+  ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'click', 'keydown'].forEach(ev =>
+    window.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+  // ほかのアプリから戻ってきたときも再開する(だめなら次に触ったときに再開)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && audio && audio.state !== 'running') audio.resume().catch(() => {}); });
   function blip(freq, dur = 0.07, type = 'triangle', vol = 0.08, slide = 1.5) {
-    if (!audio) return;
+    if (!audio || audio.state !== 'running') return;
     const t = audio.currentTime;
     const o = audio.createOscillator();
     const g = audio.createGain();
@@ -3602,6 +3622,7 @@
     missionInfo() { return { mission, count: missionCount, total: MISSIONS.length, text: MISSIONS[mission] && MISSIONS[mission].text }; },
     setMission(i) { mission = i; missionCount = 0; },
     repInfo() { return { rep, star, interval: guestInterval() }; },
+    audioState() { return audio ? audio.state : 'none'; },
     stageInfo() { return { stage: STAGE_NO, name: ST.name, served, playTime, clearShown, campCost: CAMP_UPGRADES.map(u => u.cost) }; },
     addRep(n) { addRep(n, player.ch.root.position); },
     setHeat(v) { for (const f of fires) f.heat = v; },
