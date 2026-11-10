@@ -68,6 +68,29 @@
   #fire-pct { min-width: 3.2em; text-align: right; font-size: 18px; }
   #fire-pill.low { animation: firelow .6s ease-in-out infinite alternate; }
   @keyframes firelow { from { background: rgba(40, 30, 25, .62); } to { background: rgba(200, 40, 30, .8); } }
+  /* ミッション(目の前の小さな目標) */
+  #mission {
+    align-self: flex-start;
+    max-width: 100%;
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px;
+    border-radius: 14px;
+    background: rgba(255, 252, 244, .92);
+    color: #4a2e1c;
+    font-size: 15px; font-weight: 800;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+    transition: transform .2s, background .2s;
+  }
+  #mission.done { background: #ffe27a; transform: scale(1.06); }
+  #mission-prog { white-space: nowrap; color: #c2410c; font-variant-numeric: tabular-nums; }
+  #mission-reward { white-space: nowrap; font-size: 13px; color: #8a6a2a; }
+  #mission-arrow {
+    position: fixed; display: none;
+    width: 44px; height: 44px; margin: -22px 0 0 -22px;
+    font-size: 34px; line-height: 44px; text-align: center;
+    color: #ffd23f; text-shadow: 0 0 3px #7a4a10, 0 2px 4px rgba(0, 0, 0, .5);
+    pointer-events: none;
+  }
   #toast {
     position: fixed;
     left: 0; right: 0;
@@ -166,7 +189,9 @@
       <div class="pill">💰 <span id="money">0</span></div>
     </div>
     <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div><span id="fire-pct">0%</span></div>
+    <div id="mission"><span>🎯 <span id="mission-text"></span></span><span id="mission-prog"></span><span id="mission-reward"></span></div>
   </div>
+  <div id="mission-arrow">➤</div>
   <div id="toast"></div>
   <div id="bars"></div>
   <div id="max">MAX</div>
@@ -300,7 +325,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-5';
+  const GAME_VERSION = '2026.11.11-6';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -1370,6 +1395,7 @@
     burst(sparks, tmpA.set(fire.x, FLOOR + 0.6, fire.z), 5, 2.5, 4.5);
     blip(300 + fire.heat * 4, 0.09, 'sine', 0.1);
     advanceHint(2);
+    missionEvent('feed');
   }
   // 火の番: 薪置き場のそばに立って、薪を火にくべてくれる
   function hireFireKeeper(fire) {
@@ -1571,6 +1597,7 @@
       addLog(carrier, V(b.x, b.g.position.y + 0.2, b.z), () => {
         blip(520 + carrier.stack.length * 30);
         advanceHint(1);
+        missionEvent('log');
       });
       branchRespawns.push(BRANCH_RESPAWN);
     }
@@ -1818,6 +1845,7 @@
     slot.guest = g;
     g.slot = slot;
     g.inside = true; // 中に入った(定員に数える)
+    missionEvent('admit');
     g.state = 'arrive';
     g.ch.face = null;
     g.path = [{ x: -11.6, z: ENTRY_ROW_Z }, { x: -8.8, z: ENTRY_ROW_Z }, GATE_OUT, GATE_IN, ...(slot.via || []), slot];
@@ -1932,6 +1960,7 @@
           leaveCold(g);
         } else if (g.warm >= 1) {
           g.state = 'happy';
+          missionEvent('warm');
           ch.hop = 0.5;
           ch.shiver = 0;
           g.bar.style.display = 'none';
@@ -2029,6 +2058,7 @@
             }
             if (g.payLeft === 0 && g.payTimer <= 0) {
               payQueue.shift();
+              missionEvent('checkout');
               g.state = 'leave';
               ch.face = null;
               g.path = [...EXIT_PATH];
@@ -2499,6 +2529,7 @@
     // ポンッと煙が出て、肉に変わる
     b.alive = false;
     b.root.visible = false;
+    missionEvent('boar');
     b.respawn = BOAR_RESPAWN;
     const p = b.root.position;
     burst(smoke, tmpA.set(p.x, 0.6, p.z), 10, 3, 2);
@@ -2585,7 +2616,7 @@
       carrier.stackRoot.add(item);
       carrier.stack.push(item);
       blip(640, 0.05);
-      if (carrier === player.meatCarrier) advanceHint(8);
+      if (carrier === player.meatCarrier) { advanceHint(8); missionEvent('grill'); }
     }, 1.0, 0.25);
     return true;
   }
@@ -2662,6 +2693,7 @@
         }
       }
       if (toPlayer) advanceHint(9);
+      missionEvent('serve');
     }, 1.0, 0.3);
     return true;
   }
@@ -2912,6 +2944,7 @@
       startSwing(ch, dur, () => hitTree(tree, carrier, AXE_LOGS[axeLevel - 1], () => {
         blip(420 + carrier.stack.length * 30);
         advanceHint(1);
+        missionEvent('log');
       }));
     }
 
@@ -2944,6 +2977,7 @@
         money++;
         blip(1000 + (money % 10) * 40, 0.04, 'sine', 0.04, 1.2);
         advanceHint(5);
+        missionEvent('collect');
       }, 0.8, 0.18);
     }
     // 光る枠でお金を払う
@@ -2978,6 +3012,132 @@
   //  画面の文字(HUD)
   // ================================================================
   const fireFill = $('fire-fill'), carryLabel = $('carry'), moneyLabel = $('money'), maxLabel = $('max');
+  // ================================================================
+  //  ミッション(目の前の小さな目標。達成するとごほうびのお金)
+  // ================================================================
+  // ev: 数える出来事(missionEvent で数える)/ done: 条件を満たしたら達成 / at: 目印を出す場所
+  const shopDone = (i, n) => () => !!shops[i] && shops[i].index >= n;
+  const shopAt = i => () => (shops[i] && shopItem(shops[i]) ? shops[i].zone : null);
+  function nearestBranch() {
+    const p = player.ch.root.position;
+    if (carrierFull(player.carrier)) return fires[0].dropZone; // いっぱいなら焚き火へ
+    let best = null, bd = Infinity;
+    for (const b of branches) {
+      const d = Math.hypot(b.x - p.x, b.z - p.z);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
+  }
+  function huntTarget() {
+    const p = player.ch.root.position;
+    return insidePlaza(p.x, p.z) ? { x: FRONT_GATE_X, z: camp.z2 + 0.6 } : null; // 柵の中にいるときは手前の出入口へ
+  }
+  const MISSIONS = [
+    { text: '枝を拾ったり木を切ったりして、薪を集めよう', ev: 'log', goal: 10, reward: 3, at: nearestBranch },
+    { text: '🔥 の枠に立って、焚き火に薪をくべよう', ev: 'feed', goal: 10, reward: 5, at: () => fires[0].dropZone },
+    { text: '🔔 入場の枠に立って、お客さんを入れよう', ev: 'admit', goal: 3, reward: 5, at: () => entryDeskZone },
+    { text: '🛎️ お会計の枠に立って、お金を受け取ろう', ev: 'checkout', goal: 3, reward: 5, at: () => deskZone },
+    { text: '💰 の枠でお金を拾おう', ev: 'collect', goal: 20, reward: 5, at: () => cashZone },
+    { text: '🎒 リュックを大きくしよう', done: shopDone(0, 1), reward: 5, at: shopAt(0) },
+    { text: '🔥 火の番を雇おう', done: shopDone(0, 2), reward: 10, at: shopAt(0) },
+    { text: '🪓 道具屋で斧を Lv2 にしよう', done: shopDone(1, 1), reward: 10, at: shopAt(1) },
+    { text: 'イノシシをたおそう', ev: 'boar', goal: 3, reward: 10, at: huntTarget },
+    { text: '🍖 焼き台で焼けた肉を受け取ろう', ev: 'grill', goal: 4, reward: 10, at: () => grillZone },
+    { text: '🍽️ お客さんに肉を渡そう', ev: 'serve', goal: 5, reward: 15, at: () => serveZone },
+    { text: '🛎️ 受付係を雇おう', done: shopDone(0, 3), reward: 15, at: shopAt(0) },
+    { text: '🔔 案内係を雇おう', done: shopDone(0, 4), reward: 15, at: shopAt(0) },
+    { text: '👷 木こりを雇おう', done: shopDone(0, 5), reward: 20, at: shopAt(0) },
+    { text: '⛺ テントを建てよう', done: shopDone(0, 6), reward: 20, at: shopAt(0) },
+    { text: 'お客さんを温めよう', ev: 'warm', goal: 30, reward: 30 },
+    { text: '🏹 武器屋で弓を買おう', done: shopDone(4, 1), reward: 20, at: shopAt(4) },
+    { text: '🐗 猟師を雇おう', done: shopDone(3, 1), reward: 30, at: shopAt(3) },
+    { text: '🏕️ キャンプを広げよう', done: shopDone(2, 1), reward: 30, at: shopAt(2) },
+    { text: '🍽️ 配膳係を雇おう', done: shopDone(3, 2), reward: 30, at: shopAt(3) },
+    { text: 'お客さんに肉を渡そう', ev: 'serve', goal: 30, reward: 40 },
+    { text: '🪚 チェーンソーを手に入れよう', done: shopDone(1, 4), reward: 40, at: shopAt(1) },
+    { text: '⛺ テント2を建てよう', done: shopDone(0, 7), reward: 40, at: shopAt(0) },
+    { text: '🏕️ キャンプをもう一度広げよう', done: shopDone(2, 2), reward: 60, at: shopAt(2) },
+    { text: 'お客さんを見送ろう', ev: 'checkout', goal: 100, reward: 80 },
+    { text: '🏕️ キャンプをいちばん大きくしよう', done: shopDone(2, 3), reward: 100, at: shopAt(2) },
+  ];
+  let mission = 0, missionCount = 0, missionWait = 0, missionShown = '';
+  function missionEvent(ev, n = 1) {
+    const m = MISSIONS[mission];
+    if (!m || m.ev !== ev) return;
+    missionCount = Math.min(m.goal, missionCount + n);
+  }
+  function completeMission() {
+    const m = MISSIONS[mission];
+    money += m.reward;
+    toast('ミッション達成! 💰+' + m.reward);
+    [784, 988, 1175, 1568].forEach((f, i) => setTimeout(() => blip(f, 0.12, 'triangle', 0.07, 1.05), i * 80));
+    const p = player.ch.root.position;
+    burst(sparks, tmpA.set(p.x, p.y + 1.2, p.z), 14, 4, 5);
+    mission++;
+    missionCount = 0;
+    missionWait = 1.6; // お知らせが重ならないように、少し待ってから次を見る
+    $('mission').classList.add('done');
+  }
+  // 目印: 行く場所の上で上下にはねる矢印。画面の外なら、画面の端に向きを出す
+  const missionMarker = new THREE.Mesh(
+    new THREE.ConeGeometry(0.34, 0.75, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffc928 }),
+  );
+  missionMarker.rotation.x = Math.PI; // 下向き
+  missionMarker.visible = false;
+  scene.add(missionMarker);
+  const missionArrow = $('mission-arrow');
+  function updateMission(dt, time) {
+    missionWait = Math.max(0, missionWait - dt);
+    const m = MISSIONS[mission];
+    if (missionWait < 1.1) $('mission').classList.remove('done');
+    if (m && missionWait <= 0 && (m.done ? m.done() : missionCount >= m.goal)) completeMission();
+    const cur = MISSIONS[mission];
+    // カードの表示(変わったときだけ書きかえる)
+    const prog = !cur ? '' : cur.done ? '' : missionCount + '/' + cur.goal;
+    const key = mission + ':' + prog;
+    if (key !== missionShown) {
+      missionShown = key;
+      $('mission-text').textContent = cur ? cur.text : 'すべてのミッションを達成した!';
+      $('mission-prog').textContent = prog;
+      $('mission-reward').textContent = cur ? '💰+' + cur.reward : '';
+    }
+    // 目印
+    const t = cur && missionWait <= 0 && cur.at ? cur.at() : null;
+    const p = player.ch.root.position;
+    const near = t && (t.half ? Math.abs(p.x - t.x) < t.half && Math.abs(p.z - t.z) < t.half : Math.hypot(p.x - t.x, p.z - t.z) < 1.2);
+    if (!t || near) {
+      missionMarker.visible = false;
+      missionArrow.style.display = 'none';
+      return;
+    }
+    missionMarker.visible = true;
+    missionMarker.position.set(t.x, groundY(t.x, t.z) + 1.5 + Math.abs(Math.sin(time * 4)) * 0.5, t.z);
+    missionMarker.rotation.y = time * 2;
+    tmpA.set(t.x, groundY(t.x, t.z) + 1, t.z).project(camera);
+    const W = window.innerWidth, H = window.innerHeight;
+    let sx = (tmpA.x + 1) / 2 * W, sy = (1 - tmpA.y) / 2 * H;
+    const top = hudBottom + 30, m2 = 30;
+    if (tmpA.z < 1 && sx > m2 && sx < W - m2 && sy > top && sy < H - 90) {
+      missionArrow.style.display = 'none';
+      return;
+    }
+    // 画面の外: 主人公から見た向きで、画面の端に矢印を出す
+    tmpB.copy(p).project(camera);
+    const cx = (tmpB.x + 1) / 2 * W, cy = (1 - tmpB.y) / 2 * H;
+    let dx = sx - cx, dy = sy - cy;
+    if (tmpA.z >= 1) { dx = -dx; dy = -dy; }
+    const ang = Math.atan2(dy, dx);
+    const k = Math.min(
+      Math.abs((dx > 0 ? W - m2 - cx : cx - m2) / (dx || 1e-6)),
+      Math.abs((dy > 0 ? H - 90 - cy : cy - top) / (dy || 1e-6)),
+    );
+    missionArrow.style.display = 'block';
+    missionArrow.style.left = (cx + dx * k) + 'px';
+    missionArrow.style.top = (cy + dy * k) + 'px';
+    missionArrow.style.transform = 'rotate(' + ang + 'rad) scale(' + (1 + Math.abs(Math.sin(time * 5)) * 0.15) + ')';
+  }
+
   function updateHud(dt) {
     const c = player.carrier;
     // 焚き火が2つ以上のときは、全部の焚き火を合わせて100%として表示する
@@ -3070,6 +3230,8 @@
     safe('hud', () => {
       hudBottom = $('hud').getBoundingClientRect().bottom;
       updateHud(dt);
+      updateMission(dt, time);
+      $('toast').style.top = (hudBottom + 10) + 'px';
       updatePileLabel();
       for (const n of STALL_NAMES) placeLabel(n.el, n.x, 3.1, n.z);
     });
@@ -3093,17 +3255,17 @@
     if (saveDisabled) return;
     const p = player.ch.root.position;
     const data = {
-      version: 4, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
+      version: 5, money: money + shops.reduce((n, s) => n + s.pending, 0), pile: pileCount + pilePending,
       shops: shops.map(s => [s.index, s.paid]), axe: axeLevel,
       heats: fires.map(f => Math.round(f.heat)), wood: fires.map(f => f.wood.stock + f.wood.pending),
-      carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z,
+      carry: countKind(player.carrier, 'log'), tutorial, x: p.x, z: p.z, mission, missionCount,
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない設定のときは何もしない */ }
   }
   function loadGame() {
     let data = null;
     try { data = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { data = null; }
-    if (!data || ![1, 2, 3, 4].includes(data.version)) return false;
+    if (!data || ![1, 2, 3, 4, 5].includes(data.version)) return false;
     if (data.version <= 3) {
       // 古いセーブ: キャンプの枠の4番目に案内係が入ったので、受付係より後まで買っていたら1つずらす(案内係はおまけで雇える)
       if (data.shops && data.shops[0] && data.shops[0][0] >= 3) data.shops[0] = [data.shops[0][0] + 1, data.shops[0][1]];
@@ -3147,6 +3309,16 @@
     if (typeof data.x === 'number' && typeof data.z === 'number') {
       player.ch.root.position.set(data.x, groundY(data.x, data.z), data.z);
       camTarget.copy(player.ch.root.position);
+    }
+    if (data.version >= 5) {
+      mission = Math.min(data.mission || 0, MISSIONS.length);
+      missionCount = data.missionCount || 0;
+    } else if (data.shops && data.shops[0] && data.shops[0][0] >= 1) {
+      // ミッションができる前のセーブ: 買った物まではミッションを済ませたことにする(ごほうびはなし)
+      let last = -1;
+      MISSIONS.forEach((m, i) => { if (m.done && m.done()) last = i; });
+      mission = last + 1;
+      while (MISSIONS[mission] && MISSIONS[mission].done && MISSIONS[mission].done()) mission++;
     }
     tutorial = data.tutorial || 0;
     if (tutorial < HINTS.length) hint.textContent = HINTS[tutorial];
@@ -3210,6 +3382,8 @@
       };
     },
     addMoney(n) { money += n; },
+    missionInfo() { return { mission, count: missionCount, total: MISSIONS.length, text: MISSIONS[mission] && MISSIONS[mission].text }; },
+    setMission(i) { mission = i; missionCount = 0; },
     setHeat(v) { for (const f of fires) f.heat = v; },
     wantingSpots() { return wantingGuests().map(g => [g.ch.root.position.x, g.ch.root.position.z]); },
     meatQueueLen() { return meatQueue.length; },
