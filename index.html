@@ -300,7 +300,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-3';
+  const GAME_VERSION = '2026.11.11-4';
   $('version').textContent = 'v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
@@ -2139,7 +2139,8 @@
           if (h.carrier.stack.length > 0) {
             h.state = 'toFire';
             h.fire = fires.reduce((a, b) => (a.heat <= b.heat ? a : b)); // 火の弱いほうへ
-            h.path = route(p, { x: h.fire.dropZone.x + 0.6, z: h.fire.dropZone.z - 0.2 });
+            // 🔥 の枠の左手前へ(右奥には火の番が立つので、そこをめざすとぶつかって着けなくなる)
+            h.path = route(p, { x: h.fire.dropZone.x - 0.55, z: h.fire.dropZone.z + 0.35 });
           } else {
             h.state = 'toTree';
             h.tree = null;
@@ -2147,7 +2148,8 @@
         }
       }
     } else if (h.state === 'toFire') {
-      if (walkPath(ch, h.path, HELPER_SPEED, dt)) { h.state = 'drop'; ch.face = h.fire; }
+      // 🔥 の枠に入ったら、そこで薪を置きはじめる
+      if (walkPath(ch, h.path, HELPER_SPEED, dt) || inZone(h.fire.dropZone, p)) { h.state = 'drop'; h.path = []; ch.face = h.fire; }
     } else if (h.state === 'drop') {
       ch.vx = ch.vz = 0;
       h.timer -= dt;
@@ -3208,6 +3210,7 @@
     setHeat(v) { for (const f of fires) f.heat = v; },
     wantingSpots() { return wantingGuests().map(g => [g.ch.root.position.x, g.ch.root.position.z]); },
     meatQueueLen() { return meatQueue.length; },
+    helperInfo() { return helpers.map(h => ({ state: h.state, x: h.ch.root.position.x, z: h.ch.root.position.z })); },
     shopZones() { return shops.map(sh => [sh.pos.x, sh.pos.z]); },
     buyNow(i) { const sh = shops[i], u = shopItem(sh); if (u) { sh.paid = u.cost; completeShop(sh); sh.cool = 0; } }, // テスト用: すぐ買う
   };
