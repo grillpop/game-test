@@ -41,41 +41,45 @@
   }
   #hud {
     position: fixed;
-    top: calc(env(safe-area-inset-top) + 10px);
-    left: 12px; right: 12px;
+    top: calc(env(safe-area-inset-top) + 8px);
+    left: 10px; right: 10px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
     pointer-events: none;
   }
-  .hud-row { display: flex; gap: 8px; justify-content: flex-end; }
+  .hud-row { display: flex; gap: 6px; }
   .pill {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
+    gap: 5px;
+    padding: 4px 10px;
     border-radius: 999px;
-    background: rgba(40, 30, 25, .55);
+    background: rgba(28, 24, 22, .5);
+    border: 1px solid rgba(255, 255, 255, .16);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
     color: #fff;
-    font-size: 17px;
+    font-size: 14px;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
-  /* 火のゲージ: このゲームでいちばん大事なので、1段使って大きく出す */
-  #fire-pill { padding: 8px 14px; font-size: 22px; border-radius: 16px; background: rgba(40, 30, 25, .62); }
-  #fire-bar { flex: 1; height: 20px; border-radius: 10px; background: rgba(255, 255, 255, .22); overflow: hidden; border: 2px solid rgba(255, 255, 255, .55); }
-  #fire-fill { height: 100%; width: 0; border-radius: 8px; background: linear-gradient(90deg, #ffd166, #ff8a1f 60%, #ff4d1f); transition: width .15s; }
-  #fire-pct { min-width: 3.2em; text-align: right; font-size: 18px; }
+  .hud-row:first-child .pill { flex: 1; justify-content: center; } /* 1段目は同じ幅でそろえる */
+  /* 2段目: 評判と火のゲージ(火はこのゲームでいちばん大事なので、残りの幅を全部使う) */
+  #fire-pill { flex: 1; gap: 7px; padding: 4px 10px; font-size: 15px; }
+  #fire-bar { flex: 1; height: 11px; border-radius: 6px; background: rgba(255, 255, 255, .2); overflow: hidden; border: 1px solid rgba(255, 255, 255, .45); }
+  #fire-fill { height: 100%; width: 0; border-radius: 5px; background: linear-gradient(90deg, #ffd166, #ff8a1f 60%, #ff4d1f); transition: width .15s; }
+  #fire-pct { min-width: 2.6em; text-align: right; font-size: 14px; }
   #fire-pill.low { animation: firelow .6s ease-in-out infinite alternate; }
   @keyframes firelow { from { background: rgba(40, 30, 25, .62); } to { background: rgba(200, 40, 30, .8); } }
   /* ミッション(目の前の小さな目標) */
-  .mission-row { display: flex; gap: 8px; align-items: center; }
-  #rep-pill { flex-direction: column; gap: 3px; padding: 5px 10px; border-radius: 14px; font-size: 16px; }
+  #rep-pill { gap: 6px; padding: 4px 10px; }
   #rep-pill.up { animation: repup .5s ease-out 3 alternate; }
   @keyframes repup { from { transform: scale(1); } to { transform: scale(1.25); background: rgba(240, 170, 20, .9); } }
   #rep-pill.down { animation: repdown .4s ease-in-out 4 alternate; }
   @keyframes repdown { to { background: rgba(200, 40, 30, .85); } }
-  #rep-bar { width: 52px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+  #rep-bar { width: 34px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .25); overflow: hidden; }
   #rep-fill { height: 100%; width: 0; background: #ffd23f; transition: width .3s; }
   .rep-float {
     position: fixed; pointer-events: none;
@@ -87,19 +91,19 @@
   .rep-float.minus { color: #ff6a5a; text-shadow: 0 1px 0 #5a0f0a, 0 2px 4px rgba(0, 0, 0, .5); }
   @keyframes repfloat { from { opacity: 1; margin-top: 0; } to { opacity: 0; margin-top: -50px; } }
   #mission {
-    flex: 1; min-width: 0;
     display: flex; align-items: center; gap: 8px;
-    padding: 7px 12px;
-    border-radius: 14px;
-    background: rgba(255, 252, 244, .92);
+    padding: 5px 12px;
+    border-radius: 12px;
+    background: rgba(255, 252, 244, .9);
     color: #4a2e1c;
-    font-size: 15px; font-weight: 800;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+    font-size: 13px; font-weight: 800; line-height: 1.35;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .2);
     transition: transform .2s, background .2s;
   }
-  #mission.done { background: #ffe27a; transform: scale(1.06); }
+  #mission > span:first-child { flex: 1; min-width: 0; }
+  #mission.done { background: #ffe27a; transform: scale(1.03); }
   #mission-prog { white-space: nowrap; color: #c2410c; font-variant-numeric: tabular-nums; }
-  #mission-reward { white-space: nowrap; font-size: 13px; color: #8a6a2a; }
+  #mission-reward { white-space: nowrap; font-size: 12px; color: #8a6a2a; }
   #mission-arrow {
     position: fixed; display: none;
     width: 44px; height: 44px; margin: -22px 0 0 -22px;
@@ -146,7 +150,7 @@
     top: calc(env(safe-area-inset-top) + 112px);
     text-align: center;
     color: #fff;
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 900;
     text-shadow: 0 2px 0 #c2410c, 0 4px 8px rgba(0, 0, 0, .35);
     pointer-events: none;
@@ -211,6 +215,7 @@
     font-weight: 900;
     pointer-events: none;
     display: none;
+    white-space: nowrap; /* 画面の端でも改行しない */
   }
   .pile-label.stall-name { display: block; background: rgba(40, 70, 50, .75); color: #fff; font-size: 15px; }
   #max {
@@ -237,11 +242,11 @@
       <div class="pill">👥 <span id="people">0/8</span></div>
       <div class="pill">💰 <span id="money">0</span></div>
     </div>
-    <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div><span id="fire-pct">0%</span></div>
-    <div class="mission-row">
-    <div id="rep-pill" class="pill"><span>⭐ <span id="rep-star">1</span></span><div id="rep-bar"><div id="rep-fill"></div></div></div>
-    <div id="mission"><span>🎯 <span id="mission-text"></span></span><span id="mission-prog"></span><span id="mission-reward"></span></div>
+    <div class="hud-row">
+      <div id="rep-pill" class="pill"><span>⭐<span id="rep-star">1</span></span><div id="rep-bar"><div id="rep-fill"></div></div></div>
+      <div id="fire-pill" class="pill">🔥<div id="fire-bar"><div id="fire-fill"></div></div><span id="fire-pct">0%</span></div>
     </div>
+    <div id="mission"><span>🎯 <span id="mission-text"></span></span><span id="mission-prog"></span><span id="mission-reward"></span></div>
   </div>
   <div id="mission-arrow">➤</div>
   <div id="toast"></div>
@@ -422,7 +427,7 @@
   const $ = (id) => document.getElementById(id);
 
   // 版の番号(変更を公開するたびに上げる)。iPhone で古い版のまま遊んでいないか確かめる用
-  const GAME_VERSION = '2026.11.11-8';
+  const GAME_VERSION = '2026.11.11-9';
   $('version').textContent = '📍' + ST.name + '  v' + GAME_VERSION;
 
   // エラーが起きたら画面に出す(iPhone ではエラーの内容が見えないため。スクショで原因がわかる)
