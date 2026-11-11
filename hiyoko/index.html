@@ -149,10 +149,10 @@
   // ================================================================
   //  設定(ここの数字を変えると、テンポや爽快感を調整できます)
   // ================================================================
-  const GOALS = [100, 1000, 10000, 100000, 1000000]; // 目標の羽数(区切りごとにお祝い。最後が100万羽)
+  const GOALS = [100, 1000, 10000, 30000, 100000, 300000, 1000000]; // 目標の羽数(区切りごとにお祝い。最後が100万羽)
   const SAVE_KEY = 'hiyoko-save-v1'; // 進み具合を保存する名前(雪のキャンプとは別)
   // 8つの建物を建てたあとの「村パワーアップ」: 払うたびに、村ぜんぶの生む速さが2倍になる
-  const POWER_COST = (k) => Math.round(3000 * Math.pow(2.6, k) / 100) * 100;
+  const POWER_COST = (k) => Math.round(6000 * Math.pow(2.8, k) / 100) * 100;
   const START_CHICKS = 4;        // 最初のひよこ(リーダーとは別)
   const LEADER_SPEED = 7.5;      // リーダーの速さ
   // エリア: 門をこわすと次のエリアへ行ける。先のエリアほど、壊す物が大きくなる
@@ -160,7 +160,7 @@
   const AREAS = [
     { name: 'はじまりの原っぱ', icon: '🌱', x1: -24, x2: 28, z1: -24, z2: 16, open: true },
     { name: '農場', icon: '🚜', x1: -24, x2: 28, z1: 16, z2: 52, need: 300, gateHp: 450, gate: { x: 2, z: 16, along: 'x' }, wall: [[-24, 16], [28, 16]], ground: 'farm' },
-    { name: '倉庫街', icon: '🏭', x1: -62, x2: -24, z1: 16, z2: 52, need: 3000, gateHp: 6000, gate: { x: -24, z: 34, along: 'z' }, wall: [[-24, 16], [-24, 52]], ground: 'town' },
+    { name: '倉庫街', icon: '🏭', x1: -62, x2: -24, z1: 16, z2: 52, need: 3000, gateHp: 6000, gate: { x: -24, z: 24, along: 'z' }, wall: [[-24, 16], [-24, 52]], ground: 'town' },
   ];
   // まわりの柵(エリア全体の外側)
   const OUTER_WALLS = [[[-24, -24], [28, -24]], [[-24, -24], [-24, 16]], [[28, -24], [28, 52]], [[-62, 52], [28, 52]], [[-62, 16], [-24, 16]], [[-62, 16], [-62, 52]]];
@@ -187,7 +187,12 @@
   };
   // ひよこ村: パーツを払うと、建物が1つずつ空から落ちてきて建つ。村がどんどん広がる
   // rate: その建物が1秒に生むひよこ(1羽にエサ1)。x, z は建物の真ん中、w×d は広さ
-  const VILLAGE = { x1: 3, x2: 23, z1: -19, z2: 1.5 }; // 村の範囲(木箱はここに出さない)
+  // 村の区画(エリアごと。木箱はここに出さない)。農場と倉庫街の区画は、門が開くと建てられる
+  const VILLAGES = [
+    { area: 0, x1: 3, x2: 23, z1: -19, z2: 1.5, cx: 11, cz: -8 },
+    { area: 1, x1: 9, x2: 27.5, z1: 26, z2: 43, cx: 18, cz: 34 },
+    { area: 2, x1: -40, x2: -25.5, z1: 36, z2: 51.5, cx: -33, cz: 43 },
+  ];
   const BUILDINGS = [
     { type: 'hut', name: '孵化小屋', icon: '🐣', x: 6, z: -5, w: 3.6, d: 3, cost: 40, rate: 4 },
     { type: 'barn', name: 'エサ倉庫', icon: '🌾', x: 10.5, z: -9, w: 3.6, d: 3, cost: 70, rate: 6 },
@@ -197,7 +202,19 @@
     { type: 'mill', name: '風車', icon: '🌬️', x: 16, z: -12.5, w: 3, d: 3, cost: 380, rate: 28 },
     { type: 'factory', name: 'ひよこ工場', icon: '🏭', x: 11, z: -16, w: 6.4, d: 4, cost: 560, rate: 45 },
     { type: 'statue', name: '黄金ひよこ像', icon: '🏆', x: 20.5, z: -2.2, w: 3, d: 3, cost: 900, rate: 80 },
+    // 🚜 農場の村(農場の門が開くと建てられる)
+    { area: 1, type: 'coop', name: 'ニワトリ小屋', icon: '🐔', x: 13, z: 30, w: 4.2, d: 3.4, cost: 1200, rate: 60 },
+    { area: 1, type: 'corn', name: 'トウモロコシ畑', icon: '🌽', x: 21.5, z: 30, w: 5, d: 4, cost: 1800, rate: 80 },
+    { area: 1, type: 'silo2', name: '大サイロ', icon: '🛢️', x: 12.5, z: 38.5, w: 3.4, d: 3, cost: 2600, rate: 110 },
+    { area: 1, type: 'tractor', name: 'トラクター小屋', icon: '🚜', x: 19, z: 38.5, w: 3.6, d: 3, cost: 3600, rate: 150 },
+    { area: 1, type: 'barn2', name: '赤い大納屋', icon: '🏚️', x: 25, z: 38, w: 3.6, d: 3.6, cost: 5000, rate: 200 },
+    // 🏭 倉庫街の村(倉庫街の門が開くと建てられる)
+    { area: 2, type: 'tower', name: 'ひよこビル', icon: '🏢', x: -36, z: 40, w: 3.6, d: 3.6, cost: 8000, rate: 300 },
+    { area: 2, type: 'eggfac', name: 'たまご工場', icon: '🥚', x: -29, z: 40, w: 5, d: 4, cost: 12000, rate: 450 },
+    { area: 2, type: 'ferris', name: 'ひよこ観覧車', icon: '🎡', x: -36.5, z: 47.5, w: 4.4, d: 2, cost: 18000, rate: 650 },
+    { area: 2, type: 'eggtower', name: '黄金たまごタワー', icon: '🏆', x: -29, z: 47.5, w: 3, d: 3, cost: 26000, rate: 900 },
   ];
+  for (const b of BUILDINGS) b.area = b.area || 0;
 
   const CAM_YAW = Math.PI / 4;
   const SCREEN_RIGHT = { x: Math.cos(CAM_YAW), z: -Math.sin(CAM_YAW) };
@@ -205,7 +222,7 @@
   const STICK_RADIUS = 56;
 
   const $ = (id) => document.getElementById(id);
-  const GAME_VERSION = '2026.11.13-h4';
+  const GAME_VERSION = '2026.11.13-h5';
   $('version').textContent = '🐤 v' + GAME_VERSION;
 
   const errorsSeen = [];
@@ -458,6 +475,7 @@
   // エサ・パーツを飛び散らせる。1粒が何個ぶんかを決めて、粒の数を抑える
   let feed = 0, parts = 0;
   function spill(kind, amount, x, z, spread = 1) {
+    if (kind === 'feed') amount *= village.mult; // 村パワーアップで、エサも同じ倍率で増える
     const pool = kind === 'feed' ? feedPool : partsPool;
     const want = Math.min(Math.ceil(amount), kind === 'feed' ? 40 : 18) * (spread > 2 ? 2 : 1);
     const room = pool.max - pool.items.length;
@@ -557,7 +575,7 @@
     targets.push(c);
     return c;
   }
-  const inVillage = (x, z, m = 0) => x > VILLAGE.x1 - m && x < VILLAGE.x2 + m && z > VILLAGE.z1 - m && z < VILLAGE.z2 + m;
+  const inVillage = (x, z, m = 0) => VILLAGES.some(v => x > v.x1 - m && x < v.x2 + m && z > v.z1 - m && z < v.z2 + m);
   // 最初の数秒で壊せるように、スタートのすぐそばに木箱を置く
   [[1.2, -0.4], [-1.6, -0.8], [0.4, -2.6], [-2.8, 1.4], [2.8, 1.6]].forEach(([x, z]) => placeCrate(x, z, 0));
   function freeSpot(area, minFromLeader, room = 1.2) {
@@ -667,10 +685,10 @@
   }
   // 配置: 原っぱ(木箱とコンテナ)、農場(木箱・タル・軽トラ)、倉庫街(木箱・タル・小屋・コンテナ・倉庫)
   [[-9, -14], [16, 9], [-18, 8]].forEach(([x, z]) => placeObj('container', x, z, 0));
-  [[-14, 26], [16, 24], [-6, 44], [20, 42], [5, 33], [-18, 40]].forEach(([x, z]) => placeObj('truck', x, z, 1));
-  [[-52, 24], [-34, 26], [-48, 44], [-30, 46], [-56, 34]].forEach(([x, z]) => placeObj('shed', x, z, 2));
-  [[-40, 21], [-44, 49], [-30, 38]].forEach(([x, z]) => placeObj('container', x, z, 2));
-  [[-42, 31], [-52, 46.5]].forEach(([x, z]) => placeObj('warehouse', x, z, 2));
+  [[-14, 26], [-2, 25], [-6, 44], [12, 48], [5, 33], [-18, 40]].forEach(([x, z]) => placeObj('truck', x, z, 1));
+  [[-38, 20], [-58, 36], [-45, 37]].forEach(([x, z]) => placeObj('shed', x, z, 2));
+  [[-60, 20], [-36, 30], [-44, 45]].forEach(([x, z]) => placeObj('container', x, z, 2));
+  [[-50, 27], [-53, 46]].forEach(([x, z]) => placeObj('warehouse', x, z, 2));
   scatter(0, 110, (x, z) => placeCrate(x, z, crateTier(0, x, z), 0));
   scatter(1, 50, (x, z) => placeCrate(x, z, crateTier(1, x, z), 1));
   scatter(1, 45, (x, z) => placeBarrel(x, z, 1));
@@ -766,6 +784,110 @@
       b.chimneys = [{ x: -2.1, z: -1.1 }, { x: 2.1, z: -1.1 }];
       b.door = { x: 0, z: 2.0 };
     },
+    coop(g, b) {
+      part(g, new THREE.BoxGeometry(b.w, 0.2, b.d), MAT.wood, 0, 0.1, 0);
+      part(g, new THREE.BoxGeometry(2.4, 1.5, 2.4), MAT.white, -0.8, 0.95, -0.3);
+      part(g, gableGeo(2.6, 0.9, 2.6), MAT.red, -0.8, 2.15, -0.3);
+      part(g, new THREE.BoxGeometry(0.6, 0.9, 0.06), MAT.door, -0.8, 0.65, 0.92);
+      // 金あみの囲いと、中のニワトリ
+      for (const [x, z, w, d] of [[1.35, -1.1, 1.5, 0.06], [1.35, 1.1, 1.5, 0.06], [2.1, 0, 0.06, 2.2]]) part(g, new THREE.BoxGeometry(w, 0.7, d), MAT.metal, x, 0.55, z);
+      for (let i = 0; i < 4; i++) {
+        const c = new THREE.Mesh(chickGeo, new THREE.MeshLambertMaterial({ color: '#ffffff', vertexColors: true }));
+        c.scale.setScalar(0.9); c.position.set(1.0 + (i % 2) * 0.6, 0.2, -0.5 + Math.floor(i / 2) * 0.9); c.rotation.y = i * 1.7;
+        g.add(c);
+      }
+      b.door = { x: -0.8, z: 1.4 };
+    },
+    corn(g, b) {
+      part(g, new THREE.BoxGeometry(b.w, 0.16, b.d), HM('#8a5a30'), 0, 0.08, 0);
+      const list = [];
+      for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) {
+        const x = -2 + i * 0.8, z = -1.4 + j * 0.95, h = 1.5 + ((i * 7 + j * 3) % 4) * 0.12;
+        list.push({ geo: new THREE.CylinderGeometry(0.06, 0.08, h, 5), m: M(x, h / 2 + 0.16, z), color: '#4c9a3a' });
+        list.push({ geo: new THREE.ConeGeometry(0.28, 0.6, 5), m: M(x, h * 0.75, z, 1, 1, 0.4), color: '#6fbf4a' });
+        list.push({ geo: new THREE.CylinderGeometry(0.1, 0.08, 0.38, 6), m: M(x + 0.12, h * 0.6, z, 1, 1, 1, 0, 0, 0.4), color: '#ffd23a' });
+      }
+      const m = new THREE.Mesh(mergeGeometries(list), new THREE.MeshLambertMaterial({ vertexColors: true }));
+      m.castShadow = true; g.add(m);
+      b.door = { x: 0, z: 2.3 };
+    },
+    silo2(g, b) {
+      part(g, new THREE.BoxGeometry(b.w, 0.2, b.d), MAT.stone, 0, 0.1, 0);
+      for (const x of [-0.85, 0.85]) {
+        part(g, new THREE.CylinderGeometry(0.8, 0.8, 4.6, 14), MAT.metal, x, 2.4, -0.2);
+        part(g, new THREE.SphereGeometry(0.8, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), HM('#9aa7b4', { metalness: 0.5 }), x, 4.7, -0.2);
+      }
+      part(g, new THREE.BoxGeometry(0.9, 0.2, 0.3), MAT.red, 0, 4.0, -0.2);
+      part(g, new THREE.BoxGeometry(1.4, 0.9, 0.06), MAT.yellow, 0, 2.0, 0.62);
+      b.door = { x: 0, z: 1.6 };
+    },
+    tractor(g, b) {
+      part(g, new THREE.BoxGeometry(b.w, 0.2, b.d), MAT.wood, 0, 0.1, 0);
+      for (const x of [-1.6, 1.6]) for (const z of [-1.3, 1.3]) part(g, new THREE.BoxGeometry(0.16, 2.4, 0.16), MAT.door, x, 1.3, z);
+      part(g, roofGeo(4.0, 0.8, 3.4), MAT.red, 0, 2.9, 0);
+      part(g, new THREE.BoxGeometry(1.3, 0.7, 0.8), HM('#3fae4a'), 0.1, 0.75, 0);
+      part(g, new THREE.BoxGeometry(0.6, 0.6, 0.7), HM('#cfefff'), -0.25, 1.4, 0);
+      for (const z of [-0.5, 0.5]) part(g, new THREE.CylinderGeometry(0.5, 0.5, 0.25, 12), MAT.dark, -0.4, 0.55, z).rotation.x = Math.PI / 2;
+      for (const z of [-0.45, 0.45]) part(g, new THREE.CylinderGeometry(0.28, 0.28, 0.2, 10), MAT.dark, 0.65, 0.4, z).rotation.x = Math.PI / 2;
+      b.door = { x: 0, z: 1.8 };
+    },
+    barn2(g, b) {
+      part(g, new THREE.BoxGeometry(b.w, 0.2, b.d), MAT.wood, 0, 0.1, 0);
+      part(g, new THREE.BoxGeometry(3.2, 2.6, 3.2), MAT.red, 0, 1.5, 0);
+      part(g, gableGeo(3.4, 1.4, 3.4), HM('#5a5f66'), 0, 3.5, 0);
+      part(g, new THREE.BoxGeometry(1.4, 1.7, 0.06), MAT.white, 0, 1.05, 1.62);
+      part(g, new THREE.BoxGeometry(0.7, 0.6, 0.06), MAT.white, 0, 2.7, 1.62);
+      part(g, new THREE.ConeGeometry(0.18, 0.5, 6), MAT.gold, 0, 4.6, 0);
+      b.door = { x: 0, z: 2.0 };
+    },
+    tower(g, b) {
+      const tex = canvasTexture(64, (c, n) => {
+        c.fillStyle = '#ffd23a'; c.fillRect(0, 0, n, n);
+        c.fillStyle = '#7ec8f0'; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) c.fillRect(4 + i * 15, 4 + j * 15, 9, 10);
+      });
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2, 4);
+      part(g, new THREE.BoxGeometry(3.2, 8, 3.2), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }), 0, 4, 0);
+      const head = new THREE.Mesh(chickGeo, MAT.gold);
+      head.scale.setScalar(3.2); head.position.set(0, 8, 0); head.castShadow = true; g.add(head);
+      b.spin = head;
+      b.door = { x: 0, z: 2.0 };
+    },
+    eggfac(g, b) {
+      part(g, new THREE.BoxGeometry(b.w, 0.2, b.d), MAT.stone, 0, 0.1, 0);
+      part(g, new THREE.BoxGeometry(3.0, 2.4, 3.2), MAT.wall, -0.9, 1.4, 0);
+      for (let i = 0; i < 2; i++) part(g, gableGeo(1.6, 0.8, 3.3), MAT.red, -1.65 + i * 1.5, 3.0, 0);
+      const egg = part(g, new THREE.SphereGeometry(1.1, 16, 12), MAT.egg, 1.5, 2.1, 0);
+      egg.scale.set(1, 1.35, 1);
+      for (const z of [-0.6, 0.6]) part(g, new THREE.CylinderGeometry(0.12, 0.12, 1.6, 8), MAT.metal, 0.5, 1.6, z).rotation.z = Math.PI / 2;
+      part(g, new THREE.CylinderGeometry(0.25, 0.3, 2, 10), MAT.metal, -2, 3.6, -1);
+      b.chimneys = [{ x: -2, z: -1 }];
+      b.door = { x: -0.9, z: 2.1 };
+    },
+    ferris(g, b) {
+      for (const s of [-1, 1]) {
+        part(g, new THREE.BoxGeometry(0.2, 5.4, 0.2), MAT.metal, s * 1.3, 2.6, -0.6).rotation.z = s * 0.25;
+        part(g, new THREE.BoxGeometry(0.2, 5.4, 0.2), MAT.metal, s * 1.3, 2.6, 0.6).rotation.z = s * 0.25;
+      }
+      const wheel = new THREE.Group(); wheel.position.set(0, 5, 0); g.add(wheel);
+      part(wheel, new THREE.TorusGeometry(2.4, 0.1, 6, 28), MAT.yellow, 0, 0, 0);
+      const colors = ['#ff6b6b', '#4f8fd8', '#3fae4a', '#ffd23a', '#c77dff', '#ff9f1c'];
+      for (let i = 0; i < 6; i++) {
+        const a = i / 6 * Math.PI * 2;
+        const spoke = part(wheel, new THREE.BoxGeometry(0.08, 2.4, 0.08), MAT.white, Math.cos(a) * 1.2, Math.sin(a) * 1.2, 0);
+        spoke.rotation.z = a - Math.PI / 2;
+        part(wheel, new THREE.BoxGeometry(0.6, 0.5, 0.6), HM(colors[i]), Math.cos(a) * 2.4, Math.sin(a) * 2.4, 0);
+      }
+      b.spin = wheel;
+      b.door = { x: 0, z: 1.4 };
+    },
+    eggtower(g, b) {
+      part(g, new THREE.CylinderGeometry(1.3, 1.5, 0.6, 16), MAT.stone, 0, 0.3, 0);
+      part(g, new THREE.CylinderGeometry(0.5, 0.9, 5, 12), MAT.white, 0, 3.1, 0);
+      const egg = new THREE.Mesh(new THREE.SphereGeometry(1.2, 18, 14), MAT.gold);
+      egg.scale.set(1, 1.35, 1); egg.position.y = 6.9; egg.castShadow = true; g.add(egg);
+      b.spin = egg;
+      b.door = { x: 0, z: 1.8 };
+    },
     statue(g, b) {
       part(g, new THREE.CylinderGeometry(1.3, 1.5, 0.9, 16), MAT.stone, 0, 0.45, 0);
       const chick = new THREE.Mesh(chickGeo, MAT.gold);
@@ -778,15 +900,15 @@
     },
   };
   // 村の地面と、これから建つ場所の印
-  {
-    const w = VILLAGE.x2 - VILLAGE.x1, d = VILLAGE.z2 - VILLAGE.z1;
+  for (const V0 of VILLAGES) {
+    const w = V0.x2 - V0.x1, d = V0.z2 - V0.z1;
     const floorTex = canvasTexture(256, (g, n) => {
       g.fillStyle = '#e2cfa3'; g.fillRect(0, 0, n, n);
       for (let i = 0; i < 120; i++) { g.fillStyle = i % 2 ? 'rgba(160,120,70,.18)' : 'rgba(255,255,240,.3)'; g.fillRect(Math.random() * n, Math.random() * n, 6, 4); }
     }, 4);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 1 }));
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set((VILLAGE.x1 + VILLAGE.x2) / 2, 0.008, (VILLAGE.z1 + VILLAGE.z2) / 2);
+    floor.position.set((V0.x1 + V0.x2) / 2, 0.008, (V0.z1 + V0.z2) / 2);
     floor.receiveShadow = true;
     scene.add(floor);
   }
@@ -834,7 +956,7 @@
     g.fillStyle = '#fff'; g.fillText(text, 0, y); g.restore();
   }
   const POWER = { power: true, name: '村パワーアップ', icon: '⭐', x: 13, z: -8, w: 0, d: 0, zone: { x: 13, z: 3.4, half: 1.3 }, get cost() { return POWER_COST(village.power); } };
-  const nextBuilding = () => BUILDINGS[village.built] || POWER;
+  const nextBuilding = () => { const b = BUILDINGS[village.built]; return b && AREAS[b.area].open ? b : POWER; };
   const zc = zoneCanvas(256, (g, n) => {
     const b = nextBuilding();
     if (!b) return;
@@ -850,7 +972,11 @@
   const zoneMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), zoneMat);
   zoneMesh.rotation.x = -Math.PI / 2;
   scene.add(zoneMesh);
+  // 村パワーアップの枠は、いちばん奥の開いたエリアの村の前に出す(遠くまで戻らなくていいように)
+  const POWER_SPOTS = [{ x: 13, z: 3.4, px: 13, pz: -8 }, { x: 18, z: 45.2, px: 18, pz: 34 }, { x: -33, z: 33.6, px: -33, pz: 43 }];
   function placeZone() {
+    const spot = POWER_SPOTS[AREAS.reduce((n, a, i) => (a.open ? i : n), 0)];
+    POWER.zone.x = spot.x; POWER.zone.z = spot.z; POWER.x = spot.px; POWER.z = spot.pz;
     const b = nextBuilding();
     zoneMesh.visible = !!b;
     if (b) zoneMesh.position.set(b.zone.x, 0.02, b.zone.z);
@@ -1094,7 +1220,7 @@
       spill('parts', def.parts, t.x, t.z);
       blip(320 + Math.min(combo, 30) * 25, 0.08, 'square', 0.05, 0.6);
       if (combo >= 10 && combo % 5 === 0) shake = Math.max(shake, 0.15);
-      popText('+' + fmt(def.feed) + '🌾', t.x, 1.2, t.z);
+      popText('+' + fmt(def.feed * village.mult) + '🌾', t.x, 1.2, t.z);
     } else {
       const def = OBJ_TYPES[t.type];
       t.respawn = def.respawn;
@@ -1109,7 +1235,7 @@
       boom(huge ? 0.35 : 0.25);
       if (huge) setTimeout(() => boom(0.25), 140);
       toast(huge ? '💥💥 ' + def.name + 'が大破壊!' : '💥 ' + def.name + 'をドカーン!');
-      popText('+' + fmt(def.feed) + '🌾', t.x, def.h, t.z, true);
+      popText('+' + fmt(def.feed * village.mult) + '🌾', t.x, def.h, t.z, true);
     }
     showCombo();
   }
@@ -1128,6 +1254,7 @@
     boom(0.35);
     setTimeout(() => boom(0.3), 160);
     marks['gate' + t.areaToOpen] = elapsed;
+    placeZone(); // 新しい村の建物、またはパワーアップの枠を出し直す
     toast('🚪 ' + a.icon + ' ' + a.name + 'が開いた!');
     [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.14, 'square', 0.06, 1.02); }, i * 90));
   }
@@ -1365,7 +1492,7 @@
         const grow = 1 + Math.min(0.5, village.power * 0.07); // パワーアップするほど、建物が大きくなる
         g.scale.set(pulse * grow, grow / pulse, pulse * grow);
       }
-      if (bd.spin) { if (bd.type === 'mill') bd.spin.rotation.z += dt * 2.2; else bd.spin.rotation.y += dt * 0.8; }
+      if (bd.spin) { if (bd.type === 'mill') bd.spin.rotation.z += dt * 2.2; else if (bd.type === 'ferris') bd.spin.rotation.z += dt * 0.6; else bd.spin.rotation.y += dt * 0.8; }
       if (bd.chimneys && bd.drop === 0) {
         bd.smokeT = (bd.smokeT || 0) - dt;
         if (bd.smokeT <= 0) {
@@ -1376,7 +1503,7 @@
           }
         }
       }
-      if (bd.type === 'statue' && bd.drop === 0 && Math.random() < dt * 4) burstPuff(bd.x + (Math.random() - 0.5) * 2, 1 + Math.random() * 3, bd.z + (Math.random() - 0.5) * 2, 1, 0.3);
+      if ((bd.type === 'statue' || bd.type === 'eggtower') && bd.drop === 0 && Math.random() < dt * 4) burstPuff(bd.x + (Math.random() - 0.5) * 2, 1 + Math.random() * 3, bd.z + (Math.random() - 0.5) * 2, 1, 0.3);
       if (bd.belt && bd.drop === 0) {
         for (let e = 0; e < 12; e++) {
           const u = ((time * 0.35 + e / 12) % 1);
@@ -1432,7 +1559,7 @@
     }
     shake = Math.max(shake, 0.45);
     boom(0.18);
-    toast('⭐ 村パワーアップ! 生まれる速さ ×' + village.mult);
+    toast('⭐ 村パワーアップ! ひよことエサ ×' + village.mult);
     placeZone();
     [659, 784, 988, 1319, 1568].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.12, 'triangle', 0.07, 1.05); }, i * 70));
   }
@@ -1505,7 +1632,9 @@
     // 村の看板: 村ぜんぶで1秒に何羽生むか
     const sign = $('village-sign');
     if (village.built > 0) {
-      const p = project((VILLAGE.x1 + VILLAGE.x2) / 2 - 2, 5.5, -8);
+      const vs = VILLAGES.filter(v => BUILDINGS.slice(0, village.built).some(b => b.area === v.area));
+      const v = vs.sort((a, b) => Math.hypot(a.cx - L.x, a.cz - L.z) - Math.hypot(b.cx - L.x, b.cz - L.z))[0] || VILLAGES[0];
+      const p = project(v.cx, 6, v.cz);
       const text = '🐣 ひよこ村 +' + fmt(village.rate) + '羽/秒' + (village.mult > 1 ? ' (×' + village.mult + ')' : '');
       if (sign.textContent !== text) { sign.textContent = text; sign.classList.remove('bump'); void sign.offsetWidth; sign.classList.add('bump'); }
       sign.style.display = p.behind || p.sy < 190 || p.sy > window.innerHeight - 80 ? 'none' : 'block'; // 上のお知らせと重ならないように
@@ -1633,7 +1762,7 @@
       if (a.gateTarget) { a.gateTarget.alive = false; a.gateTarget.g.visible = false; }
     });
     elapsed = d.elapsed || 0; broken = d.broken || 0; maxCombo = d.maxCombo || 0;
-    goalIdx = d.goal || 0; clearShown = !!d.clear;
+    goalIdx = GOALS.filter(g => chicks >= g).length; clearShown = !!d.clear; // 目標は羽数から数え直す(目標の数を変えても大丈夫なように)
     if (typeof d.x === 'number' && walkable(d.x, d.z)) { L.x = d.x; L.z = d.z; flock.cx = L.x; flock.cz = L.z; camTarget.set(L.x, 0, L.z); }
     started = true;
     return true;
