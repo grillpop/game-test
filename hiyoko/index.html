@@ -186,13 +186,13 @@
   // ステージごとの雰囲気(4つをくり返す。2周目からは「春の原っぱ 2」のように名前に番号がつく)
   const THEMES = [
     { name: '🌱 春の原っぱ', sky: '#bfe7a0', grass: ['#9fd977', '#93cf6b'], leaf: '#4caf50', trunk: '#8a5a30', flowers: ['#ffffff', '#ffe066', '#ff9ec7'],
-      hemi: ['#fffbe8', '#7a9a50', 1.6], sun: ['#fff1d0', 2.0], tint: '#ffffff', weather: 'petals', enemy: 'fox', fog: [45, 95] },
+      hemi: ['#fffbe8', '#7a9a50', 1.6], sun: ['#fff1d0', 2.0], tint: '#ffffff', weather: 'petals', enemy: 'fox', fog: [45, 95], skin: 'spring' },
     { name: '🌅 夕焼けの丘', sky: '#f4a97f', grass: ['#c8c068', '#bcb45c'], leaf: '#e07b2a', trunk: '#7a4a26', flowers: ['#ffd166', '#ff8a5b', '#ffffff'],
-      hemi: ['#ffd2a8', '#8a5a3a', 1.35], sun: ['#ffa060', 2.2], tint: '#ffe0c0', weather: 'leaves', enemy: 'crow', fog: [40, 90] },
+      hemi: ['#ffd2a8', '#8a5a3a', 1.35], sun: ['#ffa060', 2.2], tint: '#ffe0c0', weather: 'leaves', enemy: 'crow', fog: [40, 90], skin: 'sunset' },
     { name: '❄️ 雪の原っぱ', sky: '#d3e4f4', grass: ['#f2f6fb', '#e4ecf6'], leaf: '#2f6f5a', trunk: '#6a4a30', flowers: ['#ffffff', '#cfe9ff', '#ffffff'],
-      hemi: ['#eef6ff', '#8a9ab8', 1.5], sun: ['#ffffff', 1.9], tint: '#eaf2ff', weather: 'snow', enemy: 'wolf', fog: [35, 85] },
+      hemi: ['#eef6ff', '#8a9ab8', 1.5], sun: ['#ffffff', 1.9], tint: '#eaf2ff', weather: 'snow', enemy: 'wolf', fog: [35, 85], skin: 'snow' },
     { name: '🌙 夜の森', sky: '#24305a', grass: ['#3a6a48', '#335f40'], leaf: '#1d4a38', trunk: '#4a3420', flowers: ['#fff6a0', '#a0e0ff', '#ffffff'],
-      hemi: ['#9aa8ea', '#2a3648', 1.25], sun: ['#c4d0ff', 1.15], tint: '#9eaad6', weather: 'fireflies', enemy: 'mix', fog: [30, 75] },
+      hemi: ['#9aa8ea', '#2a3648', 1.25], sun: ['#c4d0ff', 1.15], tint: '#9eaad6', weather: 'fireflies', enemy: 'mix', fog: [30, 75], skin: 'night' },
   ];
   const THEME = THEMES[SK % THEMES.length];
   const LAP = Math.floor(SK / THEMES.length) + 1;
@@ -291,7 +291,7 @@
   const STICK_RADIUS = 56;
 
   const $ = (id) => document.getElementById(id);
-  const GAME_VERSION = '2026.11.14-h7';
+  const GAME_VERSION = '2026.11.14-h8';
   $('version').textContent = '🐤 v' + GAME_VERSION;
 
   const errorsSeen = [];
@@ -497,6 +497,7 @@
     { geo: new THREE.ConeGeometry(0.05, 0.12, 5), m: M(0, 0.62, 0.1), color: '#ffcf2a' },                  // あたまの毛
   ]);
   const chickMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  if (THEME.skin === 'night') chickMat.emissive = new THREE.Color('#7a5c00'); // 夜でもひよこが黄色く見えるように、少し光らせる
   const flockMesh = new THREE.InstancedMesh(chickGeo, chickMat, MAX_DISPLAY);
   flockMesh.castShadow = true;
   flockMesh.frustumCulled = false;
@@ -623,7 +624,52 @@
     g.beginPath(); g.moveTo(10, 10); g.lineTo(n - 10, n - 10); g.stroke();
   });
   const CRATE_MAX = 200;
-  const crateMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.8 }), CRATE_MAX);
+  // 場所ごとの小さな壊せる物(木箱・タルのかわり)。どれも高さ1(タルは1.1)の中に収まる形
+  const SMALL_SKINS = {
+    sunset: {
+      crate: () => mergeGeometries([   // わら束
+        { geo: new THREE.CylinderGeometry(0.45, 0.45, 1, 14), m: M(0, -0.05, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#e8c35a' },
+        { geo: new THREE.CylinderGeometry(0.46, 0.46, 0.08, 14), m: M(0.25, -0.05, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#a8843a' },
+        { geo: new THREE.CylinderGeometry(0.46, 0.46, 0.08, 14), m: M(-0.25, -0.05, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#a8843a' },
+      ]),
+      barrel: () => mergeGeometries([  // かぼちゃ
+        { geo: new THREE.SphereGeometry(0.55, 14, 10), m: M(0, -0.12, 0, 1, 0.78, 1), color: '#e8742a' },
+        { geo: new THREE.CylinderGeometry(0.06, 0.08, 0.28, 6), m: M(0, 0.4, 0), color: '#4c7a2a' },
+        { geo: new THREE.SphereGeometry(0.18, 6, 4), m: M(0.14, 0.32, 0, 1, 0.3, 0.6), color: '#5a9a3a' },
+      ]),
+    },
+    snow: {
+      crate: () => mergeGeometries([   // 雪だるま
+        { geo: new THREE.SphereGeometry(0.32, 12, 10), m: M(0, -0.18, 0), color: '#ffffff' },
+        { geo: new THREE.SphereGeometry(0.23, 12, 10), m: M(0, 0.22, 0), color: '#ffffff' },
+        { geo: new THREE.ConeGeometry(0.05, 0.2, 6), m: M(0, 0.22, 0.28, 1, 1, 1, Math.PI / 2), color: '#ff8a1c' },
+        { geo: new THREE.SphereGeometry(0.03, 5, 4), m: M(0.08, 0.3, 0.2), color: '#222222' },
+        { geo: new THREE.SphereGeometry(0.03, 5, 4), m: M(-0.08, 0.3, 0.2), color: '#222222' },
+        { geo: new THREE.CylinderGeometry(0.26, 0.26, 0.07, 12), m: M(0, 0.04, 0), color: '#e63946' },
+        { geo: new THREE.CylinderGeometry(0.14, 0.15, 0.2, 10), m: M(0, 0.48, 0), color: '#333344' },
+      ]),
+      barrel: () => mergeGeometries([  // 氷のかたまり
+        { geo: new THREE.BoxGeometry(0.9, 1.0, 0.9), m: M(0, -0.05, 0, 1, 1, 1, 0, 0.4, 0), color: '#bfe9ff' },
+        { geo: new THREE.BoxGeometry(0.5, 0.5, 0.5), m: M(0.2, 0.35, 0.1, 1, 1, 1, 0.3, 0.8, 0.2), color: '#dff4ff' },
+      ]),
+    },
+    night: {
+      crate: () => mergeGeometries([   // 光るキノコ
+        { geo: new THREE.CylinderGeometry(0.12, 0.16, 0.55, 8), m: M(0, -0.22, 0), color: '#f4ecd8' },
+        { geo: new THREE.SphereGeometry(0.42, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), m: M(0, 0.05, 0, 1, 0.8, 1), color: '#ff5a9a' },
+        ...[[0.2, 0.15, 0.2], [-0.22, 0.12, 0.1], [0.02, 0.33, -0.05], [0.05, 0.12, -0.3]].map(([x, y, z]) => ({ geo: new THREE.SphereGeometry(0.06, 6, 4), m: M(x, y, z), color: '#ffffff' })),
+      ]),
+      barrel: () => mergeGeometries([  // 切り株
+        { geo: new THREE.CylinderGeometry(0.5, 0.58, 0.8, 12), m: M(0, -0.15, 0), color: '#7a5030' },
+        { geo: new THREE.CylinderGeometry(0.48, 0.48, 0.04, 12), m: M(0, 0.26, 0), color: '#d9b27a' },
+        { geo: new THREE.CylinderGeometry(0.3, 0.3, 0.045, 12), m: M(0, 0.27, 0), color: '#b88a5a' },
+        { geo: new THREE.SphereGeometry(0.16, 6, 4), m: M(0.32, 0.32, 0.1), color: '#7ad06a' },
+      ]),
+    },
+  }[THEME.skin];
+  const skinMat = (glow) => new THREE.MeshLambertMaterial({ vertexColors: true, emissive: glow ? '#3a1230' : '#000000' });
+  const crateMesh = new THREE.InstancedMesh(SMALL_SKINS ? SMALL_SKINS.crate() : new THREE.BoxGeometry(1, 1, 1),
+    SMALL_SKINS ? skinMat(THEME.skin === 'night') : new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.8 }), CRATE_MAX);
   crateMesh.castShadow = crateMesh.receiveShadow = true;
   crateMesh.frustumCulled = false;
   scene.add(crateMesh);
@@ -634,7 +680,8 @@
     g.fillStyle = '#555c63'; g.fillRect(0, 8, n, 6); g.fillRect(0, n - 14, n, 6);
   });
   const BARREL_MAX = 90;
-  const barrelMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.1, 12), new THREE.MeshStandardMaterial({ map: barrelTex, roughness: 0.8 }), BARREL_MAX);
+  const barrelMesh = new THREE.InstancedMesh(SMALL_SKINS ? SMALL_SKINS.barrel() : new THREE.CylinderGeometry(0.5, 0.5, 1.1, 12),
+    SMALL_SKINS ? skinMat(false) : new THREE.MeshStandardMaterial({ map: barrelTex, roughness: 0.8 }), BARREL_MAX);
   barrelMesh.castShadow = barrelMesh.receiveShadow = true;
   barrelMesh.frustumCulled = false;
   scene.add(barrelMesh);
@@ -714,10 +761,96 @@
       om(g, new THREE.BoxGeometry(2.6, 0.8, 0.1), OM('#ffffff'), -2.5, 3.6, 3.22);
     },
   };
+  // 場所ごとの大きな壊せる物(コンテナ・軽トラ・小屋・倉庫のかわり)。[名前, 破片の色, 作り方]
+  const glowMat = new THREE.MeshBasicMaterial({ color: '#ffe08a' });
+  const wheel = (g, x, z, r, mat) => { const w = om(g, new THREE.CylinderGeometry(r, r, 0.2, 14), mat, x, r, z); w.rotation.x = Math.PI / 2; return w; };
+  const BIG_SKINS = {
+    sunset: {
+      container: ['大かぼちゃ', '#e8742a', (g) => {
+        om(g, new THREE.SphereGeometry(1.7, 18, 14), OM('#e8742a'), 0, 1.3, 0).scale.set(1, 0.75, 1);
+        om(g, new THREE.CylinderGeometry(0.18, 0.24, 0.7, 8), OM('#4c7a2a'), 0, 2.6, 0);
+      }],
+      truck: ['荷車', '#a06a3a', (g) => {
+        om(g, new THREE.BoxGeometry(3.0, 0.5, 1.7), OM('#a06a3a'), 0, 1.0, 0);
+        for (const z of [-0.95, 0.95]) wheel(g, -0.4, z, 0.7, OM('#6a4a2a'));
+        for (let i = 0; i < 3; i++) om(g, new THREE.CylinderGeometry(0.4, 0.4, 0.9, 12), OM('#e8c35a'), -0.9 + i * 0.9, 1.65, 0).rotation.x = Math.PI / 2;
+        om(g, new THREE.BoxGeometry(1.4, 0.1, 0.1), OM('#6a4a2a'), 2.0, 0.9, 0);
+      }],
+      shed: ['わら小屋', '#d9b25a', (g) => {
+        om(g, new THREE.CylinderGeometry(1.6, 1.7, 2.2, 14), OM('#c9a06a'), 0, 1.1, 0);
+        om(g, new THREE.ConeGeometry(2.1, 2.0, 14), OM('#e8c35a'), 0, 3.2, 0);
+        om(g, new THREE.BoxGeometry(0.9, 1.4, 0.1), OM('#6a4a2a'), 0, 0.7, 1.62);
+      }],
+      warehouse: ['大きな納屋', '#b03a2a', (g) => {
+        om(g, new THREE.BoxGeometry(8.4, 4.2, 6.4), OM('#b03a2a'), 0, 2.1, 0);
+        const r = new THREE.CylinderGeometry(1, 1, 1, 3, 1); r.rotateZ(Math.PI / 2); r.rotateX(Math.PI / 2); r.scale(4.4, 1.8, 3.6);
+        om(g, r, OM('#5a4030'), 0, 5.0, 0);
+        om(g, new THREE.BoxGeometry(3.0, 3.0, 0.08), OM('#f4e3c1'), 0, 1.5, 3.22);
+        for (const a of [0.8, -0.8]) om(g, new THREE.BoxGeometry(3.6, 0.2, 0.06), OM('#b03a2a'), 0, 1.5, 3.27).rotation.z = a;
+      }],
+    },
+    snow: {
+      container: ['かまくら', '#ffffff', (g) => {
+        om(g, new THREE.SphereGeometry(1.9, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), OM('#f6faff'), 0, 0, 0);
+        const door = om(g, new THREE.CylinderGeometry(0.7, 0.7, 0.8, 14, 1, false, 0, Math.PI), OM('#e8f0fa'), 0, 0, 1.7);
+        door.rotation.x = Math.PI / 2; door.rotation.z = Math.PI / 2;
+        om(g, new THREE.CircleGeometry(0.55, 14, 0, Math.PI), new THREE.MeshBasicMaterial({ color: '#3a4a6a' }), 0, 0.02, 2.11);
+      }],
+      truck: ['そり', '#c0392b', (g) => {
+        om(g, new THREE.BoxGeometry(3.0, 0.3, 1.5), OM('#c0392b'), 0, 0.7, 0);
+        for (const z of [-0.65, 0.65]) om(g, new THREE.BoxGeometry(3.4, 0.08, 0.1), OM('#ffd23a', { metalness: 0.6 }), 0.1, 0.3, z);
+        const cols = ['#4f8fd8', '#3fae4a', '#ffd23a', '#c77dff'];
+        for (let i = 0; i < 4; i++) om(g, new THREE.BoxGeometry(0.6, 0.6, 0.6), OM(cols[i]), -0.9 + (i % 2) * 0.8 + (i > 1 ? 0.6 : 0), 1.15 + (i > 1 ? 0.55 : 0), (i % 2) * 0.4 - 0.2);
+      }],
+      shed: ['雪の小屋', '#8a5a30', (g) => {
+        om(g, new THREE.BoxGeometry(3.4, 2.4, 2.8), OM('#8a5a30'), 0, 1.2, 0);
+        const r = new THREE.CylinderGeometry(0.01, 1, 1, 4, 1); r.rotateY(Math.PI / 4); r.scale(2.9, 1.5, 2.4);
+        om(g, r, OM('#ffffff'), 0, 3.15, 0);
+        om(g, new THREE.BoxGeometry(0.4, 1.2, 0.4), OM('#7a7f88'), 1.0, 3.4, -0.5);
+        om(g, new THREE.BoxGeometry(0.8, 1.3, 0.06), OM('#5a3a20'), 0, 0.65, 1.42);
+      }],
+      warehouse: ['氷のお城', '#bfe9ff', (g) => {
+        const ice = OM('#bfe9ff', { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.88 });
+        om(g, new THREE.BoxGeometry(6, 4, 4.6), ice, 0, 2, 0);
+        for (const [x, z] of [[-3, -2.3], [3, -2.3], [-3, 2.3], [3, 2.3]]) {
+          om(g, new THREE.CylinderGeometry(0.8, 0.9, 6, 10), ice, x, 3, z);
+          om(g, new THREE.ConeGeometry(1.0, 1.6, 10), OM('#4f8fd8'), x, 6.8, z);
+        }
+        om(g, new THREE.BoxGeometry(1.4, 2, 0.1), OM('#4f8fd8'), 0, 1, 2.32);
+      }],
+    },
+    night: {
+      container: ['キノコの家', '#ff5a9a', (g) => {
+        om(g, new THREE.CylinderGeometry(0.8, 1.0, 2.2, 12), OM('#f4ecd8'), 0, 1.1, 0);
+        om(g, new THREE.SphereGeometry(2.0, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), OM('#ff5a9a', { emissive: '#3a0a20' }), 0, 2.1, 0).scale.set(1, 0.7, 1);
+        for (const [x, z] of [[0.9, 0.9], [-1.1, 0.4], [0.2, -1.3]]) om(g, new THREE.SphereGeometry(0.25, 8, 6), OM('#ffffff'), x, 2.9, z);
+        om(g, new THREE.BoxGeometry(0.4, 0.4, 0.06), glowMat, 0, 1.4, 0.9);
+      }],
+      truck: ['古い荷車', '#5a4030', (g) => {
+        om(g, new THREE.BoxGeometry(3.0, 0.5, 1.7), OM('#5a4030'), 0, 1.0, 0);
+        for (const z of [-0.95, 0.95]) wheel(g, -0.4, z, 0.7, OM('#3a2a1a'));
+        om(g, new THREE.CylinderGeometry(0.05, 0.05, 1.6, 6), OM('#3a2a1a'), 1.1, 1.9, 0);
+        om(g, new THREE.SphereGeometry(0.28, 10, 8), glowMat, 1.1, 2.8, 0);
+      }],
+      shed: ['森の小屋', '#7a5030', (g) => {
+        om(g, new THREE.CylinderGeometry(1.6, 1.8, 2.6, 14), OM('#7a5030'), 0, 1.3, 0);
+        om(g, new THREE.ConeGeometry(2.1, 1.8, 14), OM('#2f6a3a'), 0, 3.5, 0);
+        om(g, new THREE.CircleGeometry(0.35, 12), glowMat, 0.6, 1.6, 1.62);
+        om(g, new THREE.BoxGeometry(0.8, 1.3, 0.06), OM('#3a2a1a'), -0.4, 0.65, 1.7);
+      }],
+      warehouse: ['大木の家', '#5a3a20', (g) => {
+        om(g, new THREE.CylinderGeometry(2.0, 2.6, 6, 14), OM('#5a3a20'), 0, 3, 0);
+        for (const [x, y, z, r] of [[0, 7.2, 0, 3.4], [2.2, 6.2, 1, 2.2], [-2.2, 6.4, -0.8, 2.4]]) om(g, new THREE.IcosahedronGeometry(r, 0), OM('#245a3a', { flatShading: true }), x, y, z);
+        for (const [y, a] of [[1.6, 0.3], [3.4, -0.6], [4.6, 1.2]]) om(g, new THREE.BoxGeometry(0.5, 0.6, 0.06), glowMat, Math.sin(a) * 2.2, y, Math.cos(a) * 2.2).rotation.y = a;
+        om(g, new THREE.BoxGeometry(1.0, 1.6, 0.06), OM('#3a2a1a'), 0, 0.8, 2.5);
+      }],
+    },
+  }[THEME.skin];
+  if (BIG_SKINS) for (const k in BIG_SKINS) { OBJ_TYPES[k].name = BIG_SKINS[k][0]; OBJ_TYPES[k].color = BIG_SKINS[k][1]; }
   function placeObj(type, x, z, area) {
     const def = OBJ_TYPES[type];
     const g = new THREE.Group();
-    OBJ_MAKERS[type](g);
+    (BIG_SKINS ? BIG_SKINS[type][2] : OBJ_MAKERS[type])(g);
     g.position.set(x, 0, z);
     g.rotation.y = type === 'truck' ? rand() * Math.PI * 2 : 0;
     scene.add(g);
@@ -782,6 +915,10 @@
     gold: new THREE.MeshStandardMaterial({ color: '#ffcc33', metalness: 0.85, roughness: 0.25, emissive: '#3a2600' }),
     stone: HM('#cfc6b4'), blue: HM('#4f8fd8'),
   };
+  // 村の色合いも場所に合わせる(夕焼けは秋色の屋根、雪は白い屋根、夜は窓や看板が光る)
+  if (THEME.skin === 'sunset') { MAT.red.color.set('#c8642a'); MAT.wall.color.set('#f0d6a8'); MAT.wood.color.set('#b88a50'); }
+  if (THEME.skin === 'snow') { MAT.red.color.set('#f2f6fc'); MAT.wood.color.set('#d8dee8'); MAT.stone.color.set('#e8eef6'); }
+  if (THEME.skin === 'night') { MAT.yellow.emissive = new THREE.Color('#d9a800'); MAT.glass.emissive = new THREE.Color('#2a5a8a'); MAT.wall.color.set('#d8cfe8'); MAT.red.color.set('#7a4a9a'); }
   const village = { built: 0, paid: 0, rate: 0, power: 0, mult: 1, items: [] };
   function part(g, geo, mat, x, y, z, ry = 0) {
     const m = new THREE.Mesh(geo, mat);
@@ -1307,6 +1444,7 @@
       const def = t.kind === 'crate' ? CRATE_TIERS[t.tier] : BARREL;
       t.respawn = CRATE_RESPAWN;
       burstDebris(t.x, 0.5, t.z, t.kind === 'barrel' ? 12 : 7 + t.tier * 3, def.color);
+      if (SMALL_SKINS) burstPuff(t.x, 0.6, t.z, 3, 0.6);
       burstPuff(t.x, 0.5, t.z, 4, 0.8);
       spill('feed', def.feed, t.x, t.z);
       spill('parts', def.parts, t.x, t.z);
@@ -1376,7 +1514,7 @@
       if (t.kind === 'crate') {
         const s = t.size * grow;
         setInst(crateMesh, k, t.x, s / 2 * squash, t.z, s * (2 - squash), s * squash, s * (2 - squash), t.spin);
-        crateMesh.setColorAt(k, _col.set(CRATE_TIERS[t.tier].color).lerp(_white, t.hit > 0 ? 0.5 : 0.15));
+        crateMesh.setColorAt(k, _col.set(SMALL_SKINS ? '#ffffff' : CRATE_TIERS[t.tier].color).lerp(_white, t.hit > 0 ? 0.5 : 0.15));
         k++;
       } else if (t.kind === 'barrel') {
         const s = grow;
@@ -2147,6 +2285,7 @@
   $('st-name').textContent = THEME_NAME;
   $('stage-title').classList.add('show');
   $('version').textContent = '📍' + THEME_NAME + '  🐤 v' + GAME_VERSION;
+  if (THEME.skin === 'night') $('version').style.color = 'rgba(255,255,255,.65)';
   requestAnimationFrame(frame);
 
   // 自動テスト用
