@@ -73,6 +73,23 @@
     font-weight: 900; font-size: 18px; color: #fff; text-shadow: 0 2px 0 rgba(120, 60, 0, .8), 0 3px 6px rgba(0, 0, 0, .4);
     display: none;
   }
+  .pop-text.minus { color: #ff5a4a; text-shadow: 0 2px 0 rgba(90, 10, 0, .9), 0 3px 6px rgba(0, 0, 0, .4); }
+  .foe-arrow {
+    position: fixed; display: none; width: 34px; height: 34px; margin: -17px 0 0 -17px; pointer-events: none;
+    font-size: 26px; line-height: 34px; text-align: center; color: #ff4d3a; text-shadow: 0 0 3px #400, 0 2px 4px rgba(0, 0, 0, .5);
+  }
+  /* 3択の強化 */
+  #cards { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(20, 30, 10, .55); }
+  #cards.show { display: flex; }
+  #cards .box { width: min(92vw, 380px); text-align: center; color: #fff; animation: cardin .35s cubic-bezier(.2, 1.6, .4, 1); }
+  #cards h2 { font-size: 22px; margin-bottom: 12px; text-shadow: 0 2px 4px rgba(0, 0, 0, .5); }
+  .card-btn {
+    display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 10px; padding: 12px 14px; border: 0; border-radius: 16px;
+    background: #fffbea; color: #5a3a10; text-align: left; box-shadow: 0 4px 0 #d9b25a; font-family: inherit;
+  }
+  .card-btn b { display: block; font-size: 18px; }
+  .card-btn span { font-size: 13px; font-weight: 700; color: #8a6a3a; }
+  .card-btn i { font-style: normal; font-size: 34px; }
   .hp-bar {
     position: fixed; width: 44px; height: 6px; margin-left: -22px; border-radius: 3px;
     background: rgba(0, 0, 0, .35); overflow: hidden; pointer-events: none; display: none;
@@ -96,7 +113,7 @@
     font-size: 12px; white-space: pre-wrap; display: none; pointer-events: none;
   }
   #result {
-    position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(30, 40, 20, .5);
+    position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(30, 40, 20, .5);
   }
   #result.show { display: flex; }
   #result .card {
@@ -110,6 +127,7 @@
   #result .stats div { background: #f6ead0; border-radius: 10px; padding: 6px 4px; }
   #result button { display: block; width: 100%; margin-top: 8px; padding: 12px; border: 0; border-radius: 14px; font-size: 18px; font-weight: 900; }
   #keep { background: #ff9f1c; color: #fff; box-shadow: 0 3px 0 #c2410c; }
+  #result.fail h1 { color: #4a5a7a; }
   #again { background: #ece2c6; color: #6a4a2c; font-size: 15px !important; }
 </style>
 </head>
@@ -129,18 +147,19 @@
   <div id="village-sign"></div>
   <div id="version"></div>
   <div id="error"></div>
-  <button id="reset" type="button">はじめから</button>
+  <button id="reset" type="button">ステージ1から</button>
+  <div id="cards"><div class="box"><h2>⭐ 強化を1つ えらぼう</h2><div id="card-list"></div></div></div>
   <div id="result"><div class="card">
-    <h1>🎉 100万羽 達成!</h1>
+    <h1 id="r-title">🎉 ステージ1 クリア!</h1>
     <div class="big">🐤 <span id="r-chicks">0</span>羽</div>
     <div class="stats">
       <div>📦 <span id="r-broken">0</span>こ</div>
+      <div>🦊 <span id="r-foxes">0</span>匹 撃退</div>
       <div>🔥 <span id="r-combo">0</span>コンボ</div>
-      <div>⭐ 村 ×<span id="r-lv">1</span></div>
       <div>⏱ <span id="r-time">0</span></div>
     </div>
-    <button id="keep" type="button">このまま遊ぶ ▶</button>
-    <button id="again" type="button">はじめから</button>
+    <button id="keep" type="button">次のステージへ ▶</button>
+    <button id="again" type="button">ステージ1から</button>
   </div></div>
 
 <script type="module">
@@ -149,8 +168,35 @@
   // ================================================================
   //  設定(ここの数字を変えると、テンポや爽快感を調整できます)
   // ================================================================
-  const GOALS = [100, 1000, 10000, 30000, 100000, 300000, 1000000]; // 目標の羽数(区切りごとにお祝い。最後が100万羽)
-  const SAVE_KEY = 'hiyoko-save-v1'; // 進み具合を保存する名前(雪のキャンプとは別)
+  // ステージ: 1回3分。2分たつとボス(巨大キツネ)が来る。3分以内に倒せばクリア
+  const STAGE_TIME = 180, BOSS_AT = 120;
+  const STAGE_KEY = 'hiyoko-stage-v1'; // 今のステージの番号を保存する名前(雪のキャンプとは別)
+  let stage = 1;
+  try { stage = Math.max(1, Math.floor(+localStorage.getItem(STAGE_KEY)) || 1); } catch (e) { stage = 1; }
+  const SK = stage - 1; // ステージが進むほど敵が強くなる
+  // キツネ: 群れを追いかけてきて、群れにぶつかるとひよこが弾け飛んで減る
+  const FOX = {
+    first: 15,                                   // 最初のキツネが来るまでの秒数
+    interval: (t) => Math.max(2.5, 9 - SK * 0.7 - t / 40), // 次のキツネが来るまでの秒数
+    max: (t) => 2 + SK + Math.floor(t / 45),     // 同時にいる数の上限
+    speed: Math.min(6.8, 5.2 + SK * 0.25),       // 走る速さ(リーダーより少し遅い)
+    hpSec: 2.5 * (1 + SK * 0.15),                // 群れ全員で何秒つつけば倒せるか(出てきたときの羽数で決まる)
+    crash: Math.min(0.25, 0.12 + SK * 0.015),    // ぶつかったとき減る割合
+  };
+  const BOSS = { hpSec: 12 * (1 + SK * 0.4), speed: 4 + SK * 0.2, crash: 0.2, stun: 1.8 };
+  // 3択の強化: 羽数がこの数をこえるたびに選べる
+  const UPGRADE_AT = [25, 80, 250, 800, 2500, 8000, 25000, 80000, 250000, 800000];
+  const mods = { dps: 1, speed: 1, hatch: 1, crash: 1, foe: 1, magnet: 1, parts: 1, prod: 1, feed: 1 };
+  const CARDS = [
+    { icon: '⚔️', name: 'つつく力', desc: '攻撃力 +40%', apply: () => { mods.dps *= 1.4; } },
+    { icon: '👟', name: '俊足', desc: 'リーダーの速さ +15%', apply: () => { mods.speed *= 1.15; } },
+    { icon: '🥚', name: 'たまご名人', desc: '群れの卵がかえる速さ ×1.6', apply: () => { mods.hatch *= 1.6; } },
+    { icon: '🛡️', name: 'かたい羽', desc: 'ぶつかって減る数 -35%', apply: () => { mods.crash *= 0.65; } },
+    { icon: '🦊', name: 'キツネ退治', desc: 'キツネへのダメージ ×2', apply: () => { mods.foe *= 2; } },
+    { icon: '🧲', name: '吸いこみ', desc: '集まるのが速い・パーツ +30%', apply: () => { mods.magnet *= 1.6; mods.parts *= 1.3; } },
+    { icon: '🏠', name: '村の応援', desc: '村の生む速さ ×1.5', apply: () => { mods.prod *= 1.5; } },
+    { icon: '🌾', name: '大食い', desc: '出てくるエサ +40%', apply: () => { mods.feed *= 1.4; } },
+  ];
   // 8つの建物を建てたあとの「村パワーアップ」: 払うたびに、村ぜんぶの生む速さが2倍になる
   const POWER_COST = (k) => Math.round(6000 * Math.pow(2.8, k) / 100) * 100;
   const START_CHICKS = 4;        // 最初のひよこ(リーダーとは別)
@@ -222,7 +268,7 @@
   const STICK_RADIUS = 56;
 
   const $ = (id) => document.getElementById(id);
-  const GAME_VERSION = '2026.11.13-h5';
+  const GAME_VERSION = '2026.11.14-h6';
   $('version').textContent = '🐤 v' + GAME_VERSION;
 
   const errorsSeen = [];
@@ -475,7 +521,7 @@
   // エサ・パーツを飛び散らせる。1粒が何個ぶんかを決めて、粒の数を抑える
   let feed = 0, parts = 0;
   function spill(kind, amount, x, z, spread = 1) {
-    if (kind === 'feed') amount *= village.mult; // 村パワーアップで、エサも同じ倍率で増える
+    if (kind === 'feed') amount *= village.mult * mods.feed; // 村パワーアップで、エサも同じ倍率で増える
     const pool = kind === 'feed' ? feedPool : partsPool;
     const want = Math.min(Math.ceil(amount), kind === 'feed' ? 40 : 18) * (spread > 2 ? 2 : 1);
     const room = pool.max - pool.items.length;
@@ -1054,8 +1100,15 @@
   }
   function botInput() {
     let tx, tz;
+    // キツネが近づいたら逃げる(ボスには向かっていく)
+    const foe = enemies.filter(e => e.alive && !e.boss && e.stun <= 0).sort((a, b) => Math.hypot(a.x - L.x, a.z - L.z) - Math.hypot(b.x - L.x, b.z - L.z))[0];
+    if (foe && Math.hypot(foe.x - L.x, foe.z - L.z) < flock.r * 0.7 + 3) {
+      const ax = L.x - foe.x, az = L.z - foe.z, ad = Math.hypot(ax, az) || 1;
+      return { ix: ax / ad, iz: az / ad };
+    }
     const nb = nextBuilding();
-    if (nb && parts >= nb.cost - village.paid) { tx = nb.zone.x; tz = nb.zone.z; }
+    if (boss && boss.alive) { tx = boss.x; tz = boss.z; if (Math.hypot(tx - L.x, tz - L.z) < flock.r + boss.r) return { ix: 0, iz: 0 }; }
+    else if (nb && parts >= nb.cost - village.paid) { tx = nb.zone.x; tz = nb.zone.z; }
     else {
       let best = null, bd = Infinity;
       for (const t of targets) {
@@ -1086,7 +1139,7 @@
     const { ix, iz } = readInput();
     const moving = Math.hypot(ix, iz) > 0.01;
     if (moving && !started) start();
-    const sp = LEADER_SPEED * (1 + Math.min(0.4, Math.log10(1 + chicks) * 0.08));
+    const sp = LEADER_SPEED * mods.speed * (1 + Math.min(0.4, Math.log10(1 + chicks) * 0.08));
     L.vx += (ix * sp - L.vx) * Math.min(1, dt * 14);
     L.vz += (iz * sp - L.vz) * Math.min(1, dt * 14);
     const ox = L.x, oz = L.z;
@@ -1135,14 +1188,22 @@
       const d = Math.hypot(t.x - L.x, t.z - L.z) - t.r;
       if (d < reach) attackList.push({ t, d });
     }
+    // キツネが近くにいたら、そちらを先につつく
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const d = Math.hypot(e.x - L.x, e.z - L.z) - e.r;
+      if (d < reach) attackList.push({ t: e, d: d - 100 });
+    }
     attackList.sort((a, b) => a.d - b.d);
+    // キツネと戦っているときは、キツネだけに集中する(木箱に力を分けない)
+    if (attackList.length && attackList[0].t.kind === 'fox') attackList = attackList.filter(a => a.t.kind === 'fox');
     // 少ないうちは近い物に集中して早く壊す。増えるほど同時に攻撃できる数が増える
     const maxT = Math.max(1, Math.min(MAX_TARGETS, Math.ceil(chicks / 10)));
     if (attackList.length > maxT) attackList.length = maxT;
     // ダメージ: ひよこ全員の力を、届く物で分け合う(まとめて壊れる)
     if (attackList.length) {
-      const dps = chicks * PECK_DPS / attackList.length;
-      for (const a of attackList) damage(a.t, dps * dt);
+      const dps = chicks * PECK_DPS * mods.dps / attackList.length;
+      for (const a of attackList) damage(a.t, dps * dt * (a.t.kind === 'fox' ? mods.foe : 1));
     }
 
     // 1羽ずつの動き(群れの中の自分の場所か、攻撃中の箱のまわりへ寄るだけ)
@@ -1211,6 +1272,7 @@
     comboT = 1.6;
     maxCombo = Math.max(maxCombo, combo);
     if (t.kind === 'gate') { openArea(t); showCombo(); return; }
+    if (t.kind === 'fox') { foxDown(t); showCombo(); return; }
     if (t.kind === 'crate' || t.kind === 'barrel') {
       const def = t.kind === 'crate' ? CRATE_TIERS[t.tier] : BARREL;
       t.respawn = CRATE_RESPAWN;
@@ -1350,7 +1412,7 @@
           const nb = nextBuilding() || BUILDINGS[BUILDINGS.length - 1];
           const tx = pay ? nb.x : L.x, tz = pay ? nb.z : L.z, ty = pay ? 1.2 : 0.6;
           const dx = tx - d.x, dy = ty - d.y, dz = tz - d.z, dist = Math.hypot(dx, dy, dz);
-          const sp = 6 + (d.t - d.delay) * 40;
+          const sp = (6 + (d.t - d.delay) * 40) * mods.magnet;
           if (dist < 0.5 || sp * dt >= dist) { if (!pay) collect(d); continue; }
           d.x += dx / dist * sp * dt; d.y += dy / dist * sp * dt + Math.sin(d.t * 10) * 0.01; d.z += dz / dist * sp * dt;
         }
@@ -1364,7 +1426,7 @@
   }
   let collectPitch = 0;
   function collect(d) {
-    if (d.kind === 'feed') feed += d.value; else parts += d.value;
+    if (d.kind === 'feed') feed += d.value; else parts += d.value * mods.parts;
     collectPitch = Math.min(collectPitch + 1, 40);
     if (Math.random() < 0.35) blip(700 + collectPitch * 22, 0.04, 'sine', 0.035, 1.3);
   }
@@ -1372,7 +1434,7 @@
   // ひよこが増える: 群れは自分で卵をかえし、孵化場はエサを使ってどんどん生む
   function updateHatching(dt) {
     collectPitch = Math.max(0, collectPitch - dt * 30);
-    hatchAcc += dt * SELF_HATCH(chicks);
+    hatchAcc += dt * SELF_HATCH(chicks) * mods.hatch;
     let eggs = Math.floor(hatchAcc);
     if (eggs > 0) {
       eggs = Math.min(eggs, Math.floor(feed / EGG_COST));
@@ -1393,7 +1455,7 @@
     for (let i = 0; i < village.built; i++) {
       const b = BUILDINGS[i];
       if (b.drop > 0) continue;
-      b.acc += dt * b.rate * village.mult;
+      b.acc += dt * b.rate * village.mult * mods.prod;
       const born = Math.min(Math.floor(b.acc), Math.floor(feed));
       b.acc -= Math.floor(b.acc);
       if (born > 0) { feed -= born; chicks += born; b.working = 0.3; }
@@ -1586,9 +1648,10 @@
   const popPool = [];
   for (let i = 0; i < 10; i++) { const el = document.createElement('div'); el.className = 'pop-text'; document.body.appendChild(el); popPool.push({ el, t: 0, x: 0, y: 0, z: 0 }); }
   let popIdx = 0;
-  function popText(text, x, y, z, big) {
+  function popText(text, x, y, z, big, minus) {
     const p = popPool[popIdx++ % popPool.length];
     p.el.textContent = text; p.t = 0.8; p.x = x; p.y = y; p.z = z;
+    p.el.classList.toggle('minus', !!minus);
     p.el.style.fontSize = big ? '30px' : '17px';
     p.el.style.display = 'block';
   }
@@ -1614,11 +1677,16 @@
     if (c !== shownChicks) { shownChicks = c; $('chicks').textContent = fmt(c); }
     $('feed').textContent = fmt(feed);
     $('parts').textContent = fmt(parts);
-    // 次の目標までのバー
-    const gi = Math.min(goalIdx, GOALS.length - 1), lo = gi === 0 ? 0 : GOALS[gi - 1], hi = GOALS[gi];
-    const goalText = goalIdx >= GOALS.length ? '🏆 100万羽 達成! 🐤 ' + fmt(chicks) : '🎯 ' + fmt(hi) + '羽まで あと' + fmt(Math.max(0, hi - chicks));
+    // ステージの残り時間と、ボス
+    const mmss = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+    const left = Math.max(0, STAGE_TIME - elapsed);
+    let goalText, frac;
+    if (boss && boss.alive) { goalText = '👑 ボスをたおせ! ⏱' + mmss(left); frac = boss.hp / boss.maxHp; }
+    else { goalText = '📍ステージ' + stage + ' ⏱' + mmss(left) + '  🦊ボスまで ' + mmss(Math.max(0, BOSS_AT - elapsed)); frac = Math.min(1, elapsed / BOSS_AT); }
     if ($('goal-text').textContent !== goalText) $('goal-text').textContent = goalText;
-    $('goal-fill').style.width = (goalIdx >= GOALS.length ? 100 : Math.max(0, Math.min(100, (chicks - lo) / (hi - lo) * 100))) + '%';
+    $('goal-fill').style.width = (frac * 100) + '%';
+    $('goal-fill').style.background = boss && boss.alive ? 'linear-gradient(90deg, #ff6b6b, #c0392b)' : '';
+    updateFoeArrows();
     if (comboT > 0) { comboT -= dt; if (comboT <= 0) { combo = 0; $('combo').classList.remove('show'); } }
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
     for (const p of popPool) {
@@ -1660,7 +1728,10 @@
   function updateGuide(time) {
     let text = '', goal = null;
     const nb = nextBuilding();
+    const nearFox = enemies.some(e => e.alive && !e.boss && Math.hypot(e.x - L.x, e.z - L.z) < 14);
     if (!started) text = '画面をなぞって ひよこを動かそう';
+    else if (boss && boss.alive) { text = '👑 ボスの巨大キツネを 群れでたおせ!'; goal = boss; }
+    else if (nearFox && foxesSeen < 3) text = '🦊 キツネが来た! 逃げるか、群れでつつこう';
     else if (nb && parts >= nb.cost - village.paid) { text = nb.power ? '⚙️がたまった! ⭐ 村をパワーアップしよう' : '⚙️がたまった! ' + nb.icon + nb.name + 'を建てよう'; goal = nb.zone; }
     else if (village.built === 0 && elapsed < 25) text = '木箱に近づくと 自動でつつくよ';
     else if (village.built === 1 && elapsed - (marks.hatchery || 0) < 5) text = '建物が エサでひよこを自動で生むよ';
@@ -1679,7 +1750,7 @@
     const arrow = $('arrow');
     if (!goal) { marker.visible = false; arrow.style.display = 'none'; return; }
     marker.visible = true;
-    marker.position.set(goal.x, (goal.kind === 'obj' ? OBJ_TYPES[goal.type].h + 0.6 : goal.kind === 'gate' ? 6 : 1.6) + Math.abs(Math.sin(time * 4)) * 0.5, goal.z);
+    marker.position.set(goal.x, (goal.kind === 'obj' ? OBJ_TYPES[goal.type].h + 0.6 : goal.kind === 'gate' ? 6 : goal.kind === 'fox' ? 5 : 1.6) + Math.abs(Math.sin(time * 4)) * 0.5, goal.z);
     marker.rotation.y = time * 2;
     const s = project(goal.x, 1, goal.z), W = window.innerWidth, H = window.innerHeight, top = 90;
     if (!s.behind && s.sx > 30 && s.sx < W - 30 && s.sy > top && s.sy < H - 90) { arrow.style.display = 'none'; return; }
@@ -1693,93 +1764,231 @@
   }
 
   // ================================================================
-  //  目標(100万羽をめざす)とセーブ
+  //  キツネ(追いかけてくる敵)とボス
+  // ================================================================
+  const foxGeo = mergeGeometries([
+    { geo: new THREE.SphereGeometry(0.42, 10, 8), m: M(0, 0.62, 0, 1, 0.85, 1.6), color: '#f08a24' },        // からだ
+    { geo: new THREE.SphereGeometry(0.34, 10, 8), m: M(0, 0.95, 0.68), color: '#f08a24' },                    // あたま
+    { geo: new THREE.ConeGeometry(0.16, 0.36, 8), m: M(0, 0.88, 1.06, 1, 1, 1, Math.PI / 2), color: '#fff3e0' }, // はな
+    { geo: new THREE.SphereGeometry(0.05, 6, 4), m: M(0, 0.9, 1.25), color: '#222222' },
+    { geo: new THREE.ConeGeometry(0.11, 0.28, 6), m: M(0.17, 1.28, 0.62), color: '#c2581a' },                // 耳
+    { geo: new THREE.ConeGeometry(0.11, 0.28, 6), m: M(-0.17, 1.28, 0.62), color: '#c2581a' },
+    { geo: new THREE.SphereGeometry(0.05, 6, 4), m: M(0.13, 1.03, 0.97), color: '#222222' },                 // 目
+    { geo: new THREE.SphereGeometry(0.05, 6, 4), m: M(-0.13, 1.03, 0.97), color: '#222222' },
+    { geo: new THREE.SphereGeometry(0.22, 8, 6), m: M(0, 0.82, -0.85, 1, 1, 2.2, -0.5), color: '#f08a24' },   // しっぽ
+    { geo: new THREE.SphereGeometry(0.15, 8, 6), m: M(0, 1.05, -1.25), color: '#fff3e0' },
+    ...[[0.2, 0.4], [-0.2, 0.4], [0.2, -0.4], [-0.2, -0.4]].map(([x, z]) => ({ geo: new THREE.CylinderGeometry(0.07, 0.07, 0.45, 6), m: M(x, 0.22, z), color: '#5a2e10' })),
+  ]);
+  const foxMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const bossMat = new THREE.MeshLambertMaterial({ vertexColors: true, color: '#ffb3a0' });
+  const enemies = [];
+  let boss = null, foxTimer = FOX.first, foxesSeen = 0, foxesDown = 0;
+  function spawnFox(isBoss) {
+    for (let k = 0; k < 15; k++) {
+      const a = Math.random() * Math.PI * 2, d = 18 + Math.random() * 6;
+      const x = L.x + Math.cos(a) * d, z = L.z + Math.sin(a) * d;
+      if (!walkable(x, z)) continue;
+      const hp = Math.max(30, chicks * PECK_DPS * (isBoss ? BOSS.hpSec : FOX.hpSec));
+      const mesh = new THREE.Mesh(foxGeo, isBoss ? bossMat : foxMat);
+      mesh.castShadow = true;
+      const sc = isBoss ? 3.4 : 1;
+      mesh.scale.setScalar(sc);
+      if (isBoss) {
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.22, 5, 1, true), new THREE.MeshStandardMaterial({ color: '#ffcc33', metalness: 0.8, roughness: 0.25, side: THREE.DoubleSide }));
+        crown.position.set(0, 1.38, 0.62);
+        mesh.add(crown);
+      }
+      mesh.position.set(x, 0, z);
+      scene.add(mesh);
+      const e = { kind: 'fox', boss: !!isBoss, x, z, r: isBoss ? 2.4 : 0.7, hp, maxHp: hp, alive: true, hit: 0, mesh, kx: 0, kz: 0, stun: 0, face: 0, sc };
+      enemies.push(e);
+      burstPuff(x, 0.6, z, 6, isBoss ? 2 : 0.8);
+      foxesSeen++;
+      return e;
+    }
+    return null;
+  }
+  // ぶつかると、ひよこが弾け飛んで減る
+  const lostPool = makePool(chickGeo, chickMat, 80, { shadow: false });
+  function crash(e) {
+    const pct = (e.boss ? BOSS.crash : FOX.crash) * mods.crash;
+    const loss = Math.min(Math.floor(chicks), Math.max(3, Math.floor(chicks * pct)));
+    chicks -= loss;
+    const vis = Math.min(40, loss);
+    for (let i = 0; i < vis && lostPool.items.length < lostPool.max; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 6;
+      lostPool.items.push({ x: e.x + (Math.random() - 0.5), y: 0.4, z: e.z + (Math.random() - 0.5), vx: Math.cos(a) * sp, vy: 6 + Math.random() * 5, vz: Math.sin(a) * sp, t: 0, r: Math.random() * 6 });
+    }
+    popText('-' + fmt(loss) + '🐤', e.x, 2.2, e.z, true, true);
+    shake = Math.max(shake, e.boss ? 0.5 : 0.3);
+    blipBudget += 3;
+    [520, 390, 260].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.12, 'square', 0.06, 0.7); }, i * 60));
+    // はね返されて、しばらく動けない
+    const dx = e.x - L.x, dz = e.z - L.z, d = Math.hypot(dx, dz) || 1;
+    e.kx = dx / d * 12; e.kz = dz / d * 12; e.stun = e.boss ? BOSS.stun : 0.9;
+    if (chicks < 1) { chicks = 0; endStage(false, 'ひよこが いなくなっちゃった…'); }
+  }
+  function foxDown(e) {
+    e.alive = false;
+    scene.remove(e.mesh);
+    burstDebris(e.x, 0.8, e.z, e.boss ? 80 : 14, '#f08a24', e.boss ? 14 : 7);
+    burstPuff(e.x, 0.8, e.z, e.boss ? 40 : 8, e.boss ? 3 : 1);
+    spill('feed', e.boss ? 3000 : 60 * (1 + SK), e.x, e.z, e.boss ? 3 : 1.2);
+    spill('parts', e.boss ? 1000 : 25 * (1 + SK), e.x, e.z, e.boss ? 3 : 1.2);
+    foxesDown++;
+    if (e.boss) {
+      shake = 1; boom(0.4); setTimeout(() => boom(0.3), 150);
+      endStage(true);
+    } else {
+      popText('🦊 撃退!', e.x, 2, e.z);
+      blip(880, 0.1, 'triangle', 0.06, 1.4);
+    }
+  }
+  function updateEnemies(dt, time) {
+    // 出てくる
+    if (started && !ended) {
+      foxTimer -= dt;
+      const alive = enemies.filter(e => e.alive && !e.boss).length;
+      if (foxTimer <= 0 && alive < FOX.max(elapsed)) { foxTimer = FOX.interval(elapsed); spawnFox(false); }
+      if (!boss && elapsed >= BOSS_AT) {
+        boss = spawnFox(true);
+        if (boss) { toast('👑 ボスの巨大キツネが来た!'); shake = 0.6; boom(0.3); }
+      }
+    }
+    // 追いかける(はね返されている間は動けない)
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const dx = L.x - e.x, dz = L.z - e.z, d = Math.hypot(dx, dz) || 1;
+      let vx, vz;
+      if (e.stun > 0) { e.stun -= dt; vx = e.kx; vz = e.kz; e.kx *= 0.9; e.kz *= 0.9; }
+      else { const sp = e.boss ? BOSS.speed : FOX.speed; vx = dx / d * sp; vz = dz / d * sp; e.face = Math.atan2(dx, dz); }
+      const nx = e.x + vx * dt, nz = e.z + vz * dt;
+      if (walkable(nx, e.z)) e.x = nx;
+      if (walkable(e.x, nz)) e.z = nz;
+      // 群れの中に入りこむと、ぶつかってひよこが弾け飛ぶ
+      if (e.stun <= 0 && !ended && d < flock.r * 0.7 + 0.5 + (e.boss ? 1.5 : 0)) crash(e);
+      e.hit = Math.max(0, e.hit - dt);
+      const run = e.stun > 0 ? 0 : Math.abs(Math.sin(time * 12)) * 0.12 * e.sc;
+      e.mesh.position.set(e.x, run, e.z);
+      e.mesh.rotation.y = e.face;
+      const sq = e.hit > 0 ? 1 + Math.sin(time * 60) * 0.06 : 1;
+      e.mesh.scale.set(e.sc * (2 - sq), e.sc * sq, e.sc * (2 - sq));
+    }
+    for (let i = enemies.length - 1; i >= 0; i--) if (!enemies[i].alive) enemies.splice(i, 1);
+    // 弾け飛んだひよこ
+    let k = 0;
+    const keep = [];
+    for (const c of lostPool.items) {
+      c.t += dt;
+      if (c.t > 1) continue;
+      c.vy -= 22 * dt; c.x += c.vx * dt; c.y = Math.max(0, c.y + c.vy * dt); c.z += c.vz * dt; c.r += dt * 12;
+      const s = 1 - c.t * 0.6;
+      setInst(lostPool.mesh, k++, c.x, c.y, c.z, s, s, s, c.r, c.r * 0.7);
+      keep.push(c);
+    }
+    lostPool.items = keep;
+    lostPool.mesh.count = k; lostPool.mesh.instanceMatrix.needsUpdate = true;
+  }
+  // 画面の外のキツネは、画面の端に赤い矢印で知らせる
+  const foeArrows = [];
+  for (let i = 0; i < 6; i++) { const el = document.createElement('div'); el.className = 'foe-arrow'; el.textContent = '➤'; document.body.appendChild(el); foeArrows.push(el); }
+  function updateFoeArrows() {
+    const W = window.innerWidth, H = window.innerHeight, top = 90;
+    const near = enemies.filter(e => e.alive).sort((a, b) => Math.hypot(a.x - L.x, a.z - L.z) - Math.hypot(b.x - L.x, b.z - L.z));
+    foeArrows.forEach((el, i) => {
+      const e = near[i];
+      if (!e) { el.style.display = 'none'; return; }
+      const s = project(e.x, 1, e.z);
+      if (!s.behind && s.sx > 20 && s.sx < W - 20 && s.sy > top && s.sy < H - 60) { el.style.display = 'none'; return; }
+      const c = project(L.x, 0, L.z);
+      let dx = s.sx - c.sx, dy = s.sy - c.sy;
+      if (s.behind) { dx = -dx; dy = -dy; }
+      const k = Math.min(Math.abs((dx > 0 ? W - 22 - c.sx : c.sx - 22) / (dx || 1e-6)), Math.abs((dy > 0 ? H - 70 - c.sy : c.sy - top) / (dy || 1e-6)));
+      el.style.display = 'block';
+      el.style.left = (c.sx + dx * k) + 'px'; el.style.top = (c.sy + dy * k) + 'px';
+      el.style.transform = 'rotate(' + Math.atan2(dy, dx) + 'rad) scale(' + (e.boss ? 1.6 : 1) + ')';
+    });
+  }
+
+  // ================================================================
+  //  3択の強化
+  // ================================================================
+  let upIdx = 0, choosing = null;
+  function offerCards() {
+    const pool = CARDS.slice();
+    choosing = [];
+    for (let i = 0; i < 3; i++) choosing.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    const list = $('card-list');
+    list.innerHTML = '';
+    choosing.forEach((c, i) => {
+      const b = document.createElement('button');
+      b.className = 'card-btn'; b.type = 'button';
+      const ic = document.createElement('i'); ic.textContent = c.icon;
+      const tx = document.createElement('div');
+      const nm = document.createElement('b'); nm.textContent = c.name;
+      const ds = document.createElement('span'); ds.textContent = c.desc;
+      tx.append(nm, ds); b.append(ic, tx);
+      b.addEventListener('click', () => pickCard(i));
+      list.appendChild(b);
+    });
+    $('cards').classList.add('show');
+    Object.assign(stick, { active: false, id: null, dx: 0, dy: 0 }); showStick();
+    [659, 880].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.1, 'triangle', 0.06, 1.1); }, i * 70));
+  }
+  function pickCard(i) {
+    if (!choosing) return;
+    const c = choosing[i];
+    c.apply();
+    choosing = null;
+    upIdx++;
+    $('cards').classList.remove('show');
+    toast(c.icon + ' ' + c.name + '!');
+    blipBudget += 2; blip(1047, 0.15, 'triangle', 0.08, 1.2);
+  }
+
+  // ================================================================
+  //  ステージ(クリア・失敗)
   // ================================================================
   function start() { started = true; }
-  const fmtTime = (sec) => { const m = Math.floor(sec / 60); return m >= 60 ? Math.floor(m / 60) + '時間' + (m % 60) + '分' : m + '分' + Math.floor(sec % 60) + '秒'; };
-  function reachGoal(n) {
-    toast('🎉 ' + fmt(n) + '羽 達成!');
-    shake = Math.max(shake, 0.35);
-    for (let i = 0; i < 3; i++) burstPuff(L.x + (Math.random() - 0.5) * 4, 2, L.z + (Math.random() - 0.5) * 4, 8, 1);
-    [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.16, 'triangle', 0.08, 1.02); }, i * 110));
-  }
-  function showClear() {
-    clearShown = true;
+  const fmtTime = (sec) => Math.floor(sec / 60) + '分' + Math.floor(sec % 60) + '秒';
+  function endStage(win, why) {
+    if (ended) return;
+    ended = true;
+    for (const e of eggPool.items) chicks += e.n;
+    eggPool.items = [];
+    $('result').classList.toggle('fail', !win);
+    $('r-title').textContent = win ? '🎉 ステージ' + stage + ' クリア!' : '😢 ' + (why || 'しっぱい…');
     $('r-chicks').textContent = fmt(chicks);
     $('r-broken').textContent = broken.toLocaleString();
+    $('r-foxes').textContent = foxesDown;
     $('r-combo').textContent = fmt(maxCombo);
-    $('r-lv').textContent = village.mult;
     $('r-time').textContent = fmtTime(elapsed);
-    $('result').classList.add('show');
+    $('keep').textContent = win ? 'ステージ' + (stage + 1) + 'へ ▶' : 'もう一度 ▶';
+    $('again').style.display = stage > 1 ? 'block' : 'none';
+    if (win) { try { localStorage.setItem(STAGE_KEY, String(stage + 1)); } catch (e) { /* 何もしない */ } }
+    setTimeout(() => $('result').classList.add('show'), win ? 900 : 400);
     Object.assign(stick, { active: false, id: null, dx: 0, dy: 0 }); showStick();
+    const notes = win ? [523, 659, 784, 1047, 1319] : [392, 330, 262];
+    notes.forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.18, 'triangle', 0.08, win ? 1.02 : 0.9); }, 600 + i * 120));
   }
-  function resetGame() {
-    if (!confirm('最初からやり直しますか?(今の進み具合は消えます)')) return;
-    saveDisabled = true;
-    try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 何もしない */ }
+  function toStageOne() {
+    if (stage > 1 && !confirm('ステージ1からやり直しますか?')) return;
+    try { localStorage.removeItem(STAGE_KEY); } catch (e) { /* 何もしない */ }
     location.reload();
   }
-  $('again').addEventListener('click', resetGame);
-  $('reset').addEventListener('click', resetGame);
-  $('keep').addEventListener('click', () => $('result').classList.remove('show'));
-
-  // 進み具合を iPhone の中に保存する(5秒ごとと、ページを閉じるとき。サーバーには送らない)
-  function saveGame() {
-    if (saveDisabled || !started) return;
-    const data = {
-      version: 1, chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts),
-      built: village.built, paid: village.paid, power: village.power, open: AREAS.map(a => !!a.open),
-      elapsed, broken, maxCombo, goal: goalIdx, clear: clearShown, x: L.x, z: L.z,
-    };
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない設定のときは何もしない */ }
-  }
-  function loadGame() {
-    let d = null;
-    try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; }
-    if (!d || d.version !== 1) return false;
-    chicks = d.chicks || START_CHICKS; feed = d.feed || 0; parts = d.parts || 0;
-    // 建物を、落ちてくる演出なしで建て直す
-    for (let i = 0; i < Math.min(d.built || 0, BUILDINGS.length); i++) {
-      const b = BUILDINGS[i];
-      village.built++;
-      b.group = new THREE.Group();
-      MAKERS[b.type](b.group, b);
-      b.group.position.set(b.x, 0, b.z);
-      scene.add(b.group);
-      b.drop = 0; b.plot.visible = false;
-    }
-    village.power = d.power || 0;
-    village.mult = Math.pow(2, village.power);
-    village.rate = BUILDINGS.slice(0, village.built).reduce((n, b) => n + b.rate, 0) * village.mult;
-    village.paid = d.paid || 0;
-    placeZone();
-    // 開けたエリア
-    (d.open || []).forEach((o, i) => {
-      const a = AREAS[i];
-      if (!o || !a || i === 0) return;
-      a.open = true;
-      if (a.wallMesh) a.wallMesh.visible = false;
-      if (a.gateTarget) { a.gateTarget.alive = false; a.gateTarget.g.visible = false; }
-    });
-    elapsed = d.elapsed || 0; broken = d.broken || 0; maxCombo = d.maxCombo || 0;
-    goalIdx = GOALS.filter(g => chicks >= g).length; clearShown = !!d.clear; // 目標は羽数から数え直す(目標の数を変えても大丈夫なように)
-    if (typeof d.x === 'number' && walkable(d.x, d.z)) { L.x = d.x; L.z = d.z; flock.cx = L.x; flock.cz = L.z; camTarget.set(L.x, 0, L.z); }
-    started = true;
-    return true;
-  }
-  setInterval(() => safe('save', saveGame), 5000);
-  window.addEventListener('pagehide', () => safe('save', saveGame));
-  document.addEventListener('visibilitychange', () => { if (document.hidden) safe('save', saveGame); });
+  $('keep').addEventListener('click', () => location.reload());
+  $('again').addEventListener('click', toStageOne);
+  $('reset').addEventListener('click', toStageOne);
 
   function logic(dt, time) {
     blipBudget = Math.min(blipBudget + dt * 40, 6);
-    if (started) elapsed += dt;
-    // 目標の羽数に届いたらお祝い。100万羽で達成の画面
-    while (goalIdx < GOALS.length && chicks >= GOALS[goalIdx]) {
-      reachGoal(GOALS[goalIdx]);
-      goalIdx++;
-      if (goalIdx === GOALS.length && !clearShown) showClear();
+    // 3択の強化を選んでいる間は止める(自動テストのボットは1枚目を選ぶ)
+    if (choosing) { if (bot) pickCard(0); else return; }
+    if (started && !ended) {
+      elapsed += dt;
+      if (elapsed >= STAGE_TIME) endStage(false, '時間切れ…');
     }
+    if (!ended && upIdx < UPGRADE_AT.length && chicks >= UPGRADE_AT[upIdx]) { offerCards(); return; }
     const play = !ended;
     if (play) safe('leader', () => updateLeader(dt));
     safe('flock', () => updateFlock(play ? dt : 0, time));
@@ -1788,6 +1997,7 @@
     if (play) safe('hatch', updateHatching.bind(null, dt));
     safe('village', () => updateVillage(play ? dt : 0, time));
     safe('eggs', () => updateEggs(dt, time));
+    safe('enemies', () => updateEnemies(play ? dt : 0, time));
     if (marks.ten === null && chicks >= 10) marks.ten = elapsed;
     if (marks.hundred === null && chicks >= 100) marks.hundred = elapsed;
   }
@@ -1841,17 +2051,17 @@
     $('hint').textContent = '画面が止まりました。ページを再読み込みしてください';
     $('hint').style.opacity = 1;
   });
-  safe('load', () => { if (loadGame()) toast('つづきから'); });
+  toast('📍 ステージ' + stage + '  ボスをたおせ!');
   requestAnimationFrame(frame);
 
   // 自動テスト用
   window.__renderer = renderer;
   window.__game = {
     get state() {
-      return { chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts), elapsed, started, ended, goal: goalIdx, power: village.power, clear: clearShown, broken, maxCombo, hatchery: village.built, rate: village.rate, marks: { ...marks }, errors: errorsSeen.slice(), display: disp.length, drops: feedPool.items.length + partsPool.items.length, x: L.x, z: L.z, attacking: attackList.map(a => [a.t.kind, Math.round(a.t.hp), a.t.alive]), near: targets.filter(t => t.alive).map(t => [t.kind, +Math.hypot(t.x - L.x, t.z - L.z).toFixed(1), Math.round(t.hp)]).sort((a, b) => a[1] - b[1]).slice(0, 3), flockR: flock.r, open: AREAS.map(a => a.open) };
+      return { chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts), elapsed, started, ended, stage, foxes: enemies.filter(e => e.alive).length, foxesDown, boss: !!(boss && boss.alive), bossHp: boss ? Math.round(boss.hp) : null, choosing: !!choosing, upgrades: upIdx, mods: { ...mods }, power: village.power, broken, maxCombo, hatchery: village.built, rate: village.rate, marks: { ...marks }, errors: errorsSeen.slice(), display: disp.length, drops: feedPool.items.length + partsPool.items.length, x: L.x, z: L.z, attacking: attackList.map(a => [a.t.kind, Math.round(a.t.hp), a.t.alive]), near: targets.filter(t => t.alive).map(t => [t.kind, +Math.hypot(t.x - L.x, t.z - L.z).toFixed(1), Math.round(t.hp)]).sort((a, b) => a[1] - b[1]).slice(0, 3), flockR: flock.r, open: AREAS.map(a => a.open) };
     },
     bot(on) { bot = on; },
-    save() { saveGame(); },
+    pick(i) { pickCard(i); },
     teleport(x, z) { L.x = x; L.z = z; flock.cx = x; flock.cz = z; },
     // 描かずに時間を進める(テンポの調整用)
     fastForward(sec, step = 1 / 30) { for (let t = 0; t < sec && !ended; t += step) logic(step, performance.now() / 1000 + t); return this.state; },
