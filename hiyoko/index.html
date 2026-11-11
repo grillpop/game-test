@@ -36,10 +36,20 @@
   #chick-pill.pop { animation: pop .25s ease-out; }
   @keyframes pop { 50% { transform: scale(1.12); } }
   #feed-pill, #parts-pill { flex: 1; }
-  #time-pill { flex: .8; }
-  #time-pill.low { background: rgba(210, 50, 40, .85); }
+  /* 次の目標(100羽 → 1,000羽 → … → 100万羽) */
+  #goal {
+    position: fixed; top: calc(env(safe-area-inset-top) + 50px); left: 10px; right: 10px;
+    display: flex; align-items: center; gap: 8px; padding: 3px 10px; border-radius: 999px;
+    background: rgba(40, 50, 30, .45); color: #fff; font-size: 13px; font-weight: 800; pointer-events: none; white-space: nowrap;
+  }
+  #goal-bar { flex: 1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+  #goal-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ffe066, #ff9f1c); transition: width .2s; }
+  #reset {
+    position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom) + 6px);
+    padding: 4px 10px; border: 0; border-radius: 10px; background: rgba(40, 50, 30, .35); color: rgba(255, 255, 255, .85); font-size: 12px; font-weight: 700;
+  }
   #combo {
-    position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 64px);
+    position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 86px);
     text-align: center; pointer-events: none; color: #fff; font-weight: 900; font-size: 30px;
     text-shadow: 0 2px 0 #d9480f, 0 4px 10px rgba(0, 0, 0, .35); opacity: 0; transition: opacity .3s;
   }
@@ -47,7 +57,7 @@
   #combo.bump { animation: bump .18s ease-out; }
   @keyframes bump { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
   #toast {
-    position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 108px);
+    position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 130px);
     text-align: center; pointer-events: none; color: #fff; font-size: 22px; font-weight: 900;
     text-shadow: 0 2px 0 #b45309, 0 4px 8px rgba(0, 0, 0, .35);
     opacity: 0; transform: scale(.8); transition: opacity .2s, transform .2s;
@@ -99,8 +109,8 @@
   #result .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-bottom: 14px; font-size: 15px; font-weight: 800; }
   #result .stats div { background: #f6ead0; border-radius: 10px; padding: 6px 4px; }
   #result button { display: block; width: 100%; margin-top: 8px; padding: 12px; border: 0; border-radius: 14px; font-size: 18px; font-weight: 900; }
-  #again { background: #ff9f1c; color: #fff; box-shadow: 0 3px 0 #c2410c; }
-  #keep { background: #ece2c6; color: #6a4a2c; font-size: 15px !important; }
+  #keep { background: #ff9f1c; color: #fff; box-shadow: 0 3px 0 #c2410c; }
+  #again { background: #ece2c6; color: #6a4a2c; font-size: 15px !important; }
 </style>
 </head>
 <body>
@@ -110,8 +120,8 @@
     <div id="chick-pill" class="pill">🐤 <span id="chicks">0</span></div>
     <div id="feed-pill" class="pill">🌾 <span id="feed">0</span></div>
     <div id="parts-pill" class="pill">⚙️ <span id="parts">0</span></div>
-    <div id="time-pill" class="pill">⏱ <span id="time">60</span></div>
   </div>
+  <div id="goal"><span id="goal-text">🎯 100羽</span><div id="goal-bar"><div id="goal-fill"></div></div></div>
   <div id="combo"></div>
   <div id="toast"></div>
   <div id="hint">画面をなぞって ひよこを動かそう</div>
@@ -119,17 +129,18 @@
   <div id="village-sign"></div>
   <div id="version"></div>
   <div id="error"></div>
+  <button id="reset" type="button">はじめから</button>
   <div id="result"><div class="card">
-    <h1>⏱ 60秒 しゅうりょう!</h1>
+    <h1>🎉 100万羽 達成!</h1>
     <div class="big">🐤 <span id="r-chicks">0</span>羽</div>
     <div class="stats">
       <div>📦 <span id="r-broken">0</span>こ</div>
-      <div>🔥 最大 <span id="r-combo">0</span>コンボ</div>
-      <div>🏠 建物 <span id="r-lv">0</span>/8</div>
-      <div>🌾 <span id="r-feed">0</span></div>
+      <div>🔥 <span id="r-combo">0</span>コンボ</div>
+      <div>⭐ 村 ×<span id="r-lv">1</span></div>
+      <div>⏱ <span id="r-time">0</span></div>
     </div>
-    <button id="again" type="button">もう一回 ▶</button>
-    <button id="keep" type="button">このまま続けて遊ぶ</button>
+    <button id="keep" type="button">このまま遊ぶ ▶</button>
+    <button id="again" type="button">はじめから</button>
   </div></div>
 
 <script type="module">
@@ -138,7 +149,10 @@
   // ================================================================
   //  設定(ここの数字を変えると、テンポや爽快感を調整できます)
   // ================================================================
-  const GAME_TIME = 60;          // 1回の遊びの長さ(秒)
+  const GOALS = [100, 1000, 10000, 100000, 1000000]; // 目標の羽数(区切りごとにお祝い。最後が100万羽)
+  const SAVE_KEY = 'hiyoko-save-v1'; // 進み具合を保存する名前(雪のキャンプとは別)
+  // 8つの建物を建てたあとの「村パワーアップ」: 払うたびに、村ぜんぶの生む速さが2倍になる
+  const POWER_COST = (k) => Math.round(3000 * Math.pow(2.6, k) / 100) * 100;
   const START_CHICKS = 4;        // 最初のひよこ(リーダーとは別)
   const LEADER_SPEED = 7.5;      // リーダーの速さ
   // エリア: 門をこわすと次のエリアへ行ける。先のエリアほど、壊す物が大きくなる
@@ -191,7 +205,7 @@
   const STICK_RADIUS = 56;
 
   const $ = (id) => document.getElementById(id);
-  const GAME_VERSION = '2026.11.13-h3';
+  const GAME_VERSION = '2026.11.13-h4';
   $('version').textContent = '🐤 v' + GAME_VERSION;
 
   const errorsSeen = [];
@@ -674,7 +688,7 @@
     gold: new THREE.MeshStandardMaterial({ color: '#ffcc33', metalness: 0.85, roughness: 0.25, emissive: '#3a2600' }),
     stone: HM('#cfc6b4'), blue: HM('#4f8fd8'),
   };
-  const village = { built: 0, paid: 0, rate: 0, items: [] };
+  const village = { built: 0, paid: 0, rate: 0, power: 0, mult: 1, items: [] };
   function part(g, geo, mat, x, y, z, ry = 0) {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
@@ -819,7 +833,8 @@
     g.lineWidth = 8; g.strokeStyle = 'rgba(60,35,20,.6)'; g.strokeText(text, 0, y);
     g.fillStyle = '#fff'; g.fillText(text, 0, y); g.restore();
   }
-  const nextBuilding = () => BUILDINGS[village.built];
+  const POWER = { power: true, name: '村パワーアップ', icon: '⭐', x: 13, z: -8, w: 0, d: 0, zone: { x: 13, z: 3.4, half: 1.3 }, get cost() { return POWER_COST(village.power); } };
+  const nextBuilding = () => BUILDINGS[village.built] || POWER;
   const zc = zoneCanvas(256, (g, n) => {
     const b = nextBuilding();
     if (!b) return;
@@ -828,7 +843,7 @@
     g.save(); g.beginPath(); g.roundRect(14, 14, n - 28, n - 28, 40); g.clip();
     g.fillStyle = 'rgba(255,200,60,.8)'; g.fillRect(0, n - 14 - (n - 28) * (village.paid / b.cost), n, n); g.restore();
     zText(g, n, b.icon, 70, -50);
-    zText(g, n, b.name, b.name.length > 5 ? 30 : 38, 6);
+    zText(g, n, b.power ? '村 ×' + village.mult * 2 : b.name, b.name.length > 5 && !b.power ? 30 : 38, 6);
     zText(g, n, '⚙️' + Math.ceil(b.cost - village.paid), 46, 58);
   });
   const zoneMat = new THREE.MeshBasicMaterial({ map: zc.tex, transparent: true, depthWrite: false });
@@ -847,10 +862,10 @@
   //  ゲームの状態
   // ================================================================
   let chicks = START_CHICKS;
-  let started = false, timeLeft = GAME_TIME, ended = false, endless = false, elapsed = 0;
+  let started = false, ended = false, elapsed = 0, goalIdx = 0, clearShown = false, saveDisabled = false;
   let broken = 0, combo = 0, comboT = 0, maxCombo = 0, hatchAcc = 0, shake = 0;
   const marks = { firstBreak: null, ten: null, hatchery: null, hundred: null, big: null, gate1: null, gate2: null }; // テンポの記録(テスト用)
-  const fmt = (n) => n >= 1e8 ? (n / 1e8).toFixed(1) + '億' : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e6 ? 0 : 1) + '万' : Math.floor(n).toLocaleString();
+  const fmt = (n) => n >= 1e8 ? (n / 1e8).toFixed(1).replace(/\.0$/, '') + '億' : n >= 1e4 ? (n >= 1e6 ? Math.floor(n / 1e4) : (n / 1e4).toFixed(1).replace(/\.0$/, '')) + '万' : Math.floor(n).toLocaleString();
 
   // ---- 群れ(表示用のひよこ)----
   const disp = []; // 画面に描くひよこ(最大 MAX_DISPLAY)
@@ -1251,13 +1266,13 @@
     for (let i = 0; i < village.built; i++) {
       const b = BUILDINGS[i];
       if (b.drop > 0) continue;
-      b.acc += dt * b.rate;
+      b.acc += dt * b.rate * village.mult;
       const born = Math.min(Math.floor(b.acc), Math.floor(feed));
       b.acc -= Math.floor(b.acc);
       if (born > 0) { feed -= born; chicks += born; b.working = 0.3; }
       b.runT -= dt;
       if (b.working > 0 && b.runT <= 0) {
-        b.runT = 1 / Math.min(6, 1 + b.rate / 6);
+        b.runT = 1 / Math.min(6, 1 + b.rate * village.mult / 6);
         spawnRunner(b.x + b.door.x, b.z + b.door.z);
       }
       b.working = Math.max(0, (b.working || 0) - dt);
@@ -1321,11 +1336,11 @@
             partsPool.items.push({ kind: 'pay', value: 0, x: L.x, y: 1, z: L.z, vx: (b.x - L.x) * 1.3 + (Math.random() - 0.5) * 3, vy: 8, vz: (b.z - L.z) * 1.3 + (Math.random() - 0.5) * 3, t: 0, delay: 0.3, r: 0 });
         }
         zc.redraw();
-        if (village.paid >= b.cost - 1e-6) completeBuilding(b);
+        if (village.paid >= b.cost - 1e-6) { if (b.power) completePower(); else completeBuilding(b); }
       }
       // 工事中の足場: 払った分だけ伸びる
       const k = village.paid / b.cost;
-      ghost.visible = k > 0;
+      ghost.visible = k > 0 && !b.power;
       if (ghost.visible) { const h = 0.2 + k * 3; ghost.scale.set(b.w * 0.9, h, b.d * 0.9); ghost.position.set(b.x, h / 2, b.z); }
     } else ghost.visible = false;
 
@@ -1343,11 +1358,12 @@
       }
       if (bd.bounce > 0) {
         bd.bounce = Math.max(0, bd.bounce - dt);
-        const k = bd.bounce / 0.45, w = Math.sin(k * Math.PI * 3) * k;
-        g.scale.set(1 + w * 0.18, 1 - w * 0.25, 1 + w * 0.18);
+        const k = bd.bounce / 0.45, w = Math.sin(k * Math.PI * 3) * k, grow = 1 + Math.min(0.5, village.power * 0.07);
+        g.scale.set((1 + w * 0.18) * grow, (1 - w * 0.25) * grow, (1 + w * 0.18) * grow);
       } else {
         const pulse = bd.working > 0 ? 1 + Math.sin(time * 18) * 0.015 : 1; // ひよこを生んでいる間は、少しぷるぷるする
-        g.scale.set(pulse, 1 / pulse, pulse);
+        const grow = 1 + Math.min(0.5, village.power * 0.07); // パワーアップするほど、建物が大きくなる
+        g.scale.set(pulse * grow, grow / pulse, pulse * grow);
       }
       if (bd.spin) { if (bd.type === 'mill') bd.spin.rotation.z += dt * 2.2; else bd.spin.rotation.y += dt * 0.8; }
       if (bd.chimneys && bd.drop === 0) {
@@ -1390,7 +1406,7 @@
   function completeBuilding(b) {
     village.built++;
     village.paid = 0;
-    village.rate += b.rate;
+    village.rate += b.rate * village.mult;
     b.group = new THREE.Group();
     b.group.position.set(b.x, 9, b.z);
     MAKERS[b.type](b.group, b);
@@ -1402,6 +1418,23 @@
     placeZone();
     blipBudget += 2;
     blip(300, 0.3, 'sine', 0.06, 2.5); // ひゅーん
+  }
+  function completePower() {
+    village.power++;
+    village.mult = Math.pow(2, village.power);
+    village.paid = 0;
+    village.rate = BUILDINGS.reduce((n, b) => n + b.rate, 0) * village.mult;
+    // 村じゅうの建物がはずんで、キラキラする
+    for (const b of BUILDINGS) {
+      b.bounce = 0.45;
+      burstPuff(b.x, 2.5, b.z, 6, 0.6);
+      for (let k = 0; k < 4; k++) spawnRunner(b.x + b.door.x, b.z + b.door.z);
+    }
+    shake = Math.max(shake, 0.45);
+    boom(0.18);
+    toast('⭐ 村パワーアップ! 生まれる速さ ×' + village.mult);
+    placeZone();
+    [659, 784, 988, 1319, 1568].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.12, 'triangle', 0.07, 1.05); }, i * 70));
   }
   function landBuilding(b) {
     b.bounce = 0.45;
@@ -1454,8 +1487,11 @@
     if (c !== shownChicks) { shownChicks = c; $('chicks').textContent = fmt(c); }
     $('feed').textContent = fmt(feed);
     $('parts').textContent = fmt(parts);
-    $('time').textContent = endless ? '∞' : Math.ceil(timeLeft);
-    $('time-pill').classList.toggle('low', !endless && started && timeLeft < 10);
+    // 次の目標までのバー
+    const gi = Math.min(goalIdx, GOALS.length - 1), lo = gi === 0 ? 0 : GOALS[gi - 1], hi = GOALS[gi];
+    const goalText = goalIdx >= GOALS.length ? '🏆 100万羽 達成! 🐤 ' + fmt(chicks) : '🎯 ' + fmt(hi) + '羽まで あと' + fmt(Math.max(0, hi - chicks));
+    if ($('goal-text').textContent !== goalText) $('goal-text').textContent = goalText;
+    $('goal-fill').style.width = (goalIdx >= GOALS.length ? 100 : Math.max(0, Math.min(100, (chicks - lo) / (hi - lo) * 100))) + '%';
     if (comboT > 0) { comboT -= dt; if (comboT <= 0) { combo = 0; $('combo').classList.remove('show'); } }
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
     for (const p of popPool) {
@@ -1470,7 +1506,7 @@
     const sign = $('village-sign');
     if (village.built > 0) {
       const p = project((VILLAGE.x1 + VILLAGE.x2) / 2 - 2, 5.5, -8);
-      const text = '🐣 ひよこ村 +' + village.rate + '羽/秒';
+      const text = '🐣 ひよこ村 +' + fmt(village.rate) + '羽/秒' + (village.mult > 1 ? ' (×' + village.mult + ')' : '');
       if (sign.textContent !== text) { sign.textContent = text; sign.classList.remove('bump'); void sign.offsetWidth; sign.classList.add('bump'); }
       sign.style.display = p.behind || p.sy < 190 || p.sy > window.innerHeight - 80 ? 'none' : 'block'; // 上のお知らせと重ならないように
       sign.style.left = p.sx + 'px'; sign.style.top = p.sy + 'px';
@@ -1496,7 +1532,7 @@
     let text = '', goal = null;
     const nb = nextBuilding();
     if (!started) text = '画面をなぞって ひよこを動かそう';
-    else if (nb && parts >= nb.cost - village.paid) { text = '⚙️がたまった! ' + nb.icon + nb.name + 'を建てよう'; goal = nb.zone; }
+    else if (nb && parts >= nb.cost - village.paid) { text = nb.power ? '⚙️がたまった! ⭐ 村をパワーアップしよう' : '⚙️がたまった! ' + nb.icon + nb.name + 'を建てよう'; goal = nb.zone; }
     else if (village.built === 0 && elapsed < 25) text = '木箱に近づくと 自動でつつくよ';
     else if (village.built === 1 && elapsed - (marks.hatchery || 0) < 5) text = '建物が エサでひよこを自動で生むよ';
     else {
@@ -1528,30 +1564,92 @@
   }
 
   // ================================================================
-  //  1回の遊び(60秒)
+  //  目標(100万羽をめざす)とセーブ
   // ================================================================
   function start() { started = true; }
-  function finish() {
-    ended = true;
-    for (const e of eggPool.items) chicks += e.n; // かえりかけの卵も数に入れてから結果を出す
-    eggPool.items = [];
-    $('r-chicks').textContent = fmt(chicks);
-    $('r-broken').textContent = broken;
-    $('r-combo').textContent = maxCombo;
-    $('r-lv').textContent = village.built;
-    $('r-feed').textContent = fmt(feed);
-    $('result').classList.add('show');
-    Object.assign(stick, { active: false, id: null, dx: 0, dy: 0 }); showStick();
+  const fmtTime = (sec) => { const m = Math.floor(sec / 60); return m >= 60 ? Math.floor(m / 60) + '時間' + (m % 60) + '分' : m + '分' + Math.floor(sec % 60) + '秒'; };
+  function reachGoal(n) {
+    toast('🎉 ' + fmt(n) + '羽 達成!');
+    shake = Math.max(shake, 0.35);
+    for (let i = 0; i < 3; i++) burstPuff(L.x + (Math.random() - 0.5) * 4, 2, L.z + (Math.random() - 0.5) * 4, 8, 1);
     [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.16, 'triangle', 0.08, 1.02); }, i * 110));
   }
-  $('again').addEventListener('click', () => location.reload());
-  $('keep').addEventListener('click', () => { endless = true; ended = false; $('result').classList.remove('show'); });
+  function showClear() {
+    clearShown = true;
+    $('r-chicks').textContent = fmt(chicks);
+    $('r-broken').textContent = broken.toLocaleString();
+    $('r-combo').textContent = fmt(maxCombo);
+    $('r-lv').textContent = village.mult;
+    $('r-time').textContent = fmtTime(elapsed);
+    $('result').classList.add('show');
+    Object.assign(stick, { active: false, id: null, dx: 0, dy: 0 }); showStick();
+  }
+  function resetGame() {
+    if (!confirm('最初からやり直しますか?(今の進み具合は消えます)')) return;
+    saveDisabled = true;
+    try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 何もしない */ }
+    location.reload();
+  }
+  $('again').addEventListener('click', resetGame);
+  $('reset').addEventListener('click', resetGame);
+  $('keep').addEventListener('click', () => $('result').classList.remove('show'));
+
+  // 進み具合を iPhone の中に保存する(5秒ごとと、ページを閉じるとき。サーバーには送らない)
+  function saveGame() {
+    if (saveDisabled || !started) return;
+    const data = {
+      version: 1, chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts),
+      built: village.built, paid: village.paid, power: village.power, open: AREAS.map(a => !!a.open),
+      elapsed, broken, maxCombo, goal: goalIdx, clear: clearShown, x: L.x, z: L.z,
+    };
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない設定のときは何もしない */ }
+  }
+  function loadGame() {
+    let d = null;
+    try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; }
+    if (!d || d.version !== 1) return false;
+    chicks = d.chicks || START_CHICKS; feed = d.feed || 0; parts = d.parts || 0;
+    // 建物を、落ちてくる演出なしで建て直す
+    for (let i = 0; i < Math.min(d.built || 0, BUILDINGS.length); i++) {
+      const b = BUILDINGS[i];
+      village.built++;
+      b.group = new THREE.Group();
+      MAKERS[b.type](b.group, b);
+      b.group.position.set(b.x, 0, b.z);
+      scene.add(b.group);
+      b.drop = 0; b.plot.visible = false;
+    }
+    village.power = d.power || 0;
+    village.mult = Math.pow(2, village.power);
+    village.rate = BUILDINGS.slice(0, village.built).reduce((n, b) => n + b.rate, 0) * village.mult;
+    village.paid = d.paid || 0;
+    placeZone();
+    // 開けたエリア
+    (d.open || []).forEach((o, i) => {
+      const a = AREAS[i];
+      if (!o || !a || i === 0) return;
+      a.open = true;
+      if (a.wallMesh) a.wallMesh.visible = false;
+      if (a.gateTarget) { a.gateTarget.alive = false; a.gateTarget.g.visible = false; }
+    });
+    elapsed = d.elapsed || 0; broken = d.broken || 0; maxCombo = d.maxCombo || 0;
+    goalIdx = d.goal || 0; clearShown = !!d.clear;
+    if (typeof d.x === 'number' && walkable(d.x, d.z)) { L.x = d.x; L.z = d.z; flock.cx = L.x; flock.cz = L.z; camTarget.set(L.x, 0, L.z); }
+    started = true;
+    return true;
+  }
+  setInterval(() => safe('save', saveGame), 5000);
+  window.addEventListener('pagehide', () => safe('save', saveGame));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) safe('save', saveGame); });
 
   function logic(dt, time) {
     blipBudget = Math.min(blipBudget + dt * 40, 6);
-    if (started && !ended) {
-      elapsed += dt;
-      if (!endless) { timeLeft = Math.max(0, GAME_TIME - elapsed); if (timeLeft <= 0) finish(); }
+    if (started) elapsed += dt;
+    // 目標の羽数に届いたらお祝い。100万羽で達成の画面
+    while (goalIdx < GOALS.length && chicks >= GOALS[goalIdx]) {
+      reachGoal(GOALS[goalIdx]);
+      goalIdx++;
+      if (goalIdx === GOALS.length && !clearShown) showClear();
     }
     const play = !ended;
     if (play) safe('leader', () => updateLeader(dt));
@@ -1614,15 +1712,17 @@
     $('hint').textContent = '画面が止まりました。ページを再読み込みしてください';
     $('hint').style.opacity = 1;
   });
+  safe('load', () => { if (loadGame()) toast('つづきから'); });
   requestAnimationFrame(frame);
 
   // 自動テスト用
   window.__renderer = renderer;
   window.__game = {
     get state() {
-      return { chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts), elapsed, timeLeft, started, ended, broken, maxCombo, hatchery: village.built, rate: village.rate, marks: { ...marks }, errors: errorsSeen.slice(), display: disp.length, drops: feedPool.items.length + partsPool.items.length, x: L.x, z: L.z, attacking: attackList.map(a => [a.t.kind, Math.round(a.t.hp), a.t.alive]), near: targets.filter(t => t.alive).map(t => [t.kind, +Math.hypot(t.x - L.x, t.z - L.z).toFixed(1), Math.round(t.hp)]).sort((a, b) => a[1] - b[1]).slice(0, 3), flockR: flock.r, open: AREAS.map(a => a.open) };
+      return { chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts), elapsed, started, ended, goal: goalIdx, power: village.power, clear: clearShown, broken, maxCombo, hatchery: village.built, rate: village.rate, marks: { ...marks }, errors: errorsSeen.slice(), display: disp.length, drops: feedPool.items.length + partsPool.items.length, x: L.x, z: L.z, attacking: attackList.map(a => [a.t.kind, Math.round(a.t.hp), a.t.alive]), near: targets.filter(t => t.alive).map(t => [t.kind, +Math.hypot(t.x - L.x, t.z - L.z).toFixed(1), Math.round(t.hp)]).sort((a, b) => a[1] - b[1]).slice(0, 3), flockR: flock.r, open: AREAS.map(a => a.open) };
     },
     bot(on) { bot = on; },
+    save() { saveGame(); },
     teleport(x, z) { L.x = x; L.z = z; flock.cx = x; flock.cz = z; },
     // 描かずに時間を進める(テンポの調整用)
     fastForward(sec, step = 1 / 30) { for (let t = 0; t < sec && !ended; t += step) logic(step, performance.now() / 1000 + t); return this.state; },
