@@ -141,7 +141,15 @@
   const GAME_TIME = 60;          // 1回の遊びの長さ(秒)
   const START_CHICKS = 4;        // 最初のひよこ(リーダーとは別)
   const LEADER_SPEED = 7.5;      // リーダーの速さ
-  const WORLD = 44;              // 歩ける範囲(-WORLD〜WORLD)
+  // エリア: 門をこわすと次のエリアへ行ける。先のエリアほど、壊す物が大きくなる
+  // need: 門を攻撃できるようになる羽数。gateHp: 門の固さ
+  const AREAS = [
+    { name: 'はじまりの原っぱ', icon: '🌱', x1: -24, x2: 28, z1: -24, z2: 16, open: true },
+    { name: '農場', icon: '🚜', x1: -24, x2: 28, z1: 16, z2: 52, need: 300, gateHp: 450, gate: { x: 2, z: 16, along: 'x' }, wall: [[-24, 16], [28, 16]], ground: 'farm' },
+    { name: '倉庫街', icon: '🏭', x1: -62, x2: -24, z1: 16, z2: 52, need: 3000, gateHp: 6000, gate: { x: -24, z: 34, along: 'z' }, wall: [[-24, 16], [-24, 52]], ground: 'town' },
+  ];
+  // まわりの柵(エリア全体の外側)
+  const OUTER_WALLS = [[[-24, -24], [28, -24]], [[-24, -24], [-24, 16]], [[28, -24], [28, 52]], [[-62, 52], [28, 52]], [[-62, 16], [-24, 16]], [[-62, 16], [-62, 52]]];
   const MAX_DISPLAY = 360;       // 画面に描くひよこの最大数(これより多いときは、1羽が何羽ぶんかを表す)
   const SPACING = 0.34;          // 群れの中のひよこの間かく
   const PECK_DPS = 1.3;          // ひよこ1羽が1秒に与えるダメージ
@@ -155,7 +163,14 @@
     { hp: 180, feed: 110, parts: 40, color: '#a9b4c0', size: 1.15 },
   ];
   const CRATE_RESPAWN = 7;       // 木箱が別の場所にまた出るまでの秒数
-  const BIG = { hp: 900, feed: 900, parts: 320, respawn: 25 }; // でっかいコンテナ
+  const BARREL = { hp: 110, feed: 80, parts: 28, r: 0.55, color: '#9a6a3a' }; // タル(農場から)
+  // 大きな物(1つずつ作る)。h: 体力のバーを出す高さ
+  const OBJ_TYPES = {
+    container: { name: 'コンテナ', hp: 900, feed: 900, parts: 320, r: 1.9, respawn: 25, h: 2.8, color: '#d64545' },
+    truck: { name: '軽トラ', hp: 1600, feed: 1300, parts: 450, r: 2.0, respawn: 25, h: 2.6, color: '#4f8fd8' },
+    shed: { name: '小屋', hp: 5000, feed: 4000, parts: 1400, r: 2.4, respawn: 30, h: 4.2, color: '#c98a4a' },
+    warehouse: { name: '倉庫', hp: 22000, feed: 16000, parts: 5500, r: 4.6, respawn: 40, h: 6.5, color: '#9aa7b4' },
+  };
   // ひよこ村: パーツを払うと、建物が1つずつ空から落ちてきて建つ。村がどんどん広がる
   // rate: その建物が1秒に生むひよこ(1羽にエサ1)。x, z は建物の真ん中、w×d は広さ
   const VILLAGE = { x1: 3, x2: 23, z1: -19, z2: 1.5 }; // 村の範囲(木箱はここに出さない)
@@ -176,7 +191,7 @@
   const STICK_RADIUS = 56;
 
   const $ = (id) => document.getElementById(id);
-  const GAME_VERSION = '2026.11.13-h2';
+  const GAME_VERSION = '2026.11.13-h3';
   $('version').textContent = '🐤 v' + GAME_VERSION;
 
   const errorsSeen = [];
@@ -281,29 +296,75 @@
       g.fillRect(Math.random() * n, Math.random() * n, 3, 7);
     }
   }, 22);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(WORLD * 2 + 30, WORLD * 2 + 30), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 }));
+  const BOUNDS = { x1: Math.min(...AREAS.map(a => a.x1)), x2: Math.max(...AREAS.map(a => a.x2)), z1: Math.min(...AREAS.map(a => a.z1)), z2: Math.max(...AREAS.map(a => a.z2)) };
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(BOUNDS.x2 - BOUNDS.x1 + 60, BOUNDS.z2 - BOUNDS.z1 + 60), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2;
+  ground.position.set((BOUNDS.x1 + BOUNDS.x2) / 2, 0, (BOUNDS.z1 + BOUNDS.z2) / 2);
   ground.receiveShadow = true;
   scene.add(ground);
+  // エリアごとの地面(農場は畑、倉庫街はアスファルト)
+  const GROUND_TEX = {
+    farm: () => canvasTexture(128, (g, n) => {
+      g.fillStyle = '#d9cf86'; g.fillRect(0, 0, n, n);
+      for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#c8b46e' : '#a9c46a'; g.fillRect(0, i * 16, n, 9); }
+    }, 10),
+    town: () => canvasTexture(128, (g, n) => {
+      g.fillStyle = '#b4b8bd'; g.fillRect(0, 0, n, n);
+      for (let i = 0; i < 90; i++) { g.fillStyle = i % 2 ? 'rgba(80,85,90,.25)' : 'rgba(255,255,255,.2)'; g.fillRect(Math.random() * n, Math.random() * n, 3, 3); }
+      g.fillStyle = '#f4f1e6'; g.fillRect(n / 2 - 3, 10, 6, 40); g.fillRect(n / 2 - 3, 78, 6, 40);
+    }, 8),
+  };
+  for (const a of AREAS) {
+    if (!a.ground) continue;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(a.x2 - a.x1, a.z2 - a.z1), new THREE.MeshStandardMaterial({ map: GROUND_TEX[a.ground](), roughness: 1 }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set((a.x1 + a.x2) / 2, 0.004, (a.z1 + a.z2) / 2);
+    m.receiveShadow = true;
+    scene.add(m);
+  }
+  // 柵: 丸太の杭を1回で描く。門のある仕切りは、門をこわすと柵ごと吹き飛ぶので別に作る
+  const postGeo = new THREE.CylinderGeometry(0.22, 0.22, 1.1, 7), postMat = new THREE.MeshStandardMaterial({ color: '#a8743f', roughness: 0.9 });
+  function postsAlong(segs, skip) {
+    const pts = [];
+    for (const [[ax, az], [bx, bz]] of segs) {
+      const len = Math.hypot(bx - ax, bz - az), n = Math.ceil(len / 1.2);
+      for (let i = 0; i <= n; i++) {
+        const x = ax + (bx - ax) * i / n, z = az + (bz - az) * i / n;
+        if (skip && Math.hypot(x - skip.x, z - skip.z) < 2.4) continue;
+        pts.push([x, z]);
+      }
+    }
+    const m = new THREE.InstancedMesh(postGeo, postMat, pts.length);
+    pts.forEach(([x, z], i) => setInst(m, i, x, 0.55, z, 1, 1, 1));
+    m.castShadow = true;
+    scene.add(m);
+    return m;
+  }
+  postsAlong(OUTER_WALLS);
+  for (const a of AREAS) if (a.wall) a.wallMesh = postsAlong([a.wall], a.gate);
+  const inArea = (a, x, z, m = 0) => x > a.x1 + m && x < a.x2 - m && z > a.z1 + m && z < a.z2 - m;
+  // 歩ける場所: 開いたエリアの中(エリアのつなぎ目は、両方とも開いていれば通れる)
+  function walkable(x, z) {
+    let near = 0;
+    for (const a of AREAS) {
+      if (!a.open) continue;
+      if (inArea(a, x, z, 0.5)) return true;
+      if (inArea(a, x, z, -0.6)) near++;
+    }
+    return near >= 2;
+  }
   {
-    // まわりの柵(丸太の杭を1回で描く)
-    let n = 0;
-    for (let s = -WORLD; s < WORLD; s += 1.2) n += 4; // 杭の数を先に数える(多く描くと形がくずれる)
-    const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.22, 1.1, 7), new THREE.MeshStandardMaterial({ color: '#a8743f', roughness: 0.9 }), n);
-    let k = 0;
-    for (let s = -WORLD; s < WORLD; s += 1.2) {
-      for (const [x, z] of [[s, -WORLD - 0.6], [s, WORLD + 0.6], [-WORLD - 0.6, s], [WORLD + 0.6, s]]) setInst(posts, k++, x, 0.55, z, 1, 1, 1);
+    // 飾りの木(エリアの外)と花(原っぱと農場)
+    const trunks = [], flowers = [];
+    for (let i = 0; i < 400 && trunks.length < 110; i++) {
+      const x = BOUNDS.x1 - 12 + rand() * (BOUNDS.x2 - BOUNDS.x1 + 24), z = BOUNDS.z1 - 12 + rand() * (BOUNDS.z2 - BOUNDS.z1 + 24);
+      if (AREAS.some(a => inArea(a, x, z, -2.5))) continue;
+      trunks.push([x, z, 0.8 + rand() * 0.6]);
     }
-    posts.count = k;
-    posts.castShadow = true;
-    scene.add(posts);
-    // 飾りの木と花
-    const trunks = [], leaves = [], flowers = [];
-    for (let i = 0; i < 70; i++) {
-      const a = rand() * Math.PI * 2, r = WORLD + 3 + rand() * 10;
-      trunks.push([Math.cos(a) * r, Math.sin(a) * r, 0.8 + rand() * 0.6]);
+    for (let i = 0; i < 300; i++) {
+      const a = AREAS[i % 3 === 0 ? 1 : 0];
+      flowers.push([a.x1 + rand() * (a.x2 - a.x1), a.z1 + rand() * (a.z2 - a.z1), rand()]);
     }
-    for (let i = 0; i < 260; i++) flowers.push([(rand() * 2 - 1) * WORLD, (rand() * 2 - 1) * WORLD, rand()]);
     const trunkMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.32, 1.4, 6), new THREE.MeshStandardMaterial({ color: '#8a5a30' }), trunks.length);
     const leafMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, 0), new THREE.MeshStandardMaterial({ color: '#4caf50', flatShading: true }), trunks.length);
     trunks.forEach(([x, z, s], i) => { setInst(trunkMesh, i, x, 0.7 * s, z, s, s, s); setInst(leafMesh, i, x, 2.3 * s, z, s, s * 1.1, s); });
@@ -453,72 +514,154 @@
     g.strokeStyle = '#8a5528'; g.lineWidth = 12; g.strokeRect(6, 6, n - 12, n - 12);
     g.beginPath(); g.moveTo(10, 10); g.lineTo(n - 10, n - 10); g.stroke();
   });
-  const CRATE_MAX = 170;
+  const CRATE_MAX = 200;
   const crateMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.8 }), CRATE_MAX);
   crateMesh.castShadow = crateMesh.receiveShadow = true;
   crateMesh.frustumCulled = false;
   scene.add(crateMesh);
+  // タル(たくさん置くので1回で描く)
+  const barrelTex = canvasTexture(64, (g, n) => {
+    g.fillStyle = '#b07a44'; g.fillRect(0, 0, n, n);
+    g.fillStyle = 'rgba(90,50,20,.35)'; for (let i = 0; i < 8; i++) g.fillRect(i * 8, 0, 2, n);
+    g.fillStyle = '#555c63'; g.fillRect(0, 8, n, 6); g.fillRect(0, n - 14, n, 6);
+  });
+  const BARREL_MAX = 90;
+  const barrelMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.1, 12), new THREE.MeshStandardMaterial({ map: barrelTex, roughness: 0.8 }), BARREL_MAX);
+  barrelMesh.castShadow = barrelMesh.receiveShadow = true;
+  barrelMesh.frustumCulled = false;
+  scene.add(barrelMesh);
   const targets = []; // 壊せる物すべて
-  function placeCrate(x, z, tierIdx) {
+  const crateTier = (area, x, z) => area === 0 ? (Math.hypot(x, z) < 13 ? 0 : 1) : area === 1 ? (rand() < 0.5 ? 1 : 2) : 2;
+  function placeCrate(x, z, tierIdx, area = 0) {
     const t = CRATE_TIERS[tierIdx];
-    const c = { kind: 'crate', tier: tierIdx, x, z, r: t.size * 0.62, size: t.size, hp: t.hp, maxHp: t.hp, alive: true, hit: 0, respawn: 0, spin: rand() * Math.PI, pop: 0 };
+    const c = { kind: 'crate', area, tier: tierIdx, x, z, r: t.size * 0.62, size: t.size, hp: t.hp, maxHp: t.hp, alive: true, hit: 0, respawn: 0, spin: rand() * Math.PI, pop: 0 };
     targets.push(c);
     return c;
   }
-  function tierAt(x, z) {
-    const d = Math.hypot(x, z);
-    return d < 13 ? 0 : d < 26 ? 1 : 2;
+  function placeBarrel(x, z, area) {
+    const c = { kind: 'barrel', area, x, z, r: BARREL.r, size: 1.1, hp: BARREL.hp, maxHp: BARREL.hp, alive: true, hit: 0, respawn: 0, spin: rand() * Math.PI, pop: 0 };
+    targets.push(c);
+    return c;
   }
   const inVillage = (x, z, m = 0) => x > VILLAGE.x1 - m && x < VILLAGE.x2 + m && z > VILLAGE.z1 - m && z < VILLAGE.z2 + m;
   // 最初の数秒で壊せるように、スタートのすぐそばに木箱を置く
   [[1.2, -0.4], [-1.6, -0.8], [0.4, -2.6], [-2.8, 1.4], [2.8, 1.6]].forEach(([x, z]) => placeCrate(x, z, 0));
-  function freeSpot(minFromLeader) {
+  function freeSpot(area, minFromLeader, room = 1.2) {
+    const a = AREAS[area];
     for (let k = 0; k < 40; k++) {
-      const x = (rand() * 2 - 1) * (WORLD - 2), z = (rand() * 2 - 1) * (WORLD - 2);
-      if (inVillage(x, z, 1.5)) continue;
+      const x = a.x1 + 2 + rand() * (a.x2 - a.x1 - 4), z = a.z1 + 2 + rand() * (a.z2 - a.z1 - 4);
+      if (inVillage(x, z, 1.5 + room)) continue;
       if (Math.hypot(x - L.x, z - L.z) < minFromLeader) continue;
-      if (targets.some(t => t.alive && Math.hypot(t.x - x, t.z - z) < t.r + 1.2)) continue;
+      if (a.gate && Math.hypot(x - a.gate.x, z - a.gate.z) < 4) continue;
+      if (AREAS.some(b => b.gate && Math.hypot(x - b.gate.x, z - b.gate.z) < 3 + room)) continue;
+      if (targets.some(t => t.alive && Math.hypot(t.x - x, t.z - z) < t.r + room)) continue;
       return { x, z };
     }
-    return { x: (rand() * 2 - 1) * WORLD, z: (rand() * 2 - 1) * WORLD };
+    return { x: a.x1 + 3 + rand() * (a.x2 - a.x1 - 6), z: a.z1 + 3 + rand() * (a.z2 - a.z1 - 6) };
   }
-  // 木箱は、ところどころ固まって置く(まとめて壊せると気持ちいい)
-  while (targets.length < 150) {
-    const c = freeSpot(4);
-    const n = 1 + Math.floor(rand() * 5);
-    for (let i = 0; i < n && targets.length < 150; i++) {
-      const x = c.x + (rand() - 0.5) * 3.2, z = c.z + (rand() - 0.5) * 3.2;
-      if (Math.abs(x) > WORLD - 1 || Math.abs(z) > WORLD - 1 || inVillage(x, z, 1.5) || Math.hypot(x - L.x, z - L.z) < 2) continue;
-      placeCrate(x, z, tierAt(x, z));
+  // 小さな物は、ところどころ固まって置く(まとめて壊せると気持ちいい)
+  function scatter(area, count, place) {
+    let made = 0;
+    while (made < count) {
+      const c = freeSpot(area, 4);
+      const n = 1 + Math.floor(rand() * 5);
+      for (let i = 0; i < n && made < count; i++) {
+        const x = c.x + (rand() - 0.5) * 3.2, z = c.z + (rand() - 0.5) * 3.2;
+        if (!inArea(AREAS[area], x, z, 1) || inVillage(x, z, 1.5) || Math.hypot(x - L.x, z - L.z) < 2) continue;
+        if (AREAS.some(b => b.gate && Math.hypot(x - b.gate.x, z - b.gate.z) < 3.5)) continue;
+        place(x, z); made++;
+      }
     }
   }
-  // でっかいコンテナ
-  const bigMat = new THREE.MeshStandardMaterial({ color: '#d64545', roughness: 0.55, metalness: 0.2 });
-  const ribMat = new THREE.MeshStandardMaterial({ color: '#a83232', roughness: 0.6 });
-  function makeBig(x, z) {
+  // 大きな物(コンテナ・軽トラ・小屋・倉庫)の形
+  const OM = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, ...o });
+  function om(g, geo, mat, x, y, z) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; g.add(m); return m; }
+  const OBJ_MAKERS = {
+    container(g) {
+      om(g, new THREE.BoxGeometry(3.4, 2.2, 2.2), OM('#d64545', { metalness: 0.2 }), 0, 1.1, 0);
+      for (let i = -3; i <= 3; i++) om(g, new THREE.BoxGeometry(0.12, 2.26, 2.26), OM('#a83232'), i * 0.48, 1.1, 0);
+      om(g, new THREE.CylinderGeometry(0.45, 0.45, 0.05, 5), new THREE.MeshBasicMaterial({ color: '#ffe066' }), 0, 2.24, 0);
+    },
+    truck(g) {
+      om(g, new THREE.BoxGeometry(1.4, 1.4, 1.7), OM('#4f8fd8'), 1.2, 1.15, 0);
+      om(g, new THREE.BoxGeometry(0.06, 0.6, 1.4), OM('#cfefff', { metalness: 0.3, roughness: 0.1 }), 1.92, 1.45, 0);
+      om(g, new THREE.BoxGeometry(2.4, 0.5, 1.8), OM('#4f8fd8'), -0.7, 0.75, 0);
+      for (const z of [-0.88, 0.88]) om(g, new THREE.BoxGeometry(2.4, 0.5, 0.08), OM('#3a72b8'), -0.7, 1.2, z);
+      for (let i = 0; i < 5; i++) om(g, new THREE.BoxGeometry(0.5, 0.5, 0.5), OM('#e8b878'), -1.5 + (i % 3) * 0.6, 1.3, i < 3 ? -0.35 : 0.35);
+      for (const x of [-1.2, 1.2]) for (const z of [-0.9, 0.9]) om(g, new THREE.CylinderGeometry(0.38, 0.38, 0.28, 12), OM('#2b2b2b'), x, 0.38, z).rotation.x = Math.PI / 2;
+    },
+    shed(g) {
+      om(g, new THREE.BoxGeometry(3.6, 2.6, 3.0), OM('#c98a4a'), 0, 1.3, 0);
+      const r = new THREE.CylinderGeometry(0.01, 1, 1, 4, 1); r.rotateY(Math.PI / 4); r.scale(2.9, 1.5, 2.5);
+      om(g, r, OM('#6b4a2e'), 0, 3.35, 0);
+      om(g, new THREE.BoxGeometry(1.0, 1.6, 0.06), OM('#7a4a26'), 0, 0.8, 1.52);
+      om(g, new THREE.BoxGeometry(0.7, 0.6, 0.06), OM('#cfefff'), 1.1, 1.7, 1.52);
+    },
+    warehouse(g) {
+      om(g, new THREE.BoxGeometry(8.4, 4.2, 6.4), OM('#9aa7b4', { metalness: 0.3 }), 0, 2.1, 0);
+      const roof = new THREE.CylinderGeometry(3.3, 3.3, 8.6, 18, 1, false, 0, Math.PI); roof.rotateZ(Math.PI / 2); roof.rotateX(Math.PI / 2);
+      om(g, roof, OM('#7b8792', { metalness: 0.4 }), 0, 4.2, 0).scale.set(1, 0.45, 1);
+      om(g, new THREE.BoxGeometry(3.4, 3.0, 0.08), OM('#e0a800'), 0, 1.5, 3.22);
+      for (let i = -1; i <= 1; i++) om(g, new THREE.BoxGeometry(0.06, 3.0, 0.1), OM('#8a6a00'), i * 1.1, 1.5, 3.27);
+      om(g, new THREE.BoxGeometry(2.6, 0.8, 0.1), OM('#ffffff'), -2.5, 3.6, 3.22);
+    },
+  };
+  function placeObj(type, x, z, area) {
+    const def = OBJ_TYPES[type];
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.2, 2.2), bigMat);
-    body.position.y = 1.1;
-    g.add(body);
-    for (let i = -3; i <= 3; i++) {
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.26, 2.26), ribMat);
-      rib.position.set(i * 0.48, 1.1, 0);
-      g.add(rib);
-    }
-    const star = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.05, 5), new THREE.MeshBasicMaterial({ color: '#ffe066' }));
-    star.position.set(0, 2.24, 0);
-    g.add(star);
-    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    OBJ_MAKERS[type](g);
     g.position.set(x, 0, z);
+    g.rotation.y = type === 'truck' ? rand() * Math.PI * 2 : 0;
     scene.add(g);
-    const t = { kind: 'big', x, z, r: 1.9, hp: BIG.hp, maxHp: BIG.hp, alive: true, hit: 0, respawn: 0, g, pop: 0 };
+    const t = { kind: 'obj', type, area, x, z, r: def.r, hp: def.hp, maxHp: def.hp, alive: true, hit: 0, respawn: 0, g, pop: 0 };
     targets.push(t);
     return t;
   }
-  [[-9, -14], [16, 9], [-20, 12], [10, -24]].forEach(([x, z]) => {
-    for (let i = targets.length - 1; i >= 0; i--) { const t = targets[i]; if (t.kind === 'crate' && Math.hypot(t.x - x, t.z - z) < 3) targets.splice(i, 1); }
-    makeBig(x, z);
-  });
+  // 門(エリアの入口)。決まった羽数に届くまでは攻撃できない
+  function signTexture() {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    return { tex, draw(lines, bg) {
+      const g = c.getContext('2d');
+      g.fillStyle = bg; g.fillRect(0, 0, 256, 128);
+      g.strokeStyle = '#5a3a10'; g.lineWidth = 10; g.strokeRect(5, 5, 246, 118);
+      g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = '900 44px -apple-system, sans-serif'; g.fillText(lines[0], 128, 42);
+      g.font = '900 34px -apple-system, sans-serif'; g.fillText(lines[1], 128, 92);
+      tex.needsUpdate = true;
+    } };
+  }
+  for (let i = 1; i < AREAS.length; i++) {
+    const a = AREAS[i];
+    const g = new THREE.Group();
+    const wood = OM('#8a5a30'), plank = OM('#b9834a');
+    for (const s of [-1, 1]) om(g, new THREE.CylinderGeometry(0.4, 0.45, 3.4, 10), wood, s * 2.2, 1.7, 0);
+    om(g, new THREE.BoxGeometry(5.2, 0.4, 0.5), wood, 0, 3.3, 0);
+    for (const s of [-1, 1]) om(g, new THREE.BoxGeometry(1.9, 2.4, 0.25), plank, s * 0.98, 1.3, 0);
+    om(g, new THREE.BoxGeometry(3.8, 0.2, 0.3), wood, 0, 1.9, 0.15).rotation.z = 0.5;
+    const sign = signTexture();
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.4), new THREE.MeshBasicMaterial({ map: sign.tex }));
+    board.position.set(0, 4.6, 0);
+    g.add(board);
+    g.position.set(a.gate.x, 0, a.gate.z);
+    if (a.gate.along === 'z') g.rotation.y = Math.PI / 2;
+    board.rotation.y = CAM_YAW - g.rotation.y; // 看板はいつもカメラのほうを向ける
+    scene.add(g);
+    const t = { kind: 'gate', areaToOpen: i, area: -1, x: a.gate.x, z: a.gate.z, r: 2.0, hp: a.gateHp, maxHp: a.gateHp, alive: true, hit: 0, respawn: Infinity, g, pop: 0, sign, ready: null };
+    targets.push(t);
+    a.gateTarget = t;
+  }
+  // 配置: 原っぱ(木箱とコンテナ)、農場(木箱・タル・軽トラ)、倉庫街(木箱・タル・小屋・コンテナ・倉庫)
+  [[-9, -14], [16, 9], [-18, 8]].forEach(([x, z]) => placeObj('container', x, z, 0));
+  [[-14, 26], [16, 24], [-6, 44], [20, 42], [5, 33], [-18, 40]].forEach(([x, z]) => placeObj('truck', x, z, 1));
+  [[-52, 24], [-34, 26], [-48, 44], [-30, 46], [-56, 34]].forEach(([x, z]) => placeObj('shed', x, z, 2));
+  [[-40, 21], [-44, 49], [-30, 38]].forEach(([x, z]) => placeObj('container', x, z, 2));
+  [[-42, 31], [-52, 46.5]].forEach(([x, z]) => placeObj('warehouse', x, z, 2));
+  scatter(0, 110, (x, z) => placeCrate(x, z, crateTier(0, x, z), 0));
+  scatter(1, 50, (x, z) => placeCrate(x, z, crateTier(1, x, z), 1));
+  scatter(1, 45, (x, z) => placeBarrel(x, z, 1));
+  scatter(2, 25, (x, z) => placeCrate(x, z, 2, 2));
+  scatter(2, 30, (x, z) => placeBarrel(x, z, 2));
 
   // ================================================================
   //  ひよこ村(パーツで建物を1つずつ建てる。建物はエサを使ってひよこを生む)
@@ -706,7 +849,7 @@
   let chicks = START_CHICKS;
   let started = false, timeLeft = GAME_TIME, ended = false, endless = false, elapsed = 0;
   let broken = 0, combo = 0, comboT = 0, maxCombo = 0, hatchAcc = 0, shake = 0;
-  const marks = { firstBreak: null, ten: null, hatchery: null, hundred: null, big: null }; // テンポの記録(テスト用)
+  const marks = { firstBreak: null, ten: null, hatchery: null, hundred: null, big: null, gate1: null, gate2: null }; // テンポの記録(テスト用)
   const fmt = (n) => n >= 1e8 ? (n / 1e8).toFixed(1) + '億' : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e6 ? 0 : 1) + '万' : Math.floor(n).toLocaleString();
 
   // ---- 群れ(表示用のひよこ)----
@@ -775,9 +918,9 @@
     else {
       let best = null, bd = Infinity;
       for (const t of targets) {
-        if (!t.alive) continue;
-        if (t.kind === 'big' && chicks < 120) continue;
-        const d = Math.hypot(t.x - L.x, t.z - L.z) + (t.kind === 'big' ? -6 : 0);
+        if (!attackable(t)) continue;
+        if (t.kind === 'obj' && chicks < OBJ_TYPES[t.type].hp / 8) continue;
+        const d = Math.hypot(t.x - L.x, t.z - L.z) + (t.kind === 'gate' ? -40 : t.kind === 'obj' ? -6 : 0);
         if (d < bd) { bd = d; best = t; }
       }
       if (!best) return { ix: 0, iz: 0 };
@@ -805,6 +948,7 @@
     const sp = LEADER_SPEED * (1 + Math.min(0.4, Math.log10(1 + chicks) * 0.08));
     L.vx += (ix * sp - L.vx) * Math.min(1, dt * 14);
     L.vz += (iz * sp - L.vz) * Math.min(1, dt * 14);
+    const ox = L.x, oz = L.z;
     L.x += L.vx * dt; L.z += L.vz * dt;
     // 箱にはぶつかる
     for (const t of targets) {
@@ -820,8 +964,12 @@
         if (hx - Math.abs(dx) < hz - Math.abs(dz)) L.x = b.x + Math.sign(dx || 1) * hx; else L.z = b.z + Math.sign(dz || 1) * hz;
       }
     }
-    L.x = Math.max(-WORLD + 0.5, Math.min(WORLD - 0.5, L.x));
-    L.z = Math.max(-WORLD + 0.5, Math.min(WORLD - 0.5, L.z));
+    // 開いたエリアの外へは出られない(柵にそってすべる)
+    if (!walkable(L.x, L.z)) {
+      if (walkable(L.x, oz)) L.z = oz;
+      else if (walkable(ox, L.z)) L.x = ox;
+      else { L.x = ox; L.z = oz; }
+    }
     L.moving = moving;
     if (moving) L.face = Math.atan2(L.vx, L.vz);
   }
@@ -842,7 +990,7 @@
     const reach = flock.r + 1.6;
     attackList = [];
     for (const t of targets) {
-      if (!t.alive) continue;
+      if (!attackable(t)) continue;
       const d = Math.hypot(t.x - L.x, t.z - L.z) - t.r;
       if (d < reach) attackList.push({ t, d });
     }
@@ -876,6 +1024,12 @@
       const dx = gx - c.x, dz = gz - c.z, dist = Math.hypot(dx, dz);
       const follow = Math.min(1, dt * (pecking ? 10 : 6 + Math.min(6, dist)));
       c.x += dx * follow; c.z += dz * follow;
+      // 開いていないエリアには入らない(柵の向こうへはみ出さない)
+      if (!walkable(c.x, c.z)) {
+        const a = AREAS.find(ar => ar.open && inArea(ar, L.x, L.z, -0.6)) || AREAS[0];
+        c.x = Math.max(a.x1 + 0.4, Math.min(a.x2 - 0.4, c.x));
+        c.z = Math.max(a.z1 + 0.4, Math.min(a.z2 - 0.4, c.z));
+      }
       // 建った建物の中には入らず、まわりをとり囲む(村が群れでかくれないように)
       if (village.built && inVillage(c.x, c.z, 0.5)) {
         for (let b = 0; b < village.built; b++) {
@@ -915,44 +1069,69 @@
     combo = comboT > 0 ? combo + 1 : 1;
     comboT = 1.6;
     maxCombo = Math.max(maxCombo, combo);
-    if (t.kind === 'crate') {
-      const tier = CRATE_TIERS[t.tier];
+    if (t.kind === 'gate') { openArea(t); showCombo(); return; }
+    if (t.kind === 'crate' || t.kind === 'barrel') {
+      const def = t.kind === 'crate' ? CRATE_TIERS[t.tier] : BARREL;
       t.respawn = CRATE_RESPAWN;
-      burstDebris(t.x, 0.5, t.z, 7 + t.tier * 3, tier.color);
+      burstDebris(t.x, 0.5, t.z, t.kind === 'barrel' ? 12 : 7 + t.tier * 3, def.color);
       burstPuff(t.x, 0.5, t.z, 4, 0.8);
-      spill('feed', tier.feed, t.x, t.z);
-      spill('parts', tier.parts, t.x, t.z);
+      spill('feed', def.feed, t.x, t.z);
+      spill('parts', def.parts, t.x, t.z);
       blip(320 + Math.min(combo, 30) * 25, 0.08, 'square', 0.05, 0.6);
       if (combo >= 10 && combo % 5 === 0) shake = Math.max(shake, 0.15);
-      popText('+' + fmt(tier.feed) + '🌾', t.x, 1.2, t.z);
+      popText('+' + fmt(def.feed) + '🌾', t.x, 1.2, t.z);
     } else {
-      t.respawn = BIG.respawn;
+      const def = OBJ_TYPES[t.type];
+      t.respawn = def.respawn;
       t.g.visible = false;
       if (marks.big === null) marks.big = elapsed;
-      burstDebris(t.x, 1, t.z, 60, '#d64545', 10);
-      burstPuff(t.x, 1, t.z, 24, 2);
-      spill('feed', BIG.feed, t.x, t.z, 2.4);
-      spill('parts', BIG.parts, t.x, t.z, 2.4);
-      shake = 0.5;
-      boom(0.25);
-      toast('💥 ドカーン!');
-      popText('+' + fmt(BIG.feed) + '🌾', t.x, 2.5, t.z, true);
+      const huge = t.r > 3;
+      burstDebris(t.x, 1, t.z, huge ? 120 : 60, def.color, huge ? 16 : 10);
+      burstPuff(t.x, 1, t.z, huge ? 40 : 24, huge ? 3.5 : 2);
+      spill('feed', def.feed, t.x, t.z, huge ? 3.5 : 2.4);
+      spill('parts', def.parts, t.x, t.z, huge ? 3.5 : 2.4);
+      shake = huge ? 0.9 : 0.5;
+      boom(huge ? 0.35 : 0.25);
+      if (huge) setTimeout(() => boom(0.25), 140);
+      toast(huge ? '💥💥 ' + def.name + 'が大破壊!' : '💥 ' + def.name + 'をドカーン!');
+      popText('+' + fmt(def.feed) + '🌾', t.x, def.h, t.z, true);
     }
     showCombo();
   }
+  // 門がこわれると、仕切りの柵ごと吹き飛んで、次のエリアが開く
+  function openArea(t) {
+    const a = AREAS[t.areaToOpen];
+    a.open = true;
+    t.g.visible = false;
+    a.wallMesh.visible = false;
+    const [[ax, az], [bx, bz]] = a.wall;
+    const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 4);
+    for (let i = 0; i <= n; i++) burstDebris(ax + (bx - ax) * i / n, 0.6, az + (bz - az) * i / n, 5, '#a8743f', 7);
+    burstDebris(t.x, 1.5, t.z, 40, '#b9834a', 12);
+    burstPuff(t.x, 1, t.z, 24, 2.5);
+    shake = 0.8;
+    boom(0.35);
+    setTimeout(() => boom(0.3), 160);
+    marks['gate' + t.areaToOpen] = elapsed;
+    toast('🚪 ' + a.icon + ' ' + a.name + 'が開いた!');
+    [392, 523, 659, 784, 1047].forEach((f, i) => setTimeout(() => { blipBudget++; blip(f, 0.14, 'square', 0.06, 1.02); }, i * 90));
+  }
+  const attackable = (t) => t.alive && (t.kind === 'gate' ? chicks >= AREAS[t.areaToOpen].need : AREAS[t.area].open);
 
   function updateTargets(dt, time) {
-    let k = 0;
+    let k = 0, kb = 0;
     for (const t of targets) {
       if (!t.alive) {
         t.respawn -= dt;
         if (t.respawn <= 0) {
-          // 別の場所にまた出る(リーダーの近くには出さない)
-          const s = freeSpot(10);
+          // 同じエリアの別の場所にまた出る(リーダーの近くには出さない)
+          const big = t.kind === 'obj';
+          const s = freeSpot(t.area, big ? 14 : 10, big ? t.r + 1.5 : 1.2);
           t.x = s.x; t.z = s.z;
           t.alive = true; t.pop = 0.35;
-          if (t.kind === 'crate') { t.tier = tierAt(t.x, t.z); const tr = CRATE_TIERS[t.tier]; t.maxHp = t.hp = tr.hp * (1 + elapsed / 90); t.size = tr.size; t.r = tr.size * 0.62; }
-          else { t.maxHp = t.hp = BIG.hp * (1 + elapsed / 60); t.g.visible = true; t.g.position.set(t.x, 0, t.z); }
+          if (t.kind === 'crate') { t.tier = crateTier(t.area, t.x, t.z); const tr = CRATE_TIERS[t.tier]; t.maxHp = t.hp = tr.hp * (1 + elapsed / 90); t.size = tr.size; t.r = tr.size * 0.62; }
+          else if (t.kind === 'barrel') t.maxHp = t.hp = BARREL.hp * (1 + elapsed / 90);
+          else { t.maxHp = t.hp = OBJ_TYPES[t.type].hp * (1 + elapsed / 90); t.g.visible = true; t.g.position.set(t.x, 0, t.z); }
         }
         if (!t.alive) continue;
       }
@@ -965,6 +1144,22 @@
         setInst(crateMesh, k, t.x, s / 2 * squash, t.z, s * (2 - squash), s * squash, s * (2 - squash), t.spin);
         crateMesh.setColorAt(k, _col.set(CRATE_TIERS[t.tier].color).lerp(_white, t.hit > 0 ? 0.5 : 0.15));
         k++;
+      } else if (t.kind === 'barrel') {
+        const s = grow;
+        setInst(barrelMesh, kb, t.x, 0.55 * s * squash, t.z, s * (2 - squash), s * squash, s * (2 - squash), t.spin);
+        barrelMesh.setColorAt(kb, _col.set('#ffffff').lerp(_white, t.hit > 0 ? 0.5 : 0));
+        kb++;
+      } else if (t.kind === 'gate') {
+        // 看板: まだ足りないときは「あと何羽」、届いたら「こわせ!」
+        const ready = chicks >= AREAS[t.areaToOpen].need;
+        const key = ready ? 'ready' : Math.ceil(AREAS[t.areaToOpen].need - chicks);
+        if (key !== t.ready) {
+          t.ready = key;
+          const a = AREAS[t.areaToOpen];
+          if (ready) t.sign.draw(['💥 こわせ!', a.icon + ' ' + a.name], '#e8590c');
+          else t.sign.draw(['🔒 🐤' + fmt(a.need) + '羽', 'あと' + fmt(key) + '羽'], '#6b4a2e');
+        }
+        t.g.position.x = t.x + (t.hit > 0 ? Math.sin(time * 70) * 0.06 : 0);
       } else {
         t.g.scale.set((2 - squash) * grow, squash * grow, (2 - squash) * grow);
       }
@@ -972,6 +1167,9 @@
     crateMesh.count = k;
     crateMesh.instanceMatrix.needsUpdate = true;
     if (crateMesh.instanceColor) crateMesh.instanceColor.needsUpdate = true;
+    barrelMesh.count = kb;
+    barrelMesh.instanceMatrix.needsUpdate = true;
+    if (barrelMesh.instanceColor) barrelMesh.instanceColor.needsUpdate = true;
   }
   const _col = new THREE.Color(), _white = new THREE.Color('#ffffff');
 
@@ -1280,11 +1478,12 @@
     hpBars.forEach((el, i) => {
       const a = attackList[i];
       if (!a || !a.t.alive || a.t.hp >= a.t.maxHp) { el.style.display = 'none'; return; }
-      const s = project(a.t.x, a.t.kind === 'big' ? 2.8 : a.t.size + 0.35, a.t.z);
+      const wide = a.t.kind === 'obj' || a.t.kind === 'gate';
+      const s = project(a.t.x, a.t.kind === 'obj' ? OBJ_TYPES[a.t.type].h : a.t.kind === 'gate' ? 5.4 : a.t.size + 0.35, a.t.z);
       el.style.display = 'block';
       el.style.left = s.sx + 'px'; el.style.top = s.sy + 'px';
-      el.style.width = (a.t.kind === 'big' ? 90 : 44) + 'px';
-      el.style.marginLeft = (a.t.kind === 'big' ? -45 : -22) + 'px';
+      el.style.width = (wide ? 90 : 44) + 'px';
+      el.style.marginLeft = (wide ? -45 : -22) + 'px';
       el.firstChild.style.width = Math.max(0, a.t.hp / a.t.maxHp * 100) + '%';
     });
   }
@@ -1300,16 +1499,22 @@
     else if (nb && parts >= nb.cost - village.paid) { text = '⚙️がたまった! ' + nb.icon + nb.name + 'を建てよう'; goal = nb.zone; }
     else if (village.built === 0 && elapsed < 25) text = '木箱に近づくと 自動でつつくよ';
     else if (village.built === 1 && elapsed - (marks.hatchery || 0) < 5) text = '建物が エサでひよこを自動で生むよ';
-    else if (chicks >= 120) {
-      const big = targets.filter(t => t.kind === 'big' && t.alive).sort((a, b) => Math.hypot(a.x - L.x, a.z - L.z) - Math.hypot(b.x - L.x, b.z - L.z))[0];
-      if (big && Math.hypot(big.x - L.x, big.z - L.z) > flock.r + 3) { text = '💥 でっかいコンテナを こわそう!'; goal = big; }
+    else {
+      // 門をこわせる羽数に届いたら、門へ案内する
+      const gate = AREAS.find(a => !a.open && a.gateTarget && chicks >= a.need);
+      if (gate && Math.hypot(gate.gate.x - L.x, gate.gate.z - L.z) > flock.r + 3) {
+        text = '🚪 門がこわせる! ' + gate.icon + gate.name + 'へ行こう'; goal = gate.gateTarget;
+      } else if (chicks >= 120) {
+        const big = targets.filter(t => t.kind === 'obj' && attackable(t) && chicks >= OBJ_TYPES[t.type].hp / 8).sort((a, b) => Math.hypot(a.x - L.x, a.z - L.z) - Math.hypot(b.x - L.x, b.z - L.z))[0];
+        if (big && Math.hypot(big.x - L.x, big.z - L.z) > flock.r + 3) { text = '💥 ' + OBJ_TYPES[big.type].name + 'を こわそう!'; goal = big; }
+      }
     }
     $('hint').textContent = text;
     $('hint').style.opacity = text ? 1 : 0;
     const arrow = $('arrow');
     if (!goal) { marker.visible = false; arrow.style.display = 'none'; return; }
     marker.visible = true;
-    marker.position.set(goal.x, (goal.kind === 'big' ? 3.4 : 1.6) + Math.abs(Math.sin(time * 4)) * 0.5, goal.z);
+    marker.position.set(goal.x, (goal.kind === 'obj' ? OBJ_TYPES[goal.type].h + 0.6 : goal.kind === 'gate' ? 6 : 1.6) + Math.abs(Math.sin(time * 4)) * 0.5, goal.z);
     marker.rotation.y = time * 2;
     const s = project(goal.x, 1, goal.z), W = window.innerWidth, H = window.innerHeight, top = 90;
     if (!s.behind && s.sx > 30 && s.sx < W - 30 && s.sy > top && s.sy < H - 90) { arrow.style.display = 'none'; return; }
@@ -1415,7 +1620,7 @@
   window.__renderer = renderer;
   window.__game = {
     get state() {
-      return { chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts), elapsed, timeLeft, started, ended, broken, maxCombo, hatchery: village.built, rate: village.rate, marks: { ...marks }, errors: errorsSeen.slice(), display: disp.length, drops: feedPool.items.length + partsPool.items.length, x: L.x, z: L.z, attacking: attackList.map(a => [a.t.kind, Math.round(a.t.hp), a.t.alive]), near: targets.filter(t => t.alive).map(t => [t.kind, +Math.hypot(t.x - L.x, t.z - L.z).toFixed(1), Math.round(t.hp)]).sort((a, b) => a[1] - b[1]).slice(0, 3), flockR: flock.r };
+      return { chicks: Math.floor(chicks), feed: Math.floor(feed), parts: Math.floor(parts), elapsed, timeLeft, started, ended, broken, maxCombo, hatchery: village.built, rate: village.rate, marks: { ...marks }, errors: errorsSeen.slice(), display: disp.length, drops: feedPool.items.length + partsPool.items.length, x: L.x, z: L.z, attacking: attackList.map(a => [a.t.kind, Math.round(a.t.hp), a.t.alive]), near: targets.filter(t => t.alive).map(t => [t.kind, +Math.hypot(t.x - L.x, t.z - L.z).toFixed(1), Math.round(t.hp)]).sort((a, b) => a[1] - b[1]).slice(0, 3), flockR: flock.r, open: AREAS.map(a => a.open) };
     },
     bot(on) { bot = on; },
     teleport(x, z) { L.x = x; L.z = z; flock.cx = x; flock.cz = z; },
