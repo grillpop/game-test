@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ZOMBIE DISMANTLER">
+<meta name="theme-color" content="#2a2f3a">
+<title>ZOMBIE DISMANTLER</title>
+<style>
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: #2a2f3a; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  .stick { position: fixed; border-radius: 50%; pointer-events: none; display: none; transform: translate(-50%, -50%); }
+  #stick-base { width: 112px; height: 112px; background: rgba(255, 255, 255, .2); border: 3px solid rgba(255, 255, 255, .5); }
+  #stick-knob { width: 52px; height: 52px; background: rgba(255, 255, 255, .9); }
+  #hud { position: fixed; top: calc(env(safe-area-inset-top) + 8px); left: 10px; right: 10px; display: flex; gap: 6px; pointer-events: none; }
+  .pill {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border-radius: 999px;
+    background: rgba(10, 14, 20, .55); border: 1px solid rgba(255, 255, 255, .18); color: #fff; font-size: 15px; font-weight: 800;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  #bio-pill { color: #8cff6a; }
+  #scrap-pill { color: #d6dde6; }
+  #kill-pill { color: #ffd166; }
+  .pill.bump { animation: bump .2s ease-out; }
+  @keyframes bump { 50% { transform: scale(1.12); } }
+  #sub { position: fixed; top: calc(env(safe-area-inset-top) + 44px); left: 10px; right: 10px; display: flex; justify-content: space-between; pointer-events: none; color: rgba(255, 255, 255, .85); font-size: 12px; font-weight: 800; }
+  #combo { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 70px); text-align: center; pointer-events: none; color: #fff; font-size: 28px; font-weight: 900; text-shadow: 0 2px 0 #b5179e, 0 4px 10px rgba(0, 0, 0, .5); opacity: 0; transition: opacity .3s; }
+  #combo.show { opacity: 1; }
+  #combo.bump { animation: bump .15s ease-out; }
+  #toast { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 112px); text-align: center; pointer-events: none; color: #fff; font-size: 24px; font-weight: 900; text-shadow: 0 2px 0 #1b7a3a, 0 4px 10px rgba(0, 0, 0, .5); opacity: 0; transform: scale(.7); transition: opacity .2s, transform .2s; }
+  #toast.show { opacity: 1; transform: scale(1); }
+  #toast.warn { text-shadow: 0 2px 0 #9b1c1c, 0 4px 10px rgba(0, 0, 0, .5); }
+  #hint { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 96px); text-align: center; pointer-events: none; color: #fff; font-size: 16px; font-weight: 800; text-shadow: 0 2px 4px rgba(0, 0, 0, .7); transition: opacity .3s; }
+  .pop { position: fixed; pointer-events: none; transform: translate(-50%, -50%); white-space: nowrap; font-weight: 900; font-size: 18px; color: #8cff6a; text-shadow: 0 2px 0 rgba(0, 0, 0, .6); display: none; }
+  .hp { position: fixed; height: 7px; border-radius: 4px; background: rgba(0, 0, 0, .5); overflow: hidden; pointer-events: none; display: none; }
+  .hp div { height: 100%; background: #ff4d4d; }
+  #arrow { position: fixed; display: none; width: 44px; height: 44px; margin: -22px 0 0 -22px; font-size: 32px; line-height: 44px; text-align: center; color: #ffd23f; text-shadow: 0 0 3px #000; pointer-events: none; }
+  #special {
+    position: fixed; right: calc(env(safe-area-inset-right) + 16px); bottom: calc(env(safe-area-inset-bottom) + 20px); width: 76px; height: 76px; border-radius: 50%;
+    border: 3px solid #fff; background: radial-gradient(circle, #ff6b3d, #c2185b); color: #fff; font-size: 30px; font-weight: 900; box-shadow: 0 4px 12px rgba(0, 0, 0, .5);
+    display: flex; align-items: center; justify-content: center; flex-direction: column; line-height: 1;
+  }
+  #special small { font-size: 11px; margin-top: 2px; }
+  #special.cool { filter: grayscale(1) brightness(.6); }
+  #version { position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom) + 6px); color: rgba(255, 255, 255, .4); font-size: 11px; pointer-events: none; }
+  #error { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 110px); padding: 8px 10px; border-radius: 10px; background: rgba(180, 30, 30, .92); color: #fff; font-size: 12px; white-space: pre-wrap; display: none; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div id="stick-base" class="stick"></div>
+  <div id="stick-knob" class="stick"></div>
+  <div id="hud">
+    <div id="bio-pill" class="pill">🟩 <span id="bio">0</span></div>
+    <div id="scrap-pill" class="pill">⚙️ <span id="scrap">0</span></div>
+    <div id="kill-pill" class="pill">💀 <span id="kills">0</span></div>
+  </div>
+  <div id="sub"><span id="weapon">🔫 Lv1</span><span id="time">0:00</span></div>
+  <div id="combo"></div>
+  <div id="toast"></div>
+  <div id="hint">画面をなぞって移動。撃つのは自動!</div>
+  <div id="arrow">➤</div>
+  <button id="special" type="button">💥<small>必殺</small></button>
+  <div id="version"></div>
+  <div id="error"></div>
+
+<script type="module">
+  import * as THREE from '../vendor/three.module.min.js';
+
+  // ================================================================
+  //  設定(ここの数字でテンポ・爽快感・重さを調整できます)
+  // ================================================================
+  const FX = { shake: 1, particles: 1, volume: 1 };   // 演出の強さ(画面ゆれ・粒の量・音量)。重いときは粒が自動で減る
+  const WORLD = { x1: -34, x2: 34, z1: -24, z2: 24 }; // 動ける範囲
+  const PLAYER_SPEED = 9;
+  const WEAPONS = [ // 武器のレベル(弾の量・範囲・見た目が変わる)
+    { name: 'マシンガン', rate: 9, shots: [[0, 0]], dmg: 1, pierce: 0, boom: 0, range: 10, color: '#ffe066' },
+    { name: '2連装', rate: 11, shots: [[0, -0.28], [0, 0.28]], dmg: 1, pierce: 0, boom: 0, range: 10.5, color: '#ffe066' },
+    { name: '3方向', rate: 12, shots: [[-0.26, 0], [0, 0], [0.26, 0]], dmg: 1.2, pierce: 0, boom: 0, range: 11, color: '#ffd23a' },
+    { name: '貫通弾', rate: 13, shots: [[-0.26, 0], [0, -0.25], [0, 0.25], [0.26, 0]], dmg: 1.5, pierce: 4, boom: 0, range: 12, color: '#7ae8ff' },
+    { name: '爆発弾', rate: 14, shots: [[-0.3, 0], [-0.12, 0], [0.12, 0], [0.3, 0]], dmg: 2, pierce: 2, boom: 1.8, range: 13, color: '#ff8a3d' },
+  ];
+  const ZOMBIE = { hp: 3, speed: [2.3, 3.1], bio: 3, scrap: 2 };       // ふつうのゾンビ
+  const BIG = { hp: 160, speed: 1.4, bio: 80, scrap: 40, scale: 2.6, first: 55, every: 30 }; // デカゾンビ
+  const SPAWN = { interval: (t) => Math.max(0.7, 2.4 - t / 60), size: (t) => Math.min(45, 8 + t / 5), max: 480 };
+  const SPECIAL = { cool: 10, radius: 9, dmg: 40 }; // 必殺技(まわりのゾンビをまとめて吹き飛ばす)
+  // 工場の場所(画面の左上)
+  const HOPPER = { x: -11, z: -9 };                 // 回収口: 資源はここへ吸い込まれる
+  const BIO_RACKS = { x: -29, z: -12 };             // バイオキューブのラック
+  const SCRAP_BIN = { x: -14, z: -19.5 };           // スクラップのコンテナ
+  const FACTORY = { x1: -33, x2: -8, z1: -23, z2: -5 };
+
+  const STICK_RADIUS = 56;
+  const $ = (id) => document.getElementById(id);
+  const GAME_VERSION = '2026.11.15-z1';
+  $('version').textContent = '🧟 v' + GAME_VERSION;
+
+  const errorsSeen = [];
+  function reportError(where, err) {
+    const text = where + ': ' + (err && err.message ? err.message : String(err));
+    if (errorsSeen.includes(text)) return;
+    errorsSeen.push(text);
+    console.error(where, err);
+    const stack = err && err.stack ? '\n' + String(err.stack).split('\n').slice(0, 3).join('\n') : '';
+    $('error').textContent = 'エラー(v' + GAME_VERSION + ') ' + text + stack;
+    $('error').style.display = 'block';
+  }
+  window.addEventListener('error', (e) => reportError('window', e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => reportError('promise', e.reason));
+  function safe(name, fn) { try { fn(); } catch (err) { reportError(name, err); } }
+
+  // ================================================================
+  //  3Dの土台(影は使わず、軽さを優先)
+  // ================================================================
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  document.body.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color('#2a2f3a');
+  scene.fog = new THREE.Fog('#2a2f3a', 55, 110);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
+  let portrait = false;
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    portrait = w < h;
+    camera.fov = portrait ? 58 : 42;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  scene.add(new THREE.HemisphereLight('#e8f0ff', '#3a3a30', 1.7));
+  const sun = new THREE.DirectionalLight('#fff4e0', 1.6);
+  sun.position.set(-10, 30, 14);
+  scene.add(sun);
+
+  const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), tmpA = new THREE.Vector3();
+  function setInst(mesh, i, x, y, z, sx, sy, sz, ry = 0, rx = 0, rz = 0) {
+    _q.setFromEuler(_e.set(rx, ry, rz));
+    mesh.setMatrixAt(i, _m4.compose(_p.set(x, y, z), _q, _s.set(sx, sy, sz)));
+  }
+  const M = (x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) =>
+    new THREE.Matrix4().compose(V(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), V(sx, sy, sz));
+  // いくつかの形を1つにまとめる(色は頂点に焼きこむ)。描く回数を減らして軽くする
+  function mergeGeometries(list) {
+    let count = 0;
+    const gs = list.map(({ geo, m }) => { const g = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(m); count += g.attributes.position.count; return g; });
+    const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3), col = new Float32Array(count * 3);
+    let o = 0;
+    gs.forEach((g, gi) => {
+      const n = g.attributes.position.count;
+      pos.set(g.attributes.position.array, o * 3);
+      nor.set(g.attributes.normal.array, o * 3);
+      const c = new THREE.Color(list[gi].color || '#ffffff');
+      for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], (o + i) * 3);
+      o += n;
+    });
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return out;
+  }
+  function canvasTexture(size, draw, repeat = 1) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    draw(c.getContext('2d'), size);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    if (repeat !== 1) { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(repeat, repeat); }
+    return tex;
+  }
+  const mat = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
+  function mesh(geo, material, x, y, z, parent = scene) { const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); parent.add(m); return m; }
+
+  // ================================================================
+  //  地面・工場の床
+  // ================================================================
+  {
+    const tex = canvasTexture(256, (g, n) => {
+      g.fillStyle = '#4a4f45'; g.fillRect(0, 0, n, n);
+      g.fillStyle = '#454a40'; g.fillRect(0, 0, n / 2, n / 2); g.fillRect(n / 2, n / 2, n / 2, n / 2);
+      for (let i = 0; i < 220; i++) { g.fillStyle = i % 2 ? 'rgba(0,0,0,.18)' : 'rgba(255,255,255,.06)'; g.fillRect(Math.random() * n, Math.random() * n, 4, 3); }
+    }, 18);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 110), new THREE.MeshLambertMaterial({ map: tex }));
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+    // 工場の床(コンクリートと黄色い縁)
+    const ftex = canvasTexture(256, (g, n) => {
+      g.fillStyle = '#8a8f96'; g.fillRect(0, 0, n, n);
+      g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 3;
+      for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(i * n / 4, 0); g.lineTo(i * n / 4, n); g.stroke(); g.beginPath(); g.moveTo(0, i * n / 4); g.lineTo(n, i * n / 4); g.stroke(); }
+    }, 4);
+    const fw = FACTORY.x2 - FACTORY.x1, fd = FACTORY.z2 - FACTORY.z1;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd), new THREE.MeshLambertMaterial({ map: ftex }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set((FACTORY.x1 + FACTORY.x2) / 2, 0.02, (FACTORY.z1 + FACTORY.z2) / 2);
+    scene.add(floor);
+    const stripe = canvasTexture(64, (g, n) => { g.fillStyle = '#ffd23a'; g.fillRect(0, 0, n, n); g.fillStyle = '#222'; for (let i = -2; i < 4; i++) { g.beginPath(); g.moveTo(i * 22, n); g.lineTo(i * 22 + 11, n); g.lineTo(i * 22 + 11 + n, 0); g.lineTo(i * 22 + n, 0); g.fill(); } });
+    stripe.wrapS = THREE.RepeatWrapping;
+    for (const [x, z, w, d, rep] of [[(FACTORY.x1 + FACTORY.x2) / 2, FACTORY.z2, fw, 0.5, fw / 2], [FACTORY.x2, (FACTORY.z1 + FACTORY.z2) / 2, 0.5, fd, fd / 2]]) {
+      const t = stripe.clone(); t.needsUpdate = true; t.repeat.set(rep, 1);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: t }));
+      m.rotation.x = -Math.PI / 2;
+      if (w < d) m.rotation.z = Math.PI / 2, m.geometry = new THREE.PlaneGeometry(d, w);
+      m.position.set(x, 0.03, z);
+      scene.add(m);
+    }
+    // まわりのコンクリートの壁(1回で描く)
+    const blocks = [];
+    for (let x = WORLD.x1; x <= WORLD.x2; x += 2.2) blocks.push([x, WORLD.z1 - 1], [x, WORLD.z2 + 1]);
+    for (let z = WORLD.z1; z <= WORLD.z2; z += 2.2) blocks.push([WORLD.x1 - 1, z], [WORLD.x2 + 1, z]);
+    const wall = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 1.2, 1), mat('#6a6f78'), blocks.length);
+    blocks.forEach(([x, z], i) => setInst(wall, i, x, 0.6, z, 1, 1, 1, Math.abs(x) > WORLD.x2 ? Math.PI / 2 : 0));
+    scene.add(wall);
+  }
+
+  // ================================================================
+  //  使い回しの粒(弾・破片・資源・建設の粒)
+  // ================================================================
+  function makePool(geo, material, max) {
+    const m = new THREE.InstancedMesh(geo, material, max);
+    m.count = 0; m.frustumCulled = false;
+    scene.add(m);
+    return { mesh: m, max, items: [] };
+  }
+  const bullets = makePool(new THREE.BoxGeometry(0.14, 0.14, 0.7), new THREE.MeshBasicMaterial({ color: '#ffffff' }), 700);
+  const gibs = makePool(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshLambertMaterial({ color: '#ffffff' }), 700);
+  const bioPool = makePool(new THREE.BoxGeometry(0.32, 0.32, 0.32), new THREE.MeshLambertMaterial({ color: '#5aff3a', emissive: '#1f7a10' }), 1100);
+  const scrapPool = makePool(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 6), new THREE.MeshLambertMaterial({ color: '#b8c2cc', emissive: '#202428' }), 500);
+  const rings = makePool(new THREE.RingGeometry(0.85, 1, 40), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }), 16);
+  rings.mesh.material.vertexColors = false;
+  const _col = new THREE.Color();
+
+  function burstGibs(x, z, n, color, speed = 6) {
+    n = Math.round(n * FX.particles);
+    for (let i = 0; i < n; i++) {
+      if (gibs.items.length >= gibs.max) gibs.items.shift();
+      const a = Math.random() * Math.PI * 2, s = speed * (0.4 + Math.random());
+      gibs.items.push({ x, y: 0.8, z, vx: Math.cos(a) * s, vy: 3 + Math.random() * 6, vz: Math.sin(a) * s, t: 0, life: 0.5 + Math.random() * 0.4, sc: 0.6 + Math.random(), r: Math.random() * 6, color });
+    }
+  }
+  function ring(x, z, r1, life, color) {
+    if (rings.items.length >= rings.max) rings.items.shift();
+    rings.items.push({ x, z, r1, t: 0, life, color });
+  }
+
+  // ================================================================
+  //  効果音(その場で作る。iPhone は触るたびに再開して、最初に無音を鳴らす)
+  // ================================================================
+  let audio = null, audioPrimed = false, master = null;
+  function unlockAudio() {
+    try {
+      if (!audio) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; audio = new AC(); master = audio.createGain(); master.gain.value = 0.9 * FX.volume; master.connect(audio.destination); }
+      if (audio.state !== 'running') audio.resume().catch(() => {});
+      if (!audioPrimed || audio.state !== 'running') {
+        const src = audio.createBufferSource(); src.buffer = audio.createBuffer(1, 1, 22050); src.connect(audio.destination); src.start(0); audioPrimed = true;
+      }
+    } catch (e) { /* 何もしない */ }
+  }
+  ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'click', 'keydown'].forEach(ev => window.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && audio && audio.state !== 'running') audio.resume().catch(() => {}); });
+  const ok = () => audio && audio.state === 'running';
+  function tone(freq, dur, type, vol, slide = 1) {
+    if (!ok()) return;
+    const t = audio.currentTime, o = audio.createOscillator(), g = audio.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.02);
+  }
+  let noiseBuf = null;
+  function noise(dur, vol, freq) {
+    if (!ok()) return;
+    if (!noiseBuf) { noiseBuf = audio.createBuffer(1, audio.sampleRate, audio.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    const t = audio.currentTime, src = audio.createBufferSource(), g = audio.createGain(), f = audio.createBiquadFilter();
+    src.buffer = noiseBuf; f.type = 'lowpass'; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f).connect(g).connect(master); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+  }
+  // 音の回数を1秒あたりで制限して、たくさん重なってもうるさくならないようにする
+  const sfx = { shot: 0, pop: 0, coin: 0 };
+  function sfxTick(dt) { sfx.shot = Math.min(sfx.shot + dt * 14, 3); sfx.pop = Math.min(sfx.pop + dt * 10, 3); sfx.coin = Math.min(sfx.coin + dt * 16, 4); }
+  const SND = {
+    shot() { if (sfx.shot < 1) return; sfx.shot--; noise(0.05, 0.05, 2400); },
+    pop(n) { if (sfx.pop < 1) return; sfx.pop--; if (n > 4) { noise(0.25, 0.14, 500); tone(90, 0.25, 'sine', 0.18, 0.5); } else tone(520 + Math.random() * 120, 0.07, 'square', 0.04, 0.5); },
+    coin(k) { if (sfx.coin < 1) return; sfx.coin--; tone(880 + k * 18, 0.04, 'sine', 0.03, 1.3); },
+    boom(v = 0.25) { noise(0.5, v, 380); tone(70, 0.5, 'sine', v, 0.5); },
+    build() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.14, 'triangle', 0.07, 1.02), i * 80)); },
+    pay(k) { tone(400 + k * 500, 0.04, 'sine', 0.035); },
+  };
+
+  // ================================================================
+  //  プレイヤー
+  // ================================================================
+  const playerGeo = mergeGeometries([
+    { geo: new THREE.BoxGeometry(0.42, 0.7, 0.36), m: M(0, 0.35, 0), color: '#3a3f48' },            // 足
+    { geo: new THREE.BoxGeometry(0.8, 0.75, 0.55), m: M(0, 1.05, 0), color: '#ff8a1c' },            // からだ(作業服)
+    { geo: new THREE.BoxGeometry(0.5, 0.6, 0.3), m: M(0, 1.1, -0.42), color: '#5a6270' },           // 背中のタンク
+    { geo: new THREE.SphereGeometry(0.34, 12, 10), m: M(0, 1.68, 0), color: '#ffd9b0' },            // 顔
+    { geo: new THREE.SphereGeometry(0.38, 12, 10, 0, Math.PI * 2, 0, Math.PI / 2), m: M(0, 1.72, 0), color: '#ffd23a' }, // ヘルメット
+    { geo: new THREE.BoxGeometry(0.42, 0.12, 0.08), m: M(0, 1.66, 0.32), color: '#22303a' },        // ゴーグル
+    { geo: new THREE.BoxGeometry(0.16, 0.16, 0.9), m: M(0.32, 1.0, 0.5), color: '#2a2e36' },        // 銃
+    { geo: new THREE.BoxGeometry(0.22, 0.26, 0.4), m: M(0.32, 0.95, 0.18), color: '#4a505a' },
+  ]);
+  const player = { x: -4, z: 2, vx: 0, vz: 0, face: 0, fireT: 0, mesh: new THREE.Mesh(playerGeo, new THREE.MeshLambertMaterial({ vertexColors: true })) };
+  scene.add(player.mesh);
+  const flash = mesh(new THREE.SphereGeometry(0.28, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff3a0' }), 0, 0, 0);
+  flash.visible = false;
+  const blob = (r) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 20), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.3, depthWrite: false })); m.rotation.x = -Math.PI / 2; scene.add(m); return m; };
+  const playerShadow = blob(0.6);
+  let weaponLv = 1;
+
+  // ================================================================
+  //  ゾンビ(たくさんいるので1回で描く。近くのゾンビを探すために、地面をマス目に分けて覚える)
+  // ================================================================
+  const zombieGeo = mergeGeometries([
+    { geo: new THREE.BoxGeometry(0.2, 0.6, 0.22), m: M(0.13, 0.3, 0), color: '#3d4a6a' },
+    { geo: new THREE.BoxGeometry(0.2, 0.6, 0.22), m: M(-0.13, 0.3, 0), color: '#3d4a6a' },
+    { geo: new THREE.BoxGeometry(0.6, 0.62, 0.36), m: M(0, 0.9, 0), color: '#9a7a5a' },             // ぼろぼろのシャツ
+    { geo: new THREE.BoxGeometry(0.15, 0.15, 0.6), m: M(0.36, 1.08, 0.28), color: '#7fc06a' },      // 前に出した腕
+    { geo: new THREE.BoxGeometry(0.15, 0.15, 0.6), m: M(-0.36, 1.08, 0.28), color: '#7fc06a' },
+    { geo: new THREE.BoxGeometry(0.5, 0.5, 0.48), m: M(0, 1.47, 0.02), color: '#8fd07a' },          // 頭
+    { geo: new THREE.BoxGeometry(0.1, 0.1, 0.05), m: M(0.12, 1.52, 0.27), color: '#ff3a3a' },       // 目
+    { geo: new THREE.BoxGeometry(0.1, 0.1, 0.05), m: M(-0.12, 1.52, 0.27), color: '#ff3a3a' },
+    { geo: new THREE.BoxGeometry(0.26, 0.07, 0.05), m: M(0, 1.33, 0.27), color: '#2a3a20' },        // 口
+  ]);
+  const ZMAX = 520;
+  const zombieMesh = new THREE.InstancedMesh(zombieGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), ZMAX);
+  zombieMesh.count = 0; zombieMesh.frustumCulled = false;
+  scene.add(zombieMesh);
+  const zs = [];
+  const TINTS = ['#ffffff', '#e8ffe0', '#ffe8e0', '#e0ecff', '#fff6d8'].map(c => new THREE.Color(c));
+  const CELL = 2.5, GW = 40, GH = 30, GX0 = -50, GZ0 = -37;
+  const grid = Array.from({ length: GW * GH }, () => []);
+  const cellOf = (x, z) => { const cx = Math.floor((x - GX0) / CELL), cz = Math.floor((z - GZ0) / CELL); return cx < 0 || cz < 0 || cx >= GW || cz >= GH ? -1 : cz * GW + cx; };
+  function rebuildGrid() {
+    for (const c of grid) c.length = 0;
+    for (const z of zs) { const c = cellOf(z.x, z.z); if (c >= 0) grid[c].push(z); }
+  }
+  function forNear(x, z, r, fn) {
+    const c0x = Math.floor((x - r - GX0) / CELL), c1x = Math.floor((x + r - GX0) / CELL), c0z = Math.floor((z - r - GZ0) / CELL), c1z = Math.floor((z + r - GZ0) / CELL);
+    for (let cz = Math.max(0, c0z); cz <= Math.min(GH - 1, c1z); cz++) for (let cx = Math.max(0, c0x); cx <= Math.min(GW - 1, c1x); cx++) for (const zb of grid[cz * GW + cx]) fn(zb);
+  }
+  let elapsed = 0, started = false, kills = 0, spawnT = 1.0, bigT = BIG.first, zid = 0;
+  const director = () => 1 + 0.6 * (padLevel('D'));
+  function spawnZombie(x, z, big) {
+    if (zs.length >= ZMAX) return null;
+    const t = elapsed;
+    const hp = big ? BIG.hp * (1 + t / 90) : ZOMBIE.hp * (1 + t / 150);
+    const zb = { id: zid++, x, z, hp, maxHp: hp, big, r: big ? 1.1 : 0.42, speed: big ? BIG.speed : ZOMBIE.speed[0] + Math.random() * (ZOMBIE.speed[1] - ZOMBIE.speed[0]), hit: 0, phase: Math.random() * 6, face: 0, tint: TINTS[Math.floor(Math.random() * TINTS.length)], pop: 0.25 };
+    zs.push(zb);
+    return zb;
+  }
+  // 画面の外(右・下)から群れでやってくる
+  // プレイヤーから少し離れた所(画面のすぐ外)に、群れで出てくる。工場の側からは来ない
+  function spawnGroup(n, near) {
+    let cx = 0, cz = 0;
+    for (let k = 0; k < 20; k++) {
+      const a = (Math.random() * 1.6 - 0.45) * Math.PI / 2 + (Math.random() < 0.5 ? 0 : Math.PI / 2); // 右か下の方向
+      const d = near || 20 + Math.random() * 6;
+      cx = player.x + Math.cos(a) * d; cz = player.z + Math.sin(a) * d;
+      cx = Math.max(WORLD.x1 + 1, Math.min(WORLD.x2 + 2, cx)); cz = Math.max(WORLD.z1 + 1, Math.min(WORLD.z2 + 2, cz));
+      if (!(cx < FACTORY.x2 + 2 && cz < FACTORY.z2 + 2)) break;
+    }
+    for (let i = 0; i < n; i++) spawnZombie(cx + (Math.random() - 0.5) * 6, cz + (Math.random() - 0.5) * 6, false);
+  }
+  let bigBoss = null;
+  function updateSpawns(dt) {
+    if (!started) return;
+    spawnT -= dt;
+    if (spawnT <= 0) {
+      spawnT = SPAWN.interval(elapsed) / director();
+      const n = Math.round(SPAWN.size(elapsed) * director());
+      if (zs.length < SPAWN.max) spawnGroup(n);
+    }
+    bigT -= dt;
+    if (bigT <= 0) {
+      bigT = BIG.every / Math.sqrt(director());
+      const b = spawnZombie(WORLD.x2 + 2, -2 + Math.random() * 20, true);
+      if (b) { bigBoss = b; toast('⚠️ デカゾンビ出現!', true); SND.boom(0.18); shake(0.4); }
+    }
+  }
+  const killTimes = [];
+  let combo = 0, comboT = 0;
+  function damageZombie(zb, dmg) {
+    if (zb.hp <= 0) return;
+    zb.hp -= dmg;
+    zb.hit = 0.08;
+    if (zb.hp <= 0) killZombie(zb);
+  }
+  let killsThisFrame = 0, killX = 0, killZ = 0;
+  function killZombie(zb) {
+    kills++;
+    killsThisFrame++; killX += zb.x; killZ += zb.z;
+    combo = comboT > 0 ? combo + 1 : 1; comboT = 0.6;
+    burstGibs(zb.x, zb.z, zb.big ? 40 : 6, zb.big ? '#9cff6a' : '#6fd04a', zb.big ? 12 : 6);
+    // 資源が勢いよく飛び出す(1粒が何個ぶんかを持たせて、粒の数を抑える)
+    const t = elapsed, mul = 1 + t / 200;
+    const bio = (zb.big ? BIG.bio : ZOMBIE.bio) * mul, scr = (zb.big ? BIG.scrap : ZOMBIE.scrap) * mul;
+    spill(bioPool, 'bio', bio, zb.x, zb.z, zb.big ? 36 : 2, zb.big ? 2.5 : 1);
+    spill(scrapPool, 'scrap', scr, zb.x, zb.z, zb.big ? 14 : 1, zb.big ? 2.5 : 1);
+    if (zb.big) {
+      ring(zb.x, zb.z, 12, 0.6, '#9cff6a');
+      shake(0.6); SND.boom(0.3);
+      toast('💥 デカゾンビ撃破! 資源ドバッ!');
+      if (bigBoss === zb) bigBoss = null;
+    }
+  }
+  function spill(pool, kind, value, x, z, n, spread) {
+    n = Math.max(1, Math.round(n * Math.min(1, FX.particles + 0.3)));
+    const room = pool.max - pool.items.length;
+    if (room <= 0) { arriveDirect(kind, value); return; }
+    n = Math.min(n, room);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = (2 + Math.random() * 5) * spread;
+      pool.items.push({ kind, value: value / n, x, y: 0.8, z, vx: Math.cos(a) * s, vy: 5 + Math.random() * 6, vz: Math.sin(a) * s, t: 0, delay: 0.3 + Math.random() * 0.25, state: 'burst', r: Math.random() * 6 });
+    }
+  }
+
+  // ================================================================
+  //  弾
+  // ================================================================
+  function fire(x, z, dirX, dirZ, w, dmgMul = 1, color) {
+    const len = Math.hypot(dirX, dirZ) || 1;
+    dirX /= len; dirZ /= len;
+    const px = -dirZ, pz = dirX; // 横向き
+    for (const [ang, side] of w.shots) {
+      if (bullets.items.length >= bullets.max) break;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const dx = dirX * ca - dirZ * sa, dz = dirX * sa + dirZ * ca;
+      bullets.items.push({ x: x + px * side, z: z + pz * side, dx, dz, speed: 34, life: w.range / 34 + 0.05, dmg: w.dmg * dmgMul, pierce: w.pierce, boom: w.boom, hits: null, color: color || w.color });
+    }
+  }
+  function updateBullets(dt) {
+    let i = 0;
+    const keep = [];
+    for (const b of bullets.items) {
+      b.life -= dt;
+      if (b.life <= 0) continue;
+      const step = b.speed * dt;
+      b.x += b.dx * step; b.z += b.dz * step;
+      let dead = false;
+      forNear(b.x, b.z, 1.4, (zb) => {
+        if (dead || zb.hp <= 0) return;
+        if (b.hits && b.hits.includes(zb.id)) return;
+        const d = Math.hypot(zb.x - b.x, zb.z - b.z);
+        if (d > zb.r + 0.25) return;
+        damageZombie(zb, b.dmg);
+        if (b.boom) {
+          // 爆発弾: まわりも巻きこむ
+          forNear(b.x, b.z, b.boom, (o) => { if (o !== zb && Math.hypot(o.x - b.x, o.z - b.z) < b.boom) damageZombie(o, b.dmg * 0.7); });
+          ring(b.x, b.z, b.boom, 0.25, '#ff8a3d');
+        }
+        if (b.pierce > 0) { b.pierce--; (b.hits || (b.hits = [])).push(zb.id); }
+        else dead = true;
+      });
+      if (dead) continue;
+      setInst(bullets.mesh, i, b.x, 1.0, b.z, b.boom ? 1.8 : 1, b.boom ? 1.8 : 1, 1, Math.atan2(b.dx, b.dz));
+      bullets.mesh.setColorAt(i, _col.set(b.color));
+      i++;
+      keep.push(b);
+    }
+    bullets.items = keep;
+    bullets.mesh.count = i;
+    bullets.mesh.instanceMatrix.needsUpdate = true;
+    if (bullets.mesh.instanceColor) bullets.mesh.instanceColor.needsUpdate = true;
+  }
+  function nearestZombie(x, z, range) {
+    let best = null, bd = range;
+    forNear(x, z, range, (zb) => { if (zb.hp <= 0) return; const d = Math.hypot(zb.x - x, zb.z - z) - zb.r; if (d < bd) { bd = d; best = zb; } });
+    return best;
+  }
+
+  // ================================================================
+  //  資源の流れ: 飛び散る → 回収装置・回収口へ吸い込まれる → コンベアで運ばれる → ラック・コンテナに積み上がる
+  // ================================================================
+  let bio = 0, scrap = 0, bioIn = 0, scrapIn = 0;
+  const BELTS = {
+    bio: [[HOPPER.x, HOPPER.z], [-24, HOPPER.z], [-24, BIO_RACKS.z], [BIO_RACKS.x + 3, BIO_RACKS.z]],
+    scrap: [[HOPPER.x, HOPPER.z], [HOPPER.x, -16], [SCRAP_BIN.x + 2.8, -16], [SCRAP_BIN.x + 2.8, SCRAP_BIN.z]],
+  };
+  function beltLen(path) { let L = 0; for (let i = 1; i < path.length; i++) L += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]); return L; }
+  function beltPos(path, s, out) {
+    for (let i = 1; i < path.length; i++) {
+      const [ax, az] = path[i - 1], [bx, bz] = path[i];
+      const l = Math.hypot(bx - ax, bz - az);
+      if (s <= l) { out.x = ax + (bx - ax) * s / l; out.z = az + (bz - az) * s / l; return out; }
+      s -= l;
+    }
+    const last = path[path.length - 1]; out.x = last[0]; out.z = last[1]; return out;
+  }
+  const BELT_LEN = { bio: beltLen(BELTS.bio), scrap: beltLen(BELTS.scrap) };
+  const beltSpeed = () => 6 * (1 + 0.6 * padLevel('L'));
+  const bioMul = () => 1 + padLevel('P');      // バイオ加工工場で、バイオの価値が上がる
+  function arriveDirect(kind, value) { if (kind === 'bio') bio += value * bioMul(); else scrap += value; }
+  const _bp = { x: 0, z: 0 };
+  let arrivePitch = 0;
+  function updateResources(dt) {
+    for (const pool of [bioPool, scrapPool]) {
+      let i = 0;
+      const keep = [];
+      for (const d of pool.items) {
+        d.t += dt;
+        d.r += dt * 6;
+        if (d.state === 'burst') {
+          // 勢いよく飛び散る
+          d.vy -= 24 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+          if (d.y < 0.2) { d.y = 0.2; d.vy *= -0.4; d.vx *= 0.7; d.vz *= 0.7; }
+          if (d.t > d.delay) {
+            d.state = 'fly'; d.t = 0;
+            // 近くの回収装置へ。なければ工場の回収口へ
+            const c = nearestCollector(d.x, d.z);
+            d.tx = c ? c.x : HOPPER.x; d.tz = c ? c.z : HOPPER.z; d.via = c;
+          }
+        } else if (d.state === 'fly' || d.state === 'pipe') {
+          // 磁石のように吸い寄せられる(パイプの中は一定の速さ)
+          const dx = d.tx - d.x, dz = d.tz - d.z, dist = Math.hypot(dx, dz);
+          const sp = d.state === 'pipe' ? 26 : Math.min(40, 8 + d.t * 40) * (d.via ? d.via.suck : 1);
+          const ty = d.state === 'pipe' ? 2.2 : 1.2;
+          d.y += (ty - d.y) * Math.min(1, dt * 6);
+          if (dist < sp * dt + 0.3) {
+            if (d.via && d.state === 'fly') { d.state = 'pipe'; d.x = d.tx; d.z = d.tz; d.tx = HOPPER.x; d.tz = HOPPER.z; d.via.pulse = 0.15; }
+            else { d.state = 'belt'; d.s = 0; d.x = HOPPER.x; d.z = HOPPER.z; hopperPulse = 0.12; }
+          } else { d.x += dx / dist * sp * dt; d.z += dz / dist * sp * dt; }
+        } else if (d.state === 'belt') {
+          // コンベアで運ばれる
+          d.s += beltSpeed() * dt;
+          const path = BELTS[d.kind];
+          if (d.s >= BELT_LEN[d.kind]) {
+            arriveDirect(d.kind, d.value);
+            arrivePitch = Math.min(arrivePitch + 1, 40);
+            SND.coin(arrivePitch);
+            continue;
+          }
+          beltPos(path, d.s, _bp);
+          d.x = _bp.x; d.z = _bp.z; d.y = 0.75;
+        }
+        setInst(pool.mesh, i++, d.x, d.y, d.z, 1, 1, 1, d.r, d.r * 0.6);
+        keep.push(d);
+      }
+      pool.items = keep;
+      pool.mesh.count = i;
+      pool.mesh.instanceMatrix.needsUpdate = true;
+    }
+    arrivePitch = Math.max(0, arrivePitch - dt * 20);
+  }
+
+  // ---- 工場の設備(回収口・コンベア・ラック・コンテナ) ----
+  const factory = new THREE.Group();
+  scene.add(factory);
+  // 回収口(緑に光るじょうご)
+  const hopper = new THREE.Group();
+  mesh(new THREE.CylinderGeometry(1.6, 0.7, 1.6, 16, 1, true), mat('#5a6270', { side: THREE.DoubleSide }), 0, 1.5, 0, hopper);
+  mesh(new THREE.TorusGeometry(1.6, 0.14, 8, 24), new THREE.MeshBasicMaterial({ color: '#5aff3a' }), 0, 2.3, 0, hopper).rotation.x = Math.PI / 2;
+  mesh(new THREE.BoxGeometry(1.6, 0.8, 1.6), mat('#3a3f48'), 0, 0.4, 0, hopper);
+  hopper.position.set(HOPPER.x, 0, HOPPER.z);
+  factory.add(hopper);
+  let hopperPulse = 0;
+  // コンベア(しま模様が流れる)
+  const beltTex = canvasTexture(64, (g, n) => { g.fillStyle = '#2a2e36'; g.fillRect(0, 0, n, n); g.fillStyle = '#4a505a'; for (let i = 0; i < 4; i++) g.fillRect(0, i * 16, n, 6); });
+  beltTex.wrapS = beltTex.wrapT = THREE.RepeatWrapping;
+  const beltMats = [];
+  const beltGroup = new THREE.Group();
+  factory.add(beltGroup);
+  function buildBelts(lines) {
+    beltGroup.clear();
+    for (const path of Object.values(BELTS)) {
+      for (let k = 0; k < lines; k++) {
+        const off = (k - (lines - 1) / 2) * 1.1;
+        for (let i = 1; i < path.length; i++) {
+          const [ax, az] = path[i - 1], [bx, bz] = path[i];
+          const l = Math.hypot(bx - ax, bz - az), horiz = Math.abs(bx - ax) > Math.abs(bz - az);
+          const t = beltTex.clone(); t.needsUpdate = true; t.repeat.set(1, l / 1.2);
+          const m = new THREE.MeshLambertMaterial({ map: t });
+          beltMats.push(t);
+          const b = mesh(new THREE.BoxGeometry(0.9, 0.18, l + 0.9), m, (ax + bx) / 2 + (horiz ? 0 : off), 0.5, (az + bz) / 2 + (horiz ? off : 0), beltGroup);
+          b.rotation.y = horiz ? Math.PI / 2 : 0;
+          for (let s = 0; s <= l; s += 2) mesh(new THREE.BoxGeometry(0.12, 0.45, 0.12), mat('#7a828c'), ax + (bx - ax) * s / l + (horiz ? 0 : off), 0.22, az + (bz - az) * s / l + (horiz ? off : 0), beltGroup);
+        }
+      }
+    }
+  }
+  buildBelts(1);
+  // バイオキューブのラック(量に合わせてキューブが積み上がり、いっぱいになると新しいラックが出る)
+  const RACK_CAP = 60, RACK_MAX = 7;
+  const rackFrames = [];
+  const rackCubes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshLambertMaterial({ color: '#5aff3a', emissive: '#1f7a10' }), RACK_CAP * RACK_MAX);
+  rackCubes.count = 0; rackCubes.frustumCulled = false;
+  scene.add(rackCubes);
+  const rackPos = (k) => ({ x: BIO_RACKS.x + (k % 2) * 3.2, z: BIO_RACKS.z + 5 - Math.floor(k / 2) * 3.6 - (k >= 2 ? 0 : 0) });
+  function addRack(k) {
+    const g = new THREE.Group();
+    const p = rackPos(k);
+    for (const [x, z] of [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]]) mesh(new THREE.BoxGeometry(0.15, 3.2, 0.15), mat('#d0d4da'), x, 1.6, z, g);
+    for (let y = 0; y < 3; y++) mesh(new THREE.BoxGeometry(2.6, 0.08, 2.6), mat('#8a9098'), 0, 0.15 + y * 1.05, 0, g);
+    g.position.set(p.x, 0, p.z);
+    g.scale.set(0.01, 0.01, 0.01);
+    g.userData.pop = 0.4;
+    scene.add(g);
+    rackFrames.push(g);
+  }
+  addRack(0);
+  let rackShown = -1;
+  function bioVisual() { return Math.min(RACK_CAP * RACK_MAX, Math.floor(bio <= 0 ? 0 : 4 * Math.sqrt(bio) + 1)); }
+  function updateRacks(dt) {
+    const n = bioVisual();
+    const needRacks = Math.max(1, Math.ceil(n / RACK_CAP));
+    while (rackFrames.length < needRacks) { addRack(rackFrames.length); toast('📦 ラックが増えた!'); SND.build(); }
+    for (const g of rackFrames) if (g.userData.pop > 0) { g.userData.pop = Math.max(0, g.userData.pop - dt); const k = 1 - g.userData.pop / 0.4; const s = Math.min(1, k * 1.2) - Math.sin(k * Math.PI) * 0.1; g.scale.set(1, s, 1); }
+    if (n === rackShown) return;
+    rackShown = n;
+    for (let i = 0; i < n; i++) {
+      const r = Math.floor(i / RACK_CAP), j = i % RACK_CAP, p = rackPos(r);
+      const layer = Math.floor(j / 20), q = j % 20, row = Math.floor(q / 4), col = q % 4;
+      setInst(rackCubes, i, p.x - 0.9 + col * 0.6, 0.45 + layer * 1.05 + (row % 2) * 0.0, p.z - 1.0 + row * 0.5, 1, 1, 1);
+    }
+    rackCubes.count = n;
+    rackCubes.instanceMatrix.needsUpdate = true;
+  }
+  // スクラップのコンテナ(量に合わせて山が高くなり、あふれる)
+  const bin = new THREE.Group();
+  for (const [x, z, w, d] of [[0, -2, 5.2, 0.2], [0, 2, 5.2, 0.2], [-2.6, 0, 0.2, 4.2], [2.6, 0, 0.2, 4.2]]) mesh(new THREE.BoxGeometry(w, 1.6, d), mat('#3a6aa8'), x, 0.8, z, bin);
+  bin.position.set(SCRAP_BIN.x, 0, SCRAP_BIN.z);
+  scene.add(bin);
+  const SCRAP_VIS = 260;
+  const scrapPile = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.28, 0.28, 0.16, 6), new THREE.MeshLambertMaterial({ color: '#b8c2cc' }), SCRAP_VIS);
+  scrapPile.count = 0; scrapPile.frustumCulled = false;
+  scene.add(scrapPile);
+  const pileSpots = [];
+  for (let i = 0; i < SCRAP_VIS; i++) {
+    // 山の形: 下は広く、上ほど真ん中に寄る
+    const h = Math.pow(i / SCRAP_VIS, 0.8) * 3.4, spread = 1 - h / 3.8;
+    pileSpots.push([SCRAP_BIN.x + (Math.random() - 0.5) * 4.6 * spread, 0.25 + h, SCRAP_BIN.z + (Math.random() - 0.5) * 3.6 * spread, Math.random() * 3, Math.random() * 3]);
+  }
+  let pileShown = -1;
+  function updateScrapPile() {
+    const n = Math.min(SCRAP_VIS, Math.floor(scrap <= 0 ? 0 : 6 * Math.sqrt(scrap) + 1));
+    if (n === pileShown) return;
+    pileShown = n;
+    for (let i = 0; i < n; i++) { const [x, y, z, a, b] = pileSpots[i]; setInst(scrapPile, i, x, y, z, 1, 1, 1, a, b); }
+    scrapPile.count = n;
+    scrapPile.instanceMatrix.needsUpdate = true;
+  }
+
+  // ================================================================
+  //  建設ポイント(枠に立つと資源が飛んでいき、施設が組み上がる)
+  // ================================================================
+  // levels: そのレベルにするのに必要な資源。req: 枠が出てくる条件
+  const PADS = [
+    { id: 'W', icon: '🔫', name: '武器強化', x: -19, z: -4.2, kind: 'weapon', levels: [{ bio: 20 }, { bio: 120 }, { bio: 400 }, { bio: 1000 }], req: () => true },
+    { id: 'T1', icon: '🗼', name: '自動砲台', x: -5, z: -3, kind: 'turret', levels: [{ scrap: 12 }, { scrap: 60, bio: 50 }, { scrap: 200, bio: 200 }], req: () => true },
+    { id: 'C1', icon: '🧲', name: '回収装置', x: 6, z: 3, kind: 'collector', levels: [{ scrap: 35 }, { scrap: 140, bio: 80 }, { scrap: 400, bio: 300 }], req: () => padLevel('T1') > 0 },
+    { id: 'T2', icon: '🗼', name: '自動砲台', x: 2, z: -11, kind: 'turret', levels: [{ scrap: 50 }, { scrap: 140, bio: 100 }, { scrap: 400, bio: 350 }], req: () => padLevel('T1') > 0 },
+    { id: 'L', icon: '➡️', name: '運搬ライン', x: -15.5, z: -12.5, kind: 'line', levels: [{ scrap: 40 }, { scrap: 180 }, { scrap: 500 }], req: () => padLevel('C1') > 0 },
+    { id: 'P', icon: '⚗️', name: 'バイオ加工工場', x: -23, z: -18.5, kind: 'plant', levels: [{ bio: 160, scrap: 60 }, { bio: 600, scrap: 250 }], req: () => padLevel('C1') > 0 },
+    { id: 'T3', icon: '🗼', name: '自動砲台', x: 11, z: -3, kind: 'turret', levels: [{ scrap: 120 }, { scrap: 300, bio: 250 }, { scrap: 800, bio: 700 }], req: () => padLevel('T2') > 0 },
+    { id: 'D', icon: '📡', name: 'ゾンビ誘導装置', x: 20, z: 13, kind: 'director', levels: [{ bio: 250 }, { bio: 700 }, { bio: 1800 }], req: () => padLevel('T2') > 0 },
+    { id: 'C2', icon: '🧲', name: '回収装置', x: 16, z: -12, kind: 'collector', levels: [{ scrap: 200 }, { scrap: 450, bio: 300 }, { scrap: 1000, bio: 800 }], req: () => padLevel('C1') > 1 },
+    { id: 'T4', icon: '🗼', name: '自動砲台', x: -3, z: 12, kind: 'turret', levels: [{ scrap: 250 }, { scrap: 600, bio: 500 }, { scrap: 1500, bio: 1200 }], req: () => padLevel('T3') > 0 },
+    { id: 'T5', icon: '🗼', name: '自動砲台', x: 20, z: 3, kind: 'turret', levels: [{ scrap: 500 }, { scrap: 1200, bio: 900 }, { scrap: 2800, bio: 2200 }], req: () => padLevel('T4') > 0 },
+  ];
+  const padById = {};
+  for (const p of PADS) { p.lv = 0; p.paid = { bio: 0, scrap: 0 }; padById[p.id] = p; }
+  function padLevel(id) { return padById[id] ? padById[id].lv : 0; }
+  const nextCost = (p) => p.levels[p.lv];
+  function zText(g, n, text, size, y, color = '#fff') {
+    g.font = `900 ${size}px -apple-system, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 7; g.strokeStyle = 'rgba(0,0,0,.7)'; g.strokeText(text, n / 2, y); g.fillStyle = color; g.fillText(text, n / 2, y);
+  }
+  function drawPad(p) {
+    const g = p.ctx, n = 256, c = nextCost(p);
+    g.clearRect(0, 0, n, n);
+    if (!c) return;
+    const locked = !p.req();
+    g.fillStyle = locked ? 'rgba(40,40,50,.45)' : 'rgba(20,30,20,.55)'; g.strokeStyle = locked ? '#888' : '#ffd23a'; g.lineWidth = 10;
+    g.beginPath(); g.roundRect(12, 12, n - 24, n - 24, 34); g.fill(); g.stroke();
+    // 払った分だけ下から光る
+    const need = (c.bio || 0) + (c.scrap || 0), got = p.paid.bio + p.paid.scrap;
+    g.save(); g.beginPath(); g.roundRect(12, 12, n - 24, n - 24, 34); g.clip();
+    g.fillStyle = 'rgba(90,255,58,.45)'; g.fillRect(0, n - 12 - (n - 24) * (got / need), n, n); g.restore();
+    zText(g, n, locked ? '🔒' : p.icon, 64, 62);
+    zText(g, n, p.lv === 0 ? p.name : p.name + ' Lv' + (p.lv + 1), p.name.length > 5 ? 26 : 32, 120);
+    let y = 168;
+    if (c.bio) { zText(g, n, '🟩' + Math.ceil(c.bio - p.paid.bio), 36, y, '#8cff6a'); y += 42; }
+    if (c.scrap) zText(g, n, '⚙️' + Math.ceil(c.scrap - p.paid.scrap), 36, y, '#e0e6ee');
+    p.tex.needsUpdate = true;
+  }
+  const padGroup = new THREE.Group();
+  scene.add(padGroup);
+  for (const p of PADS) {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    p.ctx = c.getContext('2d');
+    p.tex = new THREE.CanvasTexture(c); p.tex.colorSpace = THREE.SRGBColorSpace;
+    p.zone = { x: p.x, z: p.z + (p.kind === 'weapon' || p.kind === 'line' ? 0 : 2.6), half: 1.3 };
+    p.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: p.tex, transparent: true, depthWrite: false }));
+    p.mesh.rotation.x = -Math.PI / 2;
+    p.mesh.position.set(p.zone.x, 0.06, p.zone.z);
+    padGroup.add(p.mesh);
+    p.locked = null;
+    p.group = null;
+    drawPad(p);
+  }
+  // 工事中の足場(払った分だけ光る箱が伸びる)
+  const scaffold = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: '#ffd23a', transparent: true, opacity: 0.25, wireframe: true }));
+  scaffold.visible = false;
+  scene.add(scaffold);
+  const payFx = makePool(new THREE.BoxGeometry(0.3, 0.3, 0.3), new THREE.MeshBasicMaterial({ color: '#ffffff' }), 120);
+  let payT = 0;
+  function updatePads(dt, time) {
+    let active = null;
+    for (const p of PADS) {
+      const c = nextCost(p);
+      const locked = !p.req();
+      if (!c) { p.mesh.visible = false; continue; }
+      p.mesh.visible = true;
+      if (locked !== p.locked) { p.locked = locked; drawPad(p); }
+      const inZone = !locked && Math.abs(player.x - p.zone.x) < p.zone.half && Math.abs(player.z - p.zone.z) < p.zone.half;
+      p.mesh.scale.setScalar(inZone ? 1.1 + Math.sin(time * 10) * 0.03 : 1);
+      if (!inZone) continue;
+      active = p;
+      // 1秒たらずで払い終わる速さで、資源を流しこむ
+      let paidSome = false;
+      for (const k of ['bio', 'scrap']) {
+        const need = (c[k] || 0) - p.paid[k];
+        const have = k === 'bio' ? bio : scrap;
+        if (need <= 0 || have < 1) continue;
+        const amt = Math.min(need, have, Math.max(1, (c[k] || 0) * dt * 1.5));
+        if (k === 'bio') bio -= amt; else scrap -= amt;
+        p.paid[k] += amt; paidSome = true;
+      }
+      if (paidSome) {
+        payT -= dt;
+        if (payT <= 0) {
+          payT = 0.04;
+          const got = p.paid.bio + p.paid.scrap, need = (c.bio || 0) + (c.scrap || 0);
+          SND.pay(got / need);
+          // 倉庫から施設へ資源が飛んでいく
+          for (const k of ['bio', 'scrap']) {
+            if (!c[k] || p.paid[k] >= c[k]) continue;
+            const src = k === 'bio' ? rackPos(Math.floor(Math.random() * rackFrames.length)) : SCRAP_BIN;
+            if (payFx.items.length < payFx.max) payFx.items.push({ x: src.x, y: 2, z: src.z, tx: p.x, tz: p.z, t: 0, color: k === 'bio' ? '#5aff3a' : '#b8c2cc' });
+          }
+        }
+        drawPad(p);
+      }
+      if (p.paid.bio >= (c.bio || 0) - 1e-6 && p.paid.scrap >= (c.scrap || 0) - 1e-6) completePad(p);
+    }
+    // 足場
+    if (active && nextCost(active) && active.kind !== 'weapon') {
+      const c = nextCost(active), k = (active.paid.bio + active.paid.scrap) / ((c.bio || 0) + (c.scrap || 0));
+      scaffold.visible = k > 0;
+      const h = 0.3 + k * 3.5;
+      scaffold.scale.set(2.6, h, 2.6); scaffold.position.set(active.x, h / 2, active.z);
+    } else scaffold.visible = false;
+    // 飛んでいく資源
+    let i = 0;
+    const keep = [];
+    for (const f of payFx.items) {
+      f.t += dt * 2.2;
+      if (f.t >= 1) continue;
+      const x = f.x + (f.tx - f.x) * f.t, z = f.z + (f.tz - f.z) * f.t, y = f.y + Math.sin(f.t * Math.PI) * 5;
+      setInst(payFx.mesh, i, x, y, z, 1, 1, 1, f.t * 8);
+      payFx.mesh.setColorAt(i, _col.set(f.color));
+      i++; keep.push(f);
+    }
+    payFx.items = keep; payFx.mesh.count = i; payFx.mesh.instanceMatrix.needsUpdate = true;
+    if (payFx.mesh.instanceColor) payFx.mesh.instanceColor.needsUpdate = true;
+  }
+  function completePad(p) {
+    p.lv++;
+    p.paid = { bio: 0, scrap: 0 };
+    drawPad(p);
+    scaffold.visible = false;
+    buildFacility(p);
+    SND.build();
+    shake(0.25);
+    burstGibs(p.x, p.z, 24, '#ffd23a', 7);
+    ring(p.x, p.z, 5, 0.45, '#ffd23a');
+    const msg = p.kind === 'weapon' ? '🔫 ' + WEAPONS[weaponLv - 1].name + ' に強化!' : p.icon + ' ' + p.name + (p.lv > 1 ? ' Lv' + p.lv : '') + ' 完成!';
+    toast(msg);
+  }
+
+  // ---- 施設の形(レベルが上がると、砲身・吸引機・タンクなどが実際に増える) ----
+  const turrets = [], collectors = [];
+  let plantParts = null, director3d = null;
+  function buildFacility(p) {
+    if (p.kind === 'weapon') { weaponLv = p.lv + 1; return; }
+    if (p.kind === 'line') { buildBelts(1 + p.lv); return; }
+    if (p.group) scene.remove(p.group);
+    const g = new THREE.Group();
+    g.position.set(p.x, 0, p.z);
+    p.group = g;
+    scene.add(g);
+    p.grow = 0.5; // 組み上がる演出
+    if (p.kind === 'turret') {
+      mesh(new THREE.CylinderGeometry(1.0, 1.2, 0.8, 10), mat('#5a6270'), 0, 0.4, 0, g);
+      mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.6, 8), mat('#3a3f48'), 0, 1.1, 0, g);
+      const head = new THREE.Group(); head.position.y = 1.5; g.add(head);
+      mesh(new THREE.BoxGeometry(1.1, 0.6, 1.1), mat(p.lv >= 3 ? '#ffb400' : '#ff8a1c'), 0, 0, 0, head);
+      const n = p.lv; // 砲身の数 = レベル
+      for (let i = 0; i < n; i++) mesh(new THREE.BoxGeometry(0.16, 0.16, 1.3), mat('#2a2e36'), (i - (n - 1) / 2) * 0.3, 0.05, 0.9, head);
+      let t = turrets.find(t => t.pad === p);
+      if (!t) { t = { pad: p, x: p.x, z: p.z, fireT: 0 }; turrets.push(t); }
+      t.head = head; t.rate = [0, 5, 8, 12][p.lv]; t.range = [0, 12, 13, 15][p.lv]; t.lv = p.lv;
+    } else if (p.kind === 'collector') {
+      mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.6, 12), mat('#5a6270'), 0, 0.3, 0, g);
+      const spin = new THREE.Group(); spin.position.y = 0.6; g.add(spin);
+      for (let i = 0; i < p.lv + 1; i++) {
+        const a = i / (p.lv + 1) * Math.PI * 2;
+        const f = mesh(new THREE.CylinderGeometry(0.55, 0.15, 0.9, 10, 1, true), mat('#8a9098', { side: THREE.DoubleSide }), Math.cos(a) * 0.6, 0.8, Math.sin(a) * 0.6, spin);
+        f.rotation.z = Math.cos(a) * 0.5; f.rotation.x = -Math.sin(a) * 0.5;
+      }
+      mesh(new THREE.TorusGeometry(0.9, 0.1, 8, 20), new THREE.MeshBasicMaterial({ color: '#5aff3a' }), 0, 0.7, 0, spin).rotation.x = Math.PI / 2;
+      // 範囲の輪と、回収口までのパイプ
+      const radius = [0, 9, 13, 18][p.lv];
+      const area = mesh(new THREE.RingGeometry(radius - 0.15, radius, 48), new THREE.MeshBasicMaterial({ color: '#5aff3a', transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }), 0, 0.05, 0, g);
+      area.rotation.x = -Math.PI / 2;
+      const dx = HOPPER.x - p.x, dz = HOPPER.z - p.z, L = Math.hypot(dx, dz);
+      const pipe = mesh(new THREE.CylinderGeometry(0.18 + p.lv * 0.06, 0.18 + p.lv * 0.06, L, 8), new THREE.MeshBasicMaterial({ color: '#2fa81a', transparent: true, opacity: 0.55 }), dx / 2, 2.2, dz / 2, g);
+      pipe.rotation.z = Math.PI / 2; pipe.rotation.y = -Math.atan2(dz, dx);
+      let c = collectors.find(c => c.pad === p);
+      if (!c) { c = { pad: p, x: p.x, z: p.z, pulse: 0 }; collectors.push(c); }
+      c.radius = radius; c.suck = [1, 1.3, 1.7, 2.2][p.lv]; c.spin = spin;
+    } else if (p.kind === 'plant') {
+      mesh(new THREE.BoxGeometry(4.2, 2.6, 3.2), mat('#6a7a8a'), 0, 1.3, 0, g);
+      const tanks = [];
+      for (let i = 0; i < p.lv + 1; i++) {
+        const tk = mesh(new THREE.CylinderGeometry(0.7, 0.7, 2.4, 14), new THREE.MeshLambertMaterial({ color: '#5aff3a', emissive: '#1f7a10', transparent: true, opacity: 0.85 }), -1.4 + i * 1.5, 1.2, 2.1, g);
+        tanks.push(tk);
+      }
+      const press = mesh(new THREE.BoxGeometry(1.6, 0.5, 1.6), mat('#ffb400'), 0, 3.4, 0, g);
+      mesh(new THREE.BoxGeometry(5, 0.2, 0.3), new THREE.MeshBasicMaterial({ color: '#5aff3a' }), 0, 2.7, 1.62, g);
+      plantParts = { press, tanks };
+    } else if (p.kind === 'director') {
+      mesh(new THREE.BoxGeometry(2, 1, 2), mat('#5a6270'), 0, 0.5, 0, g);
+      mesh(new THREE.CylinderGeometry(0.15, 0.3, 4 + p.lv * 1.5, 8), mat('#a8b0ba'), 0, 2.5 + p.lv * 0.75, 0, g);
+      const beacon = mesh(new THREE.SphereGeometry(0.45 + p.lv * 0.1, 12, 10), new THREE.MeshBasicMaterial({ color: '#ff3a3a' }), 0, 4.6 + p.lv * 1.5, 0, g);
+      for (let i = 0; i < p.lv; i++) mesh(new THREE.TorusGeometry(1 + i * 0.5, 0.06, 6, 24), mat('#ff6a6a'), 0, 3 + i * 1.2, 0, g).rotation.x = Math.PI / 2;
+      director3d = { beacon };
+    }
+    g.scale.set(1, 0.01, 1);
+  }
+  function nearestCollector(x, z) {
+    let best = null, bd = Infinity;
+    for (const c of collectors) { const d = Math.hypot(c.x - x, c.z - z); if (d < c.radius && d < bd) { bd = d; best = c; } }
+    return best;
+  }
+  function updateFacilities(dt, time) {
+    for (const p of PADS) {
+      if (!p.group || !(p.grow > 0)) continue;
+      p.grow = Math.max(0, p.grow - dt);
+      const k = 1 - p.grow / 0.5;
+      p.group.scale.set(1 + Math.sin(k * Math.PI) * 0.15, Math.min(1, k * 1.15) + Math.sin(k * Math.PI * 2) * 0.08 * (1 - k), 1 + Math.sin(k * Math.PI) * 0.15);
+      if (p.grow === 0) p.group.scale.set(1, 1, 1);
+    }
+    // 砲台: 近くのゾンビへ向いて撃つ
+    const w = { shots: [[0, 0]], dmg: 1, pierce: 0, boom: 0, range: 0 };
+    for (const t of turrets) {
+      t.fireT -= dt;
+      const target = nearestZombie(t.x, t.z, t.range);
+      if (!target) continue;
+      const a = Math.atan2(target.x - t.x, target.z - t.z);
+      t.head.rotation.y = a;
+      if (t.fireT <= 0) {
+        t.fireT = 1 / t.rate;
+        const n = t.lv;
+        w.shots = Array.from({ length: n }, (_, i) => [0, (i - (n - 1) / 2) * 0.3]);
+        w.dmg = t.lv >= 3 ? 1.6 : 1.1; w.range = t.range;
+        fire(t.x, t.z, Math.sin(a), Math.cos(a), w, 1, '#ff9a3d');
+        SND.shot();
+      }
+    }
+    for (const c of collectors) { c.spin.rotation.y += dt * (2 + c.pulse * 30); c.pulse = Math.max(0, c.pulse - dt); }
+    if (plantParts) {
+      plantParts.press.position.y = 3.4 - Math.abs(Math.sin(time * 4)) * 0.7;
+      plantParts.tanks.forEach((t, i) => t.scale.y = 0.85 + Math.sin(time * 3 + i) * 0.15);
+    }
+    if (director3d) director3d.beacon.scale.setScalar(1 + Math.abs(Math.sin(time * 5)) * 0.4);
+    hopperPulse = Math.max(0, hopperPulse - dt);
+    hopper.scale.set(1 + hopperPulse * 1.2, 1 - hopperPulse * 0.8, 1 + hopperPulse * 1.2);
+    for (const t of beltMats) t.offset.y -= dt * beltSpeed() / 1.2;
+  }
+
+  // ================================================================
+  //  入力(タッチ/マウスのドラッグ・キーボード・必殺技)
+  // ================================================================
+  const stick = { active: false, id: null, ox: 0, oy: 0, dx: 0, dy: 0 };
+  const keys = {};
+  const cvs = renderer.domElement;
+  const stickBase = $('stick-base'), stickKnob = $('stick-knob');
+  function showStick() {
+    stickBase.style.display = stickKnob.style.display = stick.active ? 'block' : 'none';
+    stickBase.style.left = stick.ox + 'px'; stickBase.style.top = stick.oy + 'px';
+    stickKnob.style.left = (stick.ox + stick.dx) + 'px'; stickKnob.style.top = (stick.oy + stick.dy) + 'px';
+  }
+  cvs.addEventListener('pointerdown', (e) => {
+    if (stick.active) return;
+    e.preventDefault();
+    Object.assign(stick, { active: true, id: e.pointerId, ox: e.clientX, oy: e.clientY, dx: 0, dy: 0 });
+    try { cvs.setPointerCapture(e.pointerId); } catch (err) { /* そのまま続ける */ }
+    showStick();
+  });
+  cvs.addEventListener('pointermove', (e) => {
+    if (!stick.active || e.pointerId !== stick.id) return;
+    let dx = e.clientX - stick.ox, dy = e.clientY - stick.oy;
+    const len = Math.hypot(dx, dy);
+    if (len > STICK_RADIUS) { stick.ox += dx - dx / len * STICK_RADIUS; stick.oy += dy - dy / len * STICK_RADIUS; dx = dx / len * STICK_RADIUS; dy = dy / len * STICK_RADIUS; }
+    stick.dx = dx; stick.dy = dy; showStick();
+  });
+  function endStick(e) { if (e.pointerId !== stick.id) return; Object.assign(stick, { active: false, id: null, dx: 0, dy: 0 }); showStick(); }
+  cvs.addEventListener('pointerup', endStick);
+  cvs.addEventListener('pointercancel', endStick);
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  window.addEventListener('keydown', (e) => { keys[e.key] = true; if (e.key === ' ') { e.preventDefault(); useSpecial(); } });
+  window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+  $('special').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); useSpecial(); });
+  let bot = false;
+  function readInput() {
+    if (bot) return botInput();
+    let sx = 0, sy = 0;
+    if (stick.active) { sx = stick.dx / STICK_RADIUS; sy = stick.dy / STICK_RADIUS; if (Math.hypot(sx, sy) < 0.15) sx = sy = 0; }
+    if (keys.ArrowLeft || keys.a) sx -= 1;
+    if (keys.ArrowRight || keys.d) sx += 1;
+    if (keys.ArrowUp || keys.w) sy -= 1;
+    if (keys.ArrowDown || keys.s) sy += 1;
+    const len = Math.hypot(sx, sy);
+    if (len > 1) { sx /= len; sy /= len; }
+    return { ix: sx, iz: sy };
+  }
+  // 自動テスト用: 建てられる枠があればそこへ、なければゾンビのいる方へ
+  function botInput() {
+    let tx = 4, tz = 2;
+    const can = PADS.find(p => nextCost(p) && p.req() && (nextCost(p).bio || 0) - p.paid.bio <= bio + 0.01 && (nextCost(p).scrap || 0) - p.paid.scrap <= scrap + 0.01);
+    if (can) { tx = can.zone.x; tz = can.zone.z; }
+    else {
+      const t = bigBoss || nearestZombie(player.x, player.z, 30);
+      if (t) { const d = Math.hypot(t.x - player.x, t.z - player.z); if (d < 6) { tx = player.x - (t.x - player.x); tz = player.z - (t.z - player.z); } else { tx = t.x; tz = t.z; } }
+      if (specialCool <= 0 && zs.length > 30) useSpecial();
+    }
+    const dx = tx - player.x, dz = tz - player.z, d = Math.hypot(dx, dz);
+    return d < 0.3 ? { ix: 0, iz: 0 } : { ix: dx / d, iz: dz / d };
+  }
+
+  // ---- 必殺技: まわりのゾンビをまとめて吹き飛ばす ----
+  let specialCool = 0;
+  function useSpecial() {
+    if (specialCool > 0 || !started) return;
+    specialCool = SPECIAL.cool;
+    forNear(player.x, player.z, SPECIAL.radius, (zb) => {
+      const d = Math.hypot(zb.x - player.x, zb.z - player.z);
+      if (d < SPECIAL.radius) { damageZombie(zb, SPECIAL.dmg * (1 + elapsed / 120)); zb.kx = (zb.x - player.x) / (d || 1) * 18; zb.kz = (zb.z - player.z) / (d || 1) * 18; }
+    });
+    ring(player.x, player.z, SPECIAL.radius, 0.5, '#ff6b3d');
+    ring(player.x, player.z, SPECIAL.radius * 0.6, 0.35, '#ffffff');
+    shake(0.5); SND.boom(0.35);
+  }
+
+  // ================================================================
+  //  更新
+  // ================================================================
+  function updatePlayer(dt) {
+    const { ix, iz } = readInput();
+    if (Math.hypot(ix, iz) > 0.01 && !started) { started = true; $('hint').style.opacity = 0; spawnGroup(14, 13); spawnT = 3; }
+    // 機敏に動く(加速・減速は短め)
+    player.vx += (ix * PLAYER_SPEED - player.vx) * Math.min(1, dt * 18);
+    player.vz += (iz * PLAYER_SPEED - player.vz) * Math.min(1, dt * 18);
+    player.x = Math.max(WORLD.x1 + 0.6, Math.min(WORLD.x2 - 0.6, player.x + player.vx * dt));
+    player.z = Math.max(WORLD.z1 + 0.6, Math.min(WORLD.z2 - 0.6, player.z + player.vz * dt));
+    // 自動射撃: いちばん近いゾンビへ
+    const w = WEAPONS[weaponLv - 1];
+    const target = nearestZombie(player.x, player.z, w.range);
+    if (target) player.face = Math.atan2(target.x - player.x, target.z - player.z);
+    else if (Math.hypot(player.vx, player.vz) > 0.5) player.face = Math.atan2(player.vx, player.vz);
+    player.fireT -= dt;
+    flash.visible = false;
+    if (target && player.fireT <= 0) {
+      player.fireT = 1 / w.rate;
+      const fx = Math.sin(player.face), fz = Math.cos(player.face);
+      fire(player.x + fx * 0.9 + Math.cos(player.face) * 0.3, player.z + fz * 0.9 - Math.sin(player.face) * 0.3, fx, fz, w);
+      flash.visible = true; flash.position.set(player.x + fx * 1.4 + Math.cos(player.face) * 0.32, 1.0, player.z + fz * 1.4 - Math.sin(player.face) * 0.32);
+      flash.scale.setScalar(0.8 + Math.random() * 0.6);
+      SND.shot();
+    }
+    const moving = Math.hypot(player.vx, player.vz) > 0.5;
+    player.mesh.position.set(player.x, moving ? Math.abs(Math.sin(elapsed * 16)) * 0.12 : 0, player.z);
+    player.mesh.rotation.y = player.face;
+    playerShadow.position.set(player.x, 0.04, player.z);
+    specialCool = Math.max(0, specialCool - dt);
+  }
+  function updateZombies(dt, time) {
+    rebuildGrid();
+    // 群れの中でおしくらまんじゅう(近くのゾンビどうしで押し合う)
+    for (const zb of zs) {
+      const dx = player.x - zb.x, dz = player.z - zb.z, d = Math.hypot(dx, dz) || 1;
+      let vx = dx / d * zb.speed, vz = dz / d * zb.speed;
+      if (d < zb.r + 0.7) { vx = 0; vz = 0; }
+      if (zb.kx) { vx += zb.kx; vz += zb.kz; zb.kx *= 0.85; zb.kz *= 0.85; if (Math.abs(zb.kx) < 0.2) zb.kx = zb.kz = 0; }
+      let px = 0, pz = 0;
+      forNear(zb.x, zb.z, zb.r + 0.6, (o) => {
+        if (o === zb) return;
+        const ox = zb.x - o.x, oz = zb.z - o.z, od = Math.hypot(ox, oz), min = zb.r + o.r;
+        if (od < min && od > 1e-4) { const push = (min - od) / od * (o.big && !zb.big ? 1 : 0.5); px += ox * push; pz += oz * push; }
+      });
+      zb.x += vx * dt + px * Math.min(1, dt * 10);
+      zb.z += vz * dt + pz * Math.min(1, dt * 10);
+      zb.face = Math.atan2(dx, dz);
+      zb.hit = Math.max(0, zb.hit - dt);
+      zb.pop = Math.max(0, zb.pop - dt);
+    }
+    // 死んだゾンビを取りのぞく
+    for (let i = zs.length - 1; i >= 0; i--) if (zs[i].hp <= 0) { zs[i] = zs[zs.length - 1]; zs.pop(); }
+    let i = 0;
+    for (const zb of zs) {
+      const s = (zb.big ? BIG.scale : 1) * (1 - zb.pop * 2.5) * (zb.hit > 0 ? 1.12 : 1);
+      const wob = Math.sin(time * 8 + zb.phase) * 0.12;
+      setInst(zombieMesh, i, zb.x, Math.abs(Math.sin(time * 8 + zb.phase)) * 0.08, zb.z, s, s, s, zb.face, 0, wob);
+      zombieMesh.setColorAt(i, zb.hit > 0 ? _col.set('#ffffff').multiplyScalar(2.2) : _col.copy(zb.tint).multiplyScalar(zb.big ? 0.85 : 1));
+      i++;
+    }
+    zombieMesh.count = i;
+    zombieMesh.instanceMatrix.needsUpdate = true;
+    if (zombieMesh.instanceColor) zombieMesh.instanceColor.needsUpdate = true;
+  }
+  function updateFx(dt) {
+    let i = 0;
+    gibs.items = gibs.items.filter(g => (g.t += dt) < g.life);
+    for (const g of gibs.items) {
+      g.vy -= 22 * dt; g.x += g.vx * dt; g.y += g.vy * dt; g.z += g.vz * dt; g.r += dt * 10;
+      if (g.y < 0.1) { g.y = 0.1; g.vy *= -0.3; g.vx *= 0.6; g.vz *= 0.6; }
+      const s = g.sc * Math.min(1, (g.life - g.t) * 4);
+      setInst(gibs.mesh, i, g.x, g.y, g.z, s, s, s, g.r, g.r);
+      gibs.mesh.setColorAt(i, _col.set(g.color));
+      i++;
+    }
+    gibs.mesh.count = i; gibs.mesh.instanceMatrix.needsUpdate = true;
+    if (gibs.mesh.instanceColor) gibs.mesh.instanceColor.needsUpdate = true;
+    i = 0;
+    rings.items = rings.items.filter(r => (r.t += dt) < r.life);
+    for (const r of rings.items) {
+      const k = r.t / r.life, s = r.r1 * (0.2 + k * 0.8);
+      setInst(rings.mesh, i, r.x, 0.15, r.z, s, s, s, 0, -Math.PI / 2);
+      rings.mesh.setColorAt(i, _col.set(r.color).multiplyScalar(1 - k));
+      i++;
+    }
+    rings.mesh.count = i; rings.mesh.instanceMatrix.needsUpdate = true;
+    if (rings.mesh.instanceColor) rings.mesh.instanceColor.needsUpdate = true;
+  }
+
+  // ================================================================
+  //  画面の文字・演出
+  // ================================================================
+  let toastT = 0;
+  function toast(text, warn) { $('toast').textContent = text; $('toast').classList.toggle('warn', !!warn); $('toast').classList.add('show'); toastT = 2; }
+  let shakeT = 0;
+  function shake(t) { shakeT = Math.max(shakeT, t * FX.shake); }
+  function project(x, y, z) { tmpA.set(x, y, z).project(camera); return { sx: (tmpA.x + 1) / 2 * innerWidth, sy: (1 - tmpA.y) / 2 * innerHeight, behind: tmpA.z > 1 }; }
+  const popEls = [];
+  for (let i = 0; i < 8; i++) { const el = document.createElement('div'); el.className = 'pop'; document.body.appendChild(el); popEls.push({ el, t: 0 }); }
+  let popI = 0;
+  function popText(text, x, z, color = '#8cff6a', size = 18) { const p = popEls[popI++ % popEls.length]; p.el.textContent = text; p.el.style.color = color; p.el.style.fontSize = size + 'px'; p.t = 0.9; p.x = x; p.z = z; p.el.style.display = 'block'; }
+  const bossBar = document.createElement('div'); bossBar.className = 'hp'; bossBar.innerHTML = '<div></div>'; document.body.appendChild(bossBar);
+  const shown = { bio: 0, scrap: 0, kills: 0 };
+  let lastBio = 0, gainT = 0, gainBio = 0;
+  function updateHud(dt) {
+    // 数字は気持ちよくカウントアップする
+    for (const k of ['bio', 'scrap']) {
+      const v = k === 'bio' ? bio : scrap;
+      const before = Math.floor(shown[k]);
+      shown[k] += (v - shown[k]) * Math.min(1, dt * 8);
+      if (Math.abs(v - shown[k]) < 0.5) shown[k] = v;
+      if (Math.floor(shown[k]) !== before) $(k).textContent = fmt(shown[k]);
+    }
+    if (shown.kills !== kills) { shown.kills = kills; $('kills').textContent = fmt(kills); }
+    const mm = Math.floor(elapsed / 60), ss = Math.floor(elapsed % 60);
+    $('time').textContent = '⏱ ' + mm + ':' + String(ss).padStart(2, '0') + '   🧟 ' + zs.length + '体';
+    $('weapon').textContent = '🔫 Lv' + weaponLv + ' ' + WEAPONS[weaponLv - 1].name + '   🗼×' + turrets.length;
+    // 大量に入ってきたら倉庫の上に「+120🟩」
+    gainT -= dt;
+    if (bio > lastBio) gainBio += bio - lastBio;
+    lastBio = bio;
+    if (gainT <= 0) { if (gainBio >= 30) popText('+' + fmt(gainBio) + '🟩', BIO_RACKS.x + 1.6, BIO_RACKS.z, '#8cff6a', gainBio > 300 ? 30 : 20); gainBio = 0; gainT = 1; }
+    if (comboT > 0) { comboT -= dt; if (comboT <= 0) $('combo').classList.remove('show'); }
+    if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
+    for (const p of popEls) {
+      if (p.t <= 0) continue;
+      p.t -= dt;
+      const s = project(p.x, 3 + (0.9 - p.t) * 2, p.z);
+      p.el.style.left = s.sx + 'px'; p.el.style.top = s.sy + 'px'; p.el.style.opacity = Math.min(1, p.t * 3);
+      if (p.t <= 0) p.el.style.display = 'none';
+    }
+    if (bigBoss && bigBoss.hp > 0) {
+      const s = project(bigBoss.x, 5.6, bigBoss.z);
+      bossBar.style.display = s.behind ? 'none' : 'block';
+      bossBar.style.width = '110px'; bossBar.style.left = (s.sx - 55) + 'px'; bossBar.style.top = s.sy + 'px';
+      bossBar.firstChild.style.width = (bigBoss.hp / bigBoss.maxHp * 100) + '%';
+    } else bossBar.style.display = 'none';
+    $('special').classList.toggle('cool', specialCool > 0);
+    $('special').lastChild.textContent = specialCool > 0 ? Math.ceil(specialCool) + '秒' : '必殺';
+  }
+  const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'k' : Math.floor(n).toLocaleString();
+  function showCombo() {
+    if (combo < 5) return;
+    const el = $('combo');
+    el.textContent = combo + ' KILL COMBO!';
+    el.classList.add('show'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  }
+  // 案内: 建てられる枠があれば、そこへ矢印
+  const marker = mesh(new THREE.ConeGeometry(0.5, 1, 12), new THREE.MeshBasicMaterial({ color: '#ffd23a' }), 0, 0, 0);
+  marker.rotation.x = Math.PI;
+  function updateGuide(time) {
+    let goal = null, text = '';
+    if (!started) text = '画面をなぞって移動。撃つのは自動!';
+    else {
+      const can = PADS.filter(p => nextCost(p) && p.req() && (nextCost(p).bio || 0) - p.paid.bio <= bio + 0.01 && (nextCost(p).scrap || 0) - p.paid.scrap <= scrap + 0.01);
+      if (can.length) { goal = can.sort((a, b) => Math.hypot(a.zone.x - player.x, a.zone.z - player.z) - Math.hypot(b.zone.x - player.x, b.zone.z - player.z))[0].zone; text = '🔨 建設できる! 光る枠に乗ろう'; }
+      else if (bigBoss && bigBoss.hp > 0) text = '⚠️ デカゾンビを集中攻撃!';
+    }
+    $('hint').textContent = text;
+    $('hint').style.opacity = text ? 1 : 0;
+    const arrow = $('arrow');
+    if (!goal) { marker.visible = false; arrow.style.display = 'none'; return; }
+    marker.visible = true;
+    marker.position.set(goal.x, 2 + Math.abs(Math.sin(time * 4)) * 0.6, goal.z);
+    const s = project(goal.x, 1, goal.z), W = innerWidth, H = innerHeight, top = 80;
+    if (!s.behind && s.sx > 30 && s.sx < W - 30 && s.sy > top && s.sy < H - 110) { arrow.style.display = 'none'; return; }
+    const c = project(player.x, 0, player.z);
+    let dx = s.sx - c.sx, dy = s.sy - c.sy;
+    const k = Math.min(Math.abs((dx > 0 ? W - 30 - c.sx : c.sx - 30) / (dx || 1e-6)), Math.abs((dy > 0 ? H - 110 - c.sy : c.sy - top) / (dy || 1e-6)));
+    arrow.style.display = 'block';
+    arrow.style.left = (c.sx + dx * k) + 'px'; arrow.style.top = (c.sy + dy * k) + 'px';
+    arrow.style.transform = 'rotate(' + Math.atan2(dy, dx) + 'rad)';
+  }
+
+  // ================================================================
+  //  メインループ
+  // ================================================================
+  function logic(dt, time) {
+    sfxTick(dt);
+    if (started) elapsed += dt;
+    killsThisFrame = 0; killX = 0; killZ = 0;
+    safe('player', () => updatePlayer(dt));
+    safe('spawn', () => updateSpawns(dt));
+    safe('bullets', () => updateBullets(dt));
+    safe('zombies', () => updateZombies(dt, time));
+    safe('facilities', () => updateFacilities(dt, time));
+    safe('resources', () => updateResources(dt));
+    safe('pads', () => updatePads(dt, time));
+    safe('storage', () => { updateRacks(dt); updateScrapPile(); });
+    safe('fx', () => updateFx(dt));
+    // 大量撃破: まとめた衝撃音と衝撃波
+    if (killsThisFrame > 0) {
+      SND.pop(killsThisFrame);
+      showCombo();
+      killTimes.push(...Array(killsThisFrame).fill(elapsed));
+      while (killTimes.length && killTimes[0] < elapsed - 0.35) killTimes.shift();
+      if (killTimes.length >= 12) { ring(killX / killsThisFrame, killZ / killsThisFrame, 6, 0.4, '#9cff6a'); shake(0.12); if (killTimes.length >= 25) { SND.boom(0.12); killTimes.length = 0; } }
+    }
+  }
+  const camTarget = V(player.x, 0, player.z);
+  let last = performance.now();
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const time = now / 1000;
+    logic(dt, time);
+    // カメラ: プレイヤーを追いつつ、少し工場のほうへ寄せて工場の成長も見えるようにする
+    const tx = player.x * 0.72 + (-18) * 0.28, tz = player.z * 0.72 + (-12) * 0.28;
+    camTarget.x += (tx - camTarget.x) * Math.min(1, dt * 5);
+    camTarget.z += (tz - camTarget.z) * Math.min(1, dt * 5);
+    const dist = portrait ? 34 : 30;
+    camera.position.set(camTarget.x, dist, camTarget.z + dist * 0.62);
+    camera.lookAt(camTarget.x, 0, camTarget.z);
+    if (shakeT > 0) { shakeT = Math.max(0, shakeT - dt); camera.position.x += (Math.random() - 0.5) * shakeT * 1.6; camera.position.z += (Math.random() - 0.5) * shakeT * 1.6; }
+    safe('hud', () => { updateHud(dt); updateGuide(time); });
+    safe('render', () => renderer.render(scene, camera));
+    adaptQuality(now);
+  }
+  // 重いとき(1秒に40コマ未満)は、画面の細かさと粒の量を下げる
+  let qFrames = 0, qStart = performance.now(), pixelRatio = renderer.getPixelRatio();
+  function adaptQuality(now) {
+    qFrames++;
+    const el = now - qStart;
+    if (el < 2500) return;
+    const fps = qFrames / (el / 1000);
+    qFrames = 0; qStart = now;
+    if (document.hidden) return;
+    if (fps < 40) {
+      if (pixelRatio > 1) { pixelRatio = Math.max(1, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
+      else FX.particles = Math.max(0.3, FX.particles - 0.2);
+    }
+  }
+  document.addEventListener('visibilitychange', () => { last = performance.now(); qStart = last; qFrames = 0; });
+  renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); $('hint').textContent = '画面が止まりました。ページを再読み込みしてください'; $('hint').style.opacity = 1; });
+  requestAnimationFrame(frame);
+
+  // 自動テスト用
+  window.__renderer = renderer;
+  window.__game = {
+    get state() {
+      return { elapsed, kills, zombies: zs.length, bio: Math.floor(bio), scrap: Math.floor(scrap), weaponLv, turrets: turrets.length, collectors: collectors.length,
+        pads: Object.fromEntries(PADS.map(p => [p.id, p.lv])), big: !!(bigBoss && bigBoss.hp > 0), drops: bioPool.items.length + scrapPool.items.length, bullets: bullets.items.length, errors: errorsSeen.slice(), fx: FX.particles, x: player.x, z: player.z };
+    },
+    bot(on) { bot = on; },
+    fastForward(sec, step = 1 / 30) { for (let t = 0; t < sec; t += step) logic(step, performance.now() / 1000 + t); return this.state; },
+    give(b, s) { bio += b; scrap += s; },
+  };
+</script>
+</body>
+</html>
