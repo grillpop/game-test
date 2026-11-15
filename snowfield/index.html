@@ -88,7 +88,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.22-s19';
+  const GAME_VERSION = '2026.11.22-s20';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -118,7 +118,8 @@
   const CAM_YAW = Math.PI / 4;                                 // カメラは斜め45度から(四角いキャンプがひし形に見える)
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
   const ZOMBIES = { safe: 6, front: 0.45, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
-  const ZOOM_BASE = 12; // カメラの距離(オーナーの希望で 14 から寄せた)
+  const ZOOM_BASE = 12;
+  const DOG_FLEE = 1.9; // ワンコがゾンビから逃げる速さ(ゾンビは 1.3〜2.1) // カメラの距離(オーナーの希望で 14 から寄せた)
   const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊', cash: '💵', coal: '⚫' };
 
   // エリア(rect = x1, z1, x2, z2)。開くまで中に入れない。edges = 雪の吹きだまりの柵を置く線
@@ -2655,21 +2656,48 @@
     pushOut(dog, 0.3, true);
   }
   function updateDog(dt) {
+    if (dog) { dog.x = clamp(dog.x, WORLD.x1 + 1.5, WORLD.x2 - 1.5); dog.z = clamp(dog.z, WORLD.z1 + 1.5, WORLD.z2 - 1.5); }
     const label = $('dog-label');
     if (!dog || dog.st === 'dead') { label.style.display = 'none'; return; }
     dog.t += dt; dog.bitT = Math.max(0, dog.bitT - dt); dog.joy = Math.max(0, dog.joy - dt);
     const pdist = Math.hypot(player.x - dog.x, player.z - dog.z);
     if (dog.st === 'lost') {
-      dog.sp = 0;
+      // ゾンビから自分で逃げ回る(近いゾンビほど強く遠ざかる)。ゾンビがいなければ、その場でうろうろ
+      let fx = 0, fz = 0;
+      for (const zb of zs) {
+        if (zb.dead) continue;
+        const ex = dog.x - zb.x, ez = dog.z - zb.z;
+        if (Math.abs(ex) > 7 || Math.abs(ez) > 7) continue;
+        const e = Math.hypot(ex, ez) || 0.01;
+        if (e < 7) { fx += ex / e * (7 - e); fz += ez / e * (7 - e); }
+      }
+      // 世界の端や柵のすみに追いつめられないよう、空き地のまん中へ少し寄る
+      const C = campInfo(), m = Math.hypot(fx, fz);
+      if (m > 0.05) {
+        fx = fx / m + (C.x - dog.x) * 0.02; fz = fz / m + (C.z - dog.z) * 0.02;
+        const k = Math.hypot(fx, fz) || 1, sp = DOG_FLEE;
+        dog.x = clamp(dog.x + fx / k * sp * dt, WORLD.x1 + 1.5, WORLD.x2 - 1.5); dog.z = clamp(dog.z + fz / k * sp * dt, WORLD.z1 + 1.5, WORLD.z2 - 1.5);
+        pushOut(dog, 0.3, true);
+        dog.sp = sp; dog.face = Math.atan2(fx, fz);
+      } else {
+        dog.sp = 0;
+        dog.wanderT -= dt;
+        if (dog.wanderT <= 0) {
+          dog.wanderT = 1.5 + Math.random() * 2;
+          // 空き地から離れすぎたら、空き地のほうへ戻る
+          dog.face = Math.hypot(dog.x - C.x, dog.z - C.z) > C.H + 3 ? Math.atan2(C.x - dog.x, C.z - dog.z) + (Math.random() - 0.5) : Math.random() * Math.PI * 2;
+        }
+        if (dog.wanderT > 1) { dog.x += Math.sin(dog.face) * 1.6 * dt; dog.z += Math.cos(dog.face) * 1.6 * dt; dog.sp = 1.6; pushOut(dog, 0.3, true); }
+      }
       // ときどき鳴く
       dog.barkT -= dt;
       if (dog.barkT <= 0) { dog.barkT = 2.2 + Math.random() * 1.5; if (!fastForwarding && pdist < 22) { tone(760, 0.07, 'square', 0.03, 1.4); tone(820, 0.07, 'square', 0.03, 1.4, 0.12); } }
-      dog.face = Math.atan2(player.x - dog.x, player.z - dog.z);
       // まわりのゾンビをやっつけて守ってあげると、ついてくる
       let zNear = false;
       for (const zb of zs) if (!zb.dead && Math.abs(zb.x - dog.x) < 4.5 && Math.abs(zb.z - dog.z) < 4.5 && Math.hypot(zb.x - dog.x, zb.z - dog.z) < 4.5) { zNear = true; break; }
       dog.zNear = zNear;
-      if (pdist < 2.6 && !zNear) {
+      if (insideCamp(dog.x, dog.z, -0.4)) { dog.st = 'saved'; dog.joy = 2.5; dog.escT = 30; toast('🐶 ワンコが自分でキャンプに逃げこんだ!'); }
+      else if (pdist < 2.6 && !zNear) {
         dog.st = 'follow'; dog.joy = 1.2;
         popText('🐶 ワン!', dog.x, dog.z, '#ffe27a', 18, 2);
         toast('🐶 ワンコがついてきた! キャンプの中で保護しよう');
@@ -2717,15 +2745,7 @@
     dog.tail.rotation.y = Math.sin(dog.t * (dog.st === 'lost' ? 4 : 18)) * (dog.st === 'lost' ? 0.2 : 0.7);
     dog.tail.rotation.x = dog.st === 'lost' ? 0.3 : -0.7;
     dog.g.scale.setScalar(dog.bitT > 0 ? 1.15 : 1);
-    // 「たすけて!」の札(はぐれているあいだだけ)
-    if ((dog.st === 'lost' || dog.st === 'run') && started) {
-      const pos = project(dog.x, 1.4, dog.z);
-      if (!pos.behind && pos.sx > 0 && pos.sx < innerWidth && pos.sy > 0 && pos.sy < innerHeight) {
-        label.style.display = 'block';
-        label.style.left = pos.sx + 'px'; label.style.top = pos.sy + 'px';
-        label.textContent = (pdist < 4 && dog.zNear ? '🐶 ゾンビをやっつけて!' : '🐶 たすけて!') + (dog.hp < 4 ? ' ❤️' + '■'.repeat(Math.max(1, Math.ceil(dog.hp))) : '');
-      } else label.style.display = 'none';
-    } else label.style.display = 'none';
+    label.style.display = 'none';
   }
 
   // ---- 巨大ゾンビ犬: ワンコを保護しないまま拠点を広げようとすると、森から現れて拠点を破壊する ----
