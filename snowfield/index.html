@@ -86,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.20-s14';
+  const GAME_VERSION = '2026.11.20-s15';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -141,11 +141,9 @@
       ],
       goal: { type: 'gather', res: 'wood', count: 6 } },
     { id: 'scene_02', title: 'キャンプ場の立ち上げ', after: 'scene_01',
-      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut', 'woodyard'], delays: [0.1, 2.8, 3.7] }],
+      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut'], delays: [0.1, 2.8] }],
       goal: { type: 'build', site: 'camp' },
       exit: [
-        // 木材置き場: 木の床に乗ると、背中の薪がどんどん積まれる
-        { do: 'storage', id: 'woodpad', kind: 'deposit', icon: '🪵', res: 'wood', yard: 'wood', grid: { cols: 3, rows: 7, layers: 12, cx: 0.66, cz: 0.29, h: 0.27, y0: 0.45 } },
         { do: 'toast', text: '🎉 キャンプ場ができた!' },
         { do: 'zoom', level: 1.65 },
       ] },
@@ -156,31 +154,33 @@
     { id: 'scene_04', title: '出荷ヘリポート', after: 'scene_03', delay: 1.2,
       enter: [
         { do: 'site', id: 'heli', title: '🚁 出荷ヘリポートをつくる', icon: '🚁', at: [5.2, -2.4], res: 'wood', need: 50, build: ['helipad'] },
-        // ヘリポートと同時に、お金で建てるアップデートエリアが全部開く(どれから建ててもいい)
-        { do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'cash', need: 30, build: ['tower'], delay: 0.5,
+      ],
+      goal: { type: 'build', site: 'heli' },
+      exit: [
+        // 木材置き場: 木の床に乗ると、背中の薪がどんどん積まれる
+        { do: 'storage', id: 'woodpad', kind: 'deposit', icon: '🪵', res: 'wood', yard: 'wood', grid: { cols: 3, rows: 7, layers: 12, cx: 0.66, cz: 0.29, h: 0.27, y0: 0.45 }, delay: 0.7 },
+        // ヘリポートができたら、お金で建てるアップデートエリアが全部開く(どれから建ててもいい)
+        { do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'cash', need: 30, build: ['tower'], delay: 1.6,
           onBuilt: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
-        { do: 'site', id: 'vacuum', icon: '🌀', at: [8.3, 3.9], res: 'cash', need: 60, build: ['vacuum'], delay: 0.7,
+        { do: 'site', id: 'vacuum', icon: '🌀', at: [8.3, 3.9], res: 'cash', need: 60, build: ['vacuum'], delay: 1.8,
           onBuilt: [{ do: 'toast', text: '🌀 バキューマー完成! 散らばった氷を吸いこんで氷置き場へ' }] },
-        { do: 'site', id: 'kiln', icon: '🏭', at: [-6.8, 1.4], res: 'cash', need: 50, build: ['kiln'], delay: 0.9,
+        { do: 'site', id: 'kiln', icon: '🏭', at: [-6.8, 1.4], res: 'cash', need: 50, build: ['kiln'], delay: 2.0,
           onBuilt: [
             // 炭置き場(窯の前)。木材置き場の薪が3本ずつコンベアで窯へ → 炭1個。炭はヘリが高く買う
             { do: 'storage', id: 'coalpad', kind: 'deposit', icon: '⚫', res: 'coal', yard: 'coal', grid: { cols: 4, rows: 4, layers: 6, cx: 0.5, cz: 0.5, h: 0.44, y0: 0.52 } },
             { do: 'kilnline', kiln: 'kiln', from: 'woodpad', to: 'coalpad' },
             { do: 'toast', text: '🏭 炭焼き窯ができた! 薪が自動で炭になる(ヘリが高く買う)' },
           ] },
-        { do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'], camera: [3, -16], delay: 1.1,
+        { do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'], camera: [3, -16], delay: 2.2,
           onBuilt: [
             { do: 'power', from: 'plant', lamps: [[3.2, -10.2], [10.0, -5.6], [9.6, 5.0], [2.6, 9.6], [-2.6, 9.6], [-9.6, 9.6], [-9.6, -0.6], [-9.6, -9.6]] },
             { do: 'toast', text: '⚡ ゾンビ発電所が動き出した! 拠点に電気が通った' },
           ] },
-        { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 1.3 },
+        { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 2.4 },
         // ガトリングは電気(発電所)と見張り台ができてから
         { do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 80, build: ['gatling'], requires: ['plant', 'tower'],
           announce: '🔫 電気が来た! 見張り台にガトリングを積めるようになった',
           onBuilt: [{ do: 'toast', text: '🔫 ガトリング設置! 柵に来たゾンビをなぎ倒す' }] },
-      ],
-      goal: { type: 'build', site: 'heli' },
-      exit: [
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧊', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
         { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💰', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
