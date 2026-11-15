@@ -70,7 +70,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.17-s8';
+  const GAME_VERSION = '2026.11.17-s9';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -112,9 +112,11 @@
       ],
       goal: { type: 'gather', res: 'wood', count: 6 } },
     { id: 'scene_02', title: 'キャンプ場の立ち上げ', after: 'scene_01',
-      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut'], delays: [0.1, 2.8] }],
+      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut', 'woodyard'], delays: [0.1, 2.8, 3.7] }],
       goal: { type: 'build', site: 'camp' },
       exit: [
+        // 木材置き場: 木の床に乗ると、背中の薪がどんどん積まれる
+        { do: 'storage', id: 'woodpad', kind: 'deposit', icon: '🪵', res: 'wood', yard: 'wood', grid: { cols: 3, rows: 7, layers: 12, cx: 0.66, cz: 0.29, h: 0.27, y0: 0.45 } },
         { do: 'toast', text: '🎉 キャンプ場ができた!' },
         { do: 'zoom', level: 1.65 },
       ] },
@@ -127,11 +129,15 @@
       goal: { type: 'build', site: 'heli' },
       exit: [
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
-        { do: 'storage', id: 'icepad', kind: 'deposit', title: '🧊 氷置き場', icon: '🧊', at: [5.2, -2.4], res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.5 }, delay: 0.3 },
-        { do: 'storage', id: 'cashpad', kind: 'pickup', title: '💰 お金置き場', icon: '💰', at: [0, -5.1], res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.37 }, delay: 0.5 },
+        { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧊', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
+        { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💰', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
         { do: 'toast', text: '🧊 凍ったゾンビを氷置き場へ! ヘリが売ってくれる 💰' },
       ] },
-    { id: 'scene_05', title: '出荷でかせぐ', after: 'scene_04', goal: { type: 'none' } },
+    { id: 'scene_05', title: '見張り台', after: 'scene_04', delay: 1.0,
+      enter: [{ do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'wood', need: 80, build: ['tower'] }],
+      goal: { type: 'build', site: 'tower' },
+      exit: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
+    { id: 'scene_06', title: '出荷でかせぐ', after: 'scene_05', goal: { type: 'none' } },
   ];
 
   const STICK_RADIUS = 56;
@@ -531,12 +537,40 @@
     for (let l = 0; l < 3; l++) for (let i = 0; i < 4 - l; i++) parts.push(C(0.17, 0.17, 1.4, (i - (3 - l) / 2) * 0.36, 0.38 + l * 0.3, 0, '#93602f', 'deco', { rx: Math.PI / 2, seg: 8 }));
     return { parts, size: [2.7, 1.8] };
   }
+  // 置き場(木の床)の場所。床に乗ると置ける/受け取れる。緑の枠はアップデート専用
+  const YARD_AT = { wood: [-6.5, -3.4], ice: [8.3, -2.4], cash: [0, -8.2] };
+  const YARD_SIZE = 3.6;
+  function towerDef() {
+    const parts = [], wood = '#7a4d24', plank = '#a8774a';
+    for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
+      parts.push(B(0.55, 0.3, 0.55, x, 0.15, z, '#8e959e', 'base'));
+      parts.push(C(0.15, 0.17, 4.3, x, 2.3, z, wood, 'pillar'));
+    }
+    for (const y of [1.3, 2.8]) {
+      parts.push(B(1.95, 0.13, 0.13, 0, y, -0.9, wood, 'wall'), B(1.95, 0.13, 0.13, 0, y, 0.9, wood, 'wall'));
+      parts.push(B(0.13, 0.13, 1.95, -0.9, y, 0, wood, 'wall'), B(0.13, 0.13, 1.95, 0.9, y, 0, wood, 'wall'));
+    }
+    parts.push(B(2.7, 0.22, 2.7, 0, 4.3, 0, plank, 'wall'));
+    for (const [w, d, x, z] of [[2.7, 0.1, 0, 1.3], [2.7, 0.1, 0, -1.3], [0.1, 2.7, 1.3, 0], [0.1, 2.7, -1.3, 0]]) parts.push(B(w, 0.5, d, x, 4.7, z, '#b5814c', 'wall'));
+    for (const [x, z] of [[-1.3, -1.3], [1.3, -1.3], [-1.3, 1.3], [1.3, 1.3]]) parts.push(C(0.07, 0.07, 1.6, x, 5.15, z, wood, 'roof'));
+    parts.push({ t: 'cyl', a: [0.01, 2.2, 1.3, 4], p: [0, 6.6, 0], r: [0, Math.PI / 4, 0], c: '#c0453a', st: 'roof' });
+    parts.push({ t: 'cyl', a: [0.01, 1.2, 0.7, 4], p: [0, 7.0, 0], r: [0, Math.PI / 4, 0], c: '#f6fafd', st: 'roof' });
+    // はしご・旗・見張りの人・ランタン
+    parts.push(B(0.07, 4.2, 0.07, -0.35, 2.1, 1.15, wood, 'deco'), B(0.07, 4.2, 0.07, 0.35, 2.1, 1.15, wood, 'deco'));
+    for (let i = 0; i < 9; i++) parts.push(B(0.7, 0.06, 0.06, 0, 0.4 + i * 0.45, 1.15, '#93602f', 'deco'));
+    parts.push(C(0.03, 0.03, 1.2, 1.25, 7.6, 1.25, '#5a3a1e', 'deco'), B(0.6, 0.35, 0.03, 1.55, 7.9, 1.25, '#e0453a', 'deco'));
+    parts.push(B(0.42, 0.5, 0.32, 0, 4.7, 0, '#2f6fb5', 'deco'), S(0.22, 0, 5.15, 0, '#ffd9b8', 'deco'), S(0.23, 0, 5.24, 0, '#3f7d5a', 'deco', { sc: [1, 0.6, 1] }));
+    parts.push(B(0.2, 0.26, 0.2, 1.1, 4.62, -1.1, '#ffd23a', 'deco', { win: true }));
+    return { parts, size: [2.8, 2.8], ridge: 7.3 };
+  }
   const BUILDINGS = {
     fence: { name: 'キャンプの柵', at: [0, 0], fence: { H: 11, gw: 1.7, spacing: 1.3 } }, // 四角い柵(半分の幅 H、入口は手前の辺のまん中、幅 2×gw)
+    woodyard: { name: '木材置き場', at: [-6.5, -3.4], yard: 'wood' },
+    tower: { name: '見張り台', at: [8.3, 8.3], rot: Math.PI / 4, def: towerDef, shoot: { range: 13, every: 0.28, y: 5.2 } },
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
     // ヘリポート。yards = 氷置き場とお金置き場の台。氷1個 💰price、1回の出荷ボーナス 💰bonus、札束1つ 💰unit
-    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: [8.3, -2.4], cash: [0, -8.2] }, price: 5, bonus: 50, unit: 10, batch: 20, wait: 6 } },
+    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: YARD_AT.ice, cash: YARD_AT.cash }, price: 5, bonus: 50, unit: 10, batch: 20, wait: 6 } },
     bonfire: { name: 'キャンプファイアー', at: [0, 0], bonfire: { stones: 14, r: 1.55, layers: 7, benches: 4, benchR: 3.2 } },
     storage: { name: '物資置き場', at: [-4.4, -1.6], rot: 0, def: storageDef },
     house1: { name: '民家', at: [-11, 2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#c0453a', chimney: [0.9, -0.7] }) },
@@ -1121,6 +1155,21 @@
     const info = padInfo(s), key = Math.round(info.k * 60) + '|' + info.text;
     if (key === s.padKey) return;
     s.padKey = key;
+    if (s.grid) {
+      // 木の床の手前の角: アイコンと数だけ(枠や塗りはなし)
+      const g = s.cv.getContext('2d'), n = 256;
+      g.clearRect(0, 0, n, n);
+      g.save(); g.translate(n / 2, n / 2); g.rotate(-CAM_YAW);
+      g.fillStyle = 'rgba(255,255,255,0.28)'; g.beginPath(); g.arc(0, 0, 112, 0, 7); g.fill();
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalAlpha = 1; g.fillStyle = '#ffffff';
+      g.font = '104px sans-serif'; g.fillText(s.iconCh, 0, -22);
+      const t = s.pickup ? (s.stock * CASH_UNIT).toLocaleString() : s.stock >= s.cap ? 'MAX' : String(s.stock);
+      g.font = 'bold 56px sans-serif'; g.lineWidth = 9; g.strokeStyle = 'rgba(60,35,15,0.9)';
+      g.strokeText(t, 0, 66); g.fillText(t, 0, 66);
+      g.restore();
+      s.tex.needsUpdate = true;
+      return;
+    }
     const g = s.cv.getContext('2d'), n = 256, m = 14;
     g.clearRect(0, 0, n, n);
     g.fillStyle = 'rgba(80,220,100,0.22)'; g.fillRect(m, m, n - m * 2, n - m * 2);
@@ -1144,7 +1193,8 @@
     s.tex.needsUpdate = true;
   }
   function createSite(a) {
-    const s = { id: a.id, x: a.at[0], z: a.at[1], r: 1.55, res: a.res, need: a.need, paid: 0, incoming: 0, build: a.build, building: false, done: false, gap: DELIVER.gap, dT: 0, bump: 0, appear: 0, ghosts: [], deposit: a.deposit || null };
+    const at = a.at || yardPos(a.yard);
+    const s = { id: a.id, x: at[0], z: at[1], r: 1.55, res: a.res, need: a.need, paid: 0, incoming: 0, build: a.build, building: false, done: false, gap: DELIVER.gap, dT: 0, bump: 0, appear: 0, ghosts: [], deposit: a.deposit || null };
     if (s.deposit) { s.pile = new THREE.InstancedMesh(a.res === 'meat' ? meatGeo : woodGeo, vcMat, s.deposit.piles.length * s.deposit.layers * 3); s.pile.count = 0; s.pile.frustumCulled = false; scene.add(s.pile); }
     // 敷地そのものに、進み具合(色の塗り)・アイコン・必要な数を描く
     s.cv = document.createElement('canvas'); s.cv.width = s.cv.height = 256;
@@ -1154,15 +1204,20 @@
     s.title = a.title || ''; s.delays = a.delays || null;
     if (a.grid) {
       // 置き場: 横の台の上に、決まった並びで積み上がる
+      // 山は床の奥側、手前の角に置き場のアイコンと数を描く
       const yard = yardPos(a.yard);
-      s.grid = a.grid; s.gx = yard[0]; s.gz = yard[1]; s.stock = 0; s.lastIn = -99; s.kind = a.kind;
+      s.grid = a.grid; s.fx = yard[0]; s.fz = yard[1]; s.gx = yard[0] - 0.45; s.gz = yard[1] - 0.45; s.stock = 0; s.lastIn = -99; s.kind = a.kind;
       s.cap = a.grid.cols * a.grid.rows * a.grid.layers;
-      s.pileMesh = new THREE.InstancedMesh(a.res === 'ice' ? iceGeo : cashGeo, a.res === 'ice' ? iceMat : vcMat, s.cap);
+      const geo = { ice: iceGeo, cash: cashGeo, wood: woodGeo }[a.res];
+      s.pileMesh = new THREE.InstancedMesh(geo, a.res === 'ice' ? iceMat : vcMat, s.cap);
+      s.decal = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
+      s.decal.rotation.x = -Math.PI / 2; s.decal.position.set(yard[0] + 0.85, 0.33, yard[1] + 0.85); s.decal.renderOrder = 3;
+      scene.add(s.decal);
       s.pileMesh.count = 0; s.pileMesh.frustumCulled = false; scene.add(s.pileMesh);
       if (a.kind === 'pickup') s.pickup = true; else s.store = true;
     }
     s.pad.rotation.x = -Math.PI / 2; s.pad.position.set(s.x, 0.08, s.z); s.pad.renderOrder = 3; // キャンプファイアーの光より上に描く
-    scene.add(s.pad);
+    if (!s.grid) scene.add(s.pad);
     drawPadFace(s);
     // これから建つ建物の青い設計図
     for (const id of a.build) {
@@ -1174,9 +1229,15 @@
         scene.add(gm); s.ghosts.push(gm);
         continue;
       }
+      if (info.yard) {
+        const [yx, yz] = yardPos(info.yard);
+        const gm = new THREE.Mesh(Box(YARD_SIZE, 0.3, YARD_SIZE), ghostMat); gm.position.set(yx, 0.15, yz);
+        scene.add(gm); s.ghosts.push(gm);
+        continue;
+      }
       if (info.helipad) {
         const c = info.helipad;
-        const gm = new THREE.Mesh(mergeGeometries([{ geo: Box(c.w, 0.3, c.d), m: M(info.at[0], 0.15, info.at[1]) }, { geo: Sph(0.9, 8, 6), m: M(info.at[0] - 0.6, 1.1, info.at[1], 1, 0.85, 1.6) }, ...Object.values(c.yards).map(([yx, yz]) => ({ geo: Box(2.7, 0.3, 2.7), m: M(yx, 0.15, yz) }))]), ghostMat);
+        const gm = new THREE.Mesh(mergeGeometries([{ geo: Box(c.w, 0.3, c.d), m: M(info.at[0], 0.15, info.at[1]) }, { geo: Sph(0.9, 8, 6), m: M(info.at[0] - 0.6, 1.1, info.at[1], 1, 0.85, 1.6) }, ...Object.values(c.yards).map(([yx, yz]) => ({ geo: Box(YARD_SIZE, 0.3, YARD_SIZE), m: M(yx, 0.15, yz) }))]), ghostMat);
         scene.add(gm); s.ghosts.push(gm);
         continue;
       }
@@ -1226,7 +1287,8 @@
       s.appear = Math.min(1, s.appear + dt * 3);
       s.bump = Math.max(0, s.bump - dt * 6);
       if (!s.building) {
-        const near = Math.abs(player.x - s.x) < s.r + 0.2 && Math.abs(player.z - s.z) < s.r + 0.2;
+        const near = s.grid ? Math.abs(player.x - s.fx) < YARD_SIZE / 2 + 0.1 && Math.abs(player.z - s.fz) < YARD_SIZE / 2 + 0.1
+          : Math.abs(player.x - s.x) < s.r + 0.2 && Math.abs(player.z - s.z) < s.r + 0.2;
         if (s.pickup) {
           // お金置き場: 立っていると、山のてっぺんから札束が1つずつ背中へ飛んでくる
           if (near && s.stock > 0) {
@@ -1239,12 +1301,12 @@
               s.dT += s.gap; s.gap = Math.max(DELIVER.minGap, s.gap * DELIVER.speedUp);
             }
           } else { s.gap = DELIVER.gap; s.dT = 0; }
-        } else if (near && carried[s.res] > 0 && s.paid + s.incoming < s.need && !(s.store && s.stock + s.incoming >= s.cap)) {
+        } else if (near && (carried[s.res] > 0 || (!s.store && storeStock(s.res) > 0)) && s.paid + s.incoming < s.need && !(s.store && s.stock + s.incoming >= s.cap)) {
           s.dT -= dt;
-          while (s.dT <= 0 && carried[s.res] > 0 && s.paid + s.incoming < s.need) {
-            // 背中のてっぺんから1個ずつ、建築エリアへ飛ばす(だんだん速く)
-            carried[s.res]--;
-            slotPos(s.res, carried[s.res], slot);
+          while (s.dT <= 0 && (carried[s.res] > 0 || (!s.store && storeStock(s.res) > 0)) && s.paid + s.incoming < s.need) {
+            // 背中のてっぺんから1個ずつ、建築エリアへ飛ばす(だんだん速く)。背中が空なら置き場の山から飛んでくる
+            if (carried[s.res] > 0) { carried[s.res]--; slotPos(s.res, carried[s.res], slot); }
+            else { const st = storeFor(s.res); st.stock--; drawPile(st); const q = gridPos(st, st.stock); slot.x = q[0]; slot.y = q[1]; slot.z = q[2]; slot.ry = 0; }
             const pool = drops[s.res];
             if (pool.items.length < pool.max) {
               const it = { kind: s.res, st: 'deliver', site: s.id, t: 0, dur: DELIVER.flight, sx: slot.x, sy: slot.y, sz: slot.z, x: slot.x, y: slot.y, z: slot.z, tx: s.x + (Math.random() - 0.5) * 1.6, tz: s.z + (Math.random() - 0.5) * 1.6, ty: 0.35, ry: slot.ry, rx: 0 };
@@ -1272,7 +1334,7 @@
     s.ghosts.forEach(g => { scene.remove(g); g.geometry.dispose(); });
     let cx = 0, cz = 0;
     const delays = s.build.map((id, i) => s.delays && s.delays[i] !== undefined ? s.delays[i] : 0.15 + i * 0.7);
-    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : BUILDINGS[id].helipad ? startHelipad(id, s) : construct(id, false, s)); });
+    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : BUILDINGS[id].helipad ? startHelipad(id, s) : BUILDINGS[id].yard ? startYard(id, s) : construct(id, false, s)); });
     cx /= s.build.length; cz /= s.build.length;
     const fenced = s.build.some(id => BUILDINGS[id].fence);
     camFocus((cx + s.x) / 2, (cz + s.z) / 2, Math.max(...delays) + 1.6, fenced ? 0.35 : 0.18);
@@ -1690,21 +1752,8 @@
       lamp.position.set(cx + lx * (c.w / 2 - 0.2), 0.42, cz + lz * (c.d / 2 - 0.2)); lamp.scale.setScalar(0.01);
       scene.add(lamp); h.lamps.push(lamp);
     }
-    // 氷置き場とお金置き場の台
-    h.cfg = c; h.yards = [];
-    for (const [key, col] of [['ice', '#7fc7ea'], ['cash', '#5fbf5a']]) {
-      const [yx, yz] = c.yards[key];
-      const g = new THREE.Mesh(mergeGeometries([
-        { geo: Box(2.7, 0.24, 2.7), m: M(0, 0.12, 0), color: '#8a5a2e' },
-        ...[0, 1, 2, 3, 4].map(i => ({ geo: Box(2.7, 0.06, 0.4), m: M(0, 0.27, -1.1 + i * 0.55), color: '#a8774a' })),
-        ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({ geo: Box(0.14, 0.7, 0.14), m: M(lx * 1.3, 0.35, lz * 1.3), color: '#5a3a1e' })),
-        { geo: Box(2.7, 0.08, 0.1), m: M(0, 0.6, -1.3), color: col },
-        { geo: Box(0.1, 0.08, 2.7), m: M(-1.3, 0.6, 0), color: col },
-        { geo: Box(0.1, 0.08, 2.7), m: M(1.3, 0.6, 0), color: col },
-      ]), vcMat);
-      g.position.set(yx, 0, yz); g.scale.setScalar(0.01); scene.add(g);
-      h.yards.push(g);
-    }
+    // 氷置き場とお金置き場の木の床
+    h.cfg = c; h.yards = ['ice', 'cash'].map(key => { const g = makeYardMesh(key); g.scale.setScalar(0.01); return g; });
     h.heli = new THREE.Group();
     h.body = new THREE.Mesh(heliBodyGeo, vcMat); h.heli.add(h.body);
     h.rotor = new THREE.Mesh(rotorGeo, vcMat); h.rotor.position.y = 2.25; h.heli.add(h.rotor);
@@ -1720,13 +1769,49 @@
     pushOut(player, PLAYER_CFG.radius);
     shake(0.2); ring(cx, cz, 4, 0.45, '#ffffff');
   }
-  function yardPos(key) { const b = built.helipad; return b && b.heli ? b.heli.cfg.yards[key] : [0, 0]; }
+  function yardPos(key) { return YARD_AT[key] || [0, 0]; }
+  // 木の床(置き場)。ふちの色で何の置き場かわかる
+  const YARD_COL = { wood: '#c98a4a', ice: '#7fc7ea', cash: '#5fbf5a' };
+  function makeYardMesh(key) {
+    const Y = YARD_SIZE, h = Y / 2 - 0.05, col = YARD_COL[key] || '#ffffff';
+    const g = new THREE.Mesh(mergeGeometries([
+      { geo: Box(Y, 0.24, Y), m: M(0, 0.12, 0), color: '#8a5a2e' },
+      ...[0, 1, 2, 3, 4, 5].map(i => ({ geo: Box(Y, 0.06, Y / 6 - 0.06), m: M(0, 0.27, -Y / 2 + (i + 0.5) * Y / 6), color: i % 2 ? '#a8774a' : '#b5834f' })),
+      ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({ geo: Box(0.16, 0.7, 0.16), m: M(lx * h, 0.35, lz * h), color: '#5a3a1e' })),
+      { geo: Box(Y, 0.08, 0.12), m: M(0, 0.32, -h), color: col }, { geo: Box(Y, 0.08, 0.12), m: M(0, 0.32, h), color: col },
+      { geo: Box(0.12, 0.08, Y), m: M(-h, 0.32, 0), color: col }, { geo: Box(0.12, 0.08, Y), m: M(h, 0.32, 0), color: col },
+    ]), vcMat);
+    const [x, z] = yardPos(key);
+    g.position.set(x, 0, z);
+    scene.add(g);
+    return g;
+  }
+  const yardBuilds = [];
+  function startYard(id, site) {
+    const info = BUILDINGS[id], g = makeYardMesh(info.yard);
+    g.scale.setScalar(0.01);
+    const [x, z] = yardPos(info.yard);
+    flyLog(site.x, 0.6, site.z, x, 0.5, z, 0.35, 3, () => { puff(x, 0.3, z, 6, '#ffffff', 1, 0.8, 1.6); SND.tok(); shake(0.08); });
+    yardBuilds.push({ g, t: 0, id, site });
+    built[id] = { id, info, def: { ridge: 1 }, g, box: null, door: [x, z], smoke: null, done: false, squash: 0, site: site.id };
+  }
+  function updateYards(dt) {
+    for (let i = yardBuilds.length - 1; i >= 0; i--) {
+      const y = yardBuilds[i];
+      y.t += dt;
+      const k = (y.t - 0.35) / 0.3;
+      y.g.scale.setScalar(k <= 0 ? 0.01 : Math.max(0.01, backOut(Math.min(1, k))));
+      if (y.t > 0.8) { yardBuilds.splice(i, 1); const b = built[y.id]; b.done = true; updateBuildCount(); popText('✨ ' + b.info.name + ' 完成!', y.g.position.x, y.g.position.z, '#fff6b0', 18, 2); siteDoneCheck(b); }
+    }
+  }
   // 置き場の i 番目の位置(下の段から、手前→奥へ並べる)
   function gridPos(s, i) {
     const g = s.grid, per = g.cols * g.rows, layer = Math.floor(i / per), k = i % per;
     const c = k % g.cols, r = Math.floor(k / g.cols);
     return [s.gx + (c - (g.cols - 1) / 2) * g.cx, g.y0 + Math.min(layer, g.layers - 1) * g.h, s.gz + (r - (g.rows - 1) / 2) * g.cz];
   }
+  function storeFor(res) { for (const id in sites) { const s = sites[id]; if (s.store && s.res === res) return s; } return null; }
+  function storeStock(res) { const s = storeFor(res); return s ? s.stock : 0; }
   function drawPile(s) {
     const n = Math.min(s.stock, s.cap);
     for (let i = 0; i < n; i++) { const q = gridPos(s, i); setInst(s.pileMesh, i, q[0], q[1], q[2], 1, 1, 1, s.res === 'cash' ? ((i * 7) % 5 - 2) * 0.04 : 0); }
@@ -1913,6 +1998,36 @@
     if (s && s.build.every(id => built[id] && built[id].done)) {
       s.done = true; scene.remove(s.pad);
     }
+  }
+  // 見張り台: 近くのゾンビに矢を撃つ
+  const arrowGeo = mergeGeometries([{ geo: Box(0.06, 0.06, 0.9), m: M(0, 0, 0), color: '#8a5a2e' }, { geo: Cone(0.08, 0.2, 5), m: M(0, 0, 0.5, 1, 1, 1, Math.PI / 2, 0, 0), color: '#dfe6ec' }, { geo: Box(0.02, 0.14, 0.18), m: M(0, 0, -0.38), color: '#ffffff' }]);
+  const arrowMesh = new THREE.InstancedMesh(arrowGeo, vcMat, 40); arrowMesh.count = 0; arrowMesh.frustumCulled = false; scene.add(arrowMesh);
+  const arrows = [];
+  function updateTowers(dt) {
+    for (const id in built) {
+      const b = built[id], sh = b.info.shoot;
+      if (!sh || !b.done) continue;
+      const [tx, tz] = b.info.at;
+      b.shootT = (b.shootT || 0) - dt;
+      if (b.shootT > 0) continue;
+      let best = null, bd = sh.range;
+      for (const zb of zs) { if (zb.dead || zb.appear < 0.6 || zb.targeted) continue; const d = Math.hypot(zb.x - tx, zb.z - tz); if (d < bd) { bd = d; best = zb; } }
+      if (!best) { b.shootT = 0.15; continue; }
+      b.shootT = sh.every;
+      best.targeted = true;
+      if (arrows.length < 40) arrows.push({ sx: tx, sy: sh.y, sz: tz, zb: best, t: 0, dur: 0.12 + bd * 0.025 });
+      if (!fastForwarding && sfx.whoosh >= 1) { sfx.whoosh--; tone(700, 0.06, 'triangle', 0.035, 0.6); }
+    }
+    let n = 0;
+    for (let i = arrows.length - 1; i >= 0; i--) {
+      const a = arrows[i]; a.t += dt;
+      const e = Math.min(1, a.t / a.dur), zb = a.zb;
+      const x = lerp(a.sx, zb.x, e), y = lerp(a.sy, 1.0, e) + Math.sin(e * Math.PI) * 0.8, z = lerp(a.sz, zb.z, e);
+      if (e >= 1) { arrows.splice(i, 1); zb.targeted = false; if (!zb.dead) hitZombie(zb, x, z); continue; }
+      const dx = zb.x - a.sx, dz = zb.z - a.sz;
+      setInst(arrowMesh, n++, x, y, z, 1, 1, 1, Math.atan2(dx, dz), 0.4 - e * 0.8);
+    }
+    arrowMesh.count = n; arrowMesh.instanceMatrix.needsUpdate = true;
   }
   function updateBuildings(dt) {
     for (const id in built) {
@@ -2128,7 +2243,7 @@
     for (const id in sites) {
       const s = sites[id];
       if (s.building || s.done || s.deposit || s.store || s.pickup) continue;
-      let have = s.paid + s.incoming + carried[s.res];
+      let have = s.paid + s.incoming + carried[s.res] + storeStock(s.res);
       for (const it of drops[s.res].items) if (it.st !== 'deliver') have++;
       for (const t of targets) if (!t.gone && t.drops[s.res] && (t.type !== 'bear')) have += t.drops[s.res];
       if (have >= s.need) continue;
@@ -2327,7 +2442,7 @@
   }
   // 次の行き先: 運べる資材があれば建築エリア → いちばん近い木・狼・落ちている資材 → 熊
   function guideTarget() {
-    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.store && !s.pickup && !s.building && !s.done && carried[s.res] > 0 && s.paid + s.incoming < s.need) return { kind: 'site', x: s.x, z: s.z, site: s }; }
+    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.store && !s.pickup && !s.building && !s.done && (carried[s.res] > 0 || storeStock(s.res) > 0) && s.paid + s.incoming < s.need) return { kind: 'site', x: s.x, z: s.z, site: s }; }
     // 今のシーンで倒すもの(狼など)があれば、そちらを先に
     const focus = SCN.active.filter(sc => sc.goal && sc.goal.type === 'clear').map(sc => sc.goal.tag);
     let fb = null, fd = 1e9;
@@ -2479,7 +2594,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateYards(dt); updateTowers(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
