@@ -86,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.18-s10';
+  const GAME_VERSION = '2026.11.18-s11';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -113,7 +113,7 @@
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
   const ZOMBIES = { drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
   const ZOOM_BASE = 14;
-  const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊', cash: '💵' };
+  const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊', cash: '💵', coal: '⚫' };
 
   // エリア(rect = x1, z1, x2, z2)。開くまで中に入れない。edges = 雪の吹きだまりの柵を置く線
   const AREAS = {}; // 今はエリアの区切りなし(森の中の空き地から始まる)
@@ -157,13 +157,22 @@
         { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💰', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
         { do: 'toast', text: '🧊 凍ったゾンビを氷置き場へ! ヘリが売ってくれる 💰' },
         // 武器パワーアップ(拠点の左手前)。お金で払う
-        { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-6.5, 6.2], res: 'cash', levels: WEAPON_LEVELS, delay: 1.5 },
+        { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 1.5 },
       ] },
     { id: 'scene_05', title: '見張り台', after: 'scene_04', delay: 1.0,
       enter: [{ do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'wood', need: 80, build: ['tower'] }],
       goal: { type: 'build', site: 'tower' },
       exit: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
-    { id: 'scene_06', title: '出荷でかせぐ', after: 'scene_05', goal: { type: 'none' } },
+    { id: 'scene_06', title: '炭焼き窯', after: 'scene_05', delay: 1.0,
+      enter: [{ do: 'site', id: 'kiln', icon: '🏭', at: [-6.8, 1.4], res: 'wood', need: 100, build: ['kiln'] }],
+      goal: { type: 'build', site: 'kiln' },
+      exit: [
+        // 炭置き場(窯の前)。木材置き場の薪が3本ずつコンベアで窯へ → 炭1個。炭はヘリが高く買う
+        { do: 'storage', id: 'coalpad', kind: 'deposit', icon: '⚫', res: 'coal', yard: 'coal', grid: { cols: 4, rows: 4, layers: 6, cx: 0.5, cz: 0.5, h: 0.44, y0: 0.52 } },
+        { do: 'kilnline', kiln: 'kiln', from: 'woodpad', to: 'coalpad' },
+        { do: 'toast', text: '🏭 炭焼き窯ができた! 薪が自動で炭になる(ヘリが高く買う)' },
+      ] },
+    { id: 'scene_07', title: '出荷でかせぐ', after: 'scene_06', goal: { type: 'none' } },
   ];
 
   const STICK_RADIUS = 56;
@@ -482,7 +491,13 @@
     { geo: Box(0.07, 0.03, 0.07), m: M(0.15, 0.085, 0), color: '#2f7a2a' },
     { geo: Box(0.07, 0.03, 0.07), m: M(-0.15, 0.085, 0), color: '#2f7a2a' },
   ]);
-  const drops = { wood: makePool(woodGeo, vcMat, 700), meat: makePool(meatGeo, vcMat, 140), ice: makePool(iceGeo, iceMat, 320), cash: makePool(cashGeo, vcMat, 260) };
+  // 炭のブロック(黒いごつごつ・ところどころ赤く光る)
+  const coalGeo = mergeGeometries([
+    { geo: new THREE.DodecahedronGeometry(0.26), m: M(0, 0, 0, 1.1, 0.85, 1.1), color: '#2a2a2e' },
+    { geo: new THREE.DodecahedronGeometry(0.12), m: M(0.12, 0.1, 0.12), color: '#4a4a52' },
+    { geo: Box(0.08, 0.05, 0.08), m: M(-0.1, 0.18, 0.05), color: '#ff7a2a' },
+  ]);
+  const drops = { wood: makePool(woodGeo, vcMat, 700), meat: makePool(meatGeo, vcMat, 140), ice: makePool(iceGeo, iceMat, 320), cash: makePool(cashGeo, vcMat, 260), coal: makePool(coalGeo, vcMat, 120) };
   const stackMesh = {
     wood: new THREE.InstancedMesh(woodGeo, vcMat, STACK.wood.max),
     meat: new THREE.InstancedMesh(meatGeo, vcMat, STACK.meat.max),
@@ -564,8 +579,24 @@
     return { parts, size: [2.7, 1.8] };
   }
   // 置き場(木の床)の場所。床に乗ると置ける/受け取れる。緑の枠はアップデート専用
-  const YARD_AT = { wood: [-6.5, -3.4], ice: [8.3, -2.4], cash: [0, -8.2] };
+  const YARD_AT = { wood: [-6.5, -3.4], ice: [8.3, -2.4], cash: [0, -8.2], coal: [-6.8, 5.0] };
+  // 炭焼き窯: 薪 per 本で炭1個。炭は1個 💰price(ヘリが買う)
+  const KILN = { per: 3, every: 0.45, belt: 1.0, burn: 0.5, price: 15 };
   const YARD_SIZE = 3.6;
+  // 炭焼き窯: 石の土台 → 石のかまど(まるい) → 丸屋根 → えんとつ・燃える口
+  function kilnDef() {
+    const parts = [], stone = '#8d97a3', dark = '#6f7883';
+    parts.push(B(2.8, 0.3, 2.6, 0, 0.15, 0, '#7a828c', 'base'));
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; parts.push(B(0.7, 0.9, 0.4, Math.cos(a) * 1.0, 0.75, Math.sin(a) * 1.0, i % 2 ? stone : dark, 'pillar', { ry: -a + Math.PI / 2 })); }
+    parts.push(C(1.15, 1.25, 1.1, 0, 0.85, 0, '#9aa3ad', 'wall', { seg: 12 }));
+    parts.push(S(1.2, 0, 1.4, 0, '#a7b0ba', 'roof', { sc: [1, 0.75, 1] }));
+    parts.push(S(1.0, 0, 1.75, 0, '#f6fafd', 'roof', { sc: [1, 0.45, 1] }));
+    parts.push(C(0.28, 0.32, 1.4, 0.5, 2.5, -0.4, dark, 'roof'), C(0.34, 0.34, 0.12, 0.5, 3.22, -0.4, '#f6fafd', 'roof'));
+    parts.push(B(0.9, 0.7, 0.2, 0, 0.75, 1.15, '#ff7a1a', 'deco'), B(0.6, 0.4, 0.22, 0, 0.7, 1.16, '#ffd84a', 'deco'));
+    parts.push(B(1.2, 0.14, 0.3, 0, 1.18, 1.18, dark, 'deco'));
+    parts.push(B(0.7, 0.08, 0.9, 0, 0.42, 1.6, '#4a4f58', 'deco', { rx: 0.35 }));
+    return { parts, size: [2.8, 2.6], smoke: [0.5, 3.4, -0.4], ridge: 3 };
+  }
   function towerDef() {
     const parts = [], wood = '#7a4d24', plank = '#a8774a';
     for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
@@ -592,6 +623,7 @@
   const BUILDINGS = {
     fence: { name: 'キャンプの柵', at: [0, 0], fence: { H: 11, gw: 1.7, spacing: 1.3 } }, // 四角い柵(半分の幅 H、入口は手前の辺のまん中、幅 2×gw)
     woodyard: { name: '木材置き場', at: [-6.5, -3.4], yard: 'wood' },
+    kiln: { name: '炭焼き窯', at: [-6.8, 1.4], rot: 0, def: kilnDef },
     tower: { name: '見張り台', at: [8.3, 8.3], rot: Math.PI / 4, def: towerDef, shoot: { range: 13, every: 0.28, y: 5.2 } },
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
@@ -1243,9 +1275,11 @@
       // 置き場: 横の台の上に、決まった並びで積み上がる
       // 山は床の奥側、手前の角に置き場のアイコンと数を描く
       const yard = yardPos(a.yard);
+      // 床がまだなければ、ここでポンと出す(炭置き場など)
+      if (!YARD_MESH[a.yard]) { const fl = makeYardMesh(a.yard); fl.scale.setScalar(0.01); yardPops.push({ g: fl, t: 0 }); }
       s.grid = a.grid; s.fx = yard[0]; s.fz = yard[1]; s.gx = yard[0] - 0.45; s.gz = yard[1] - 0.45; s.stock = 0; s.lastIn = -99; s.kind = a.kind;
       s.cap = a.grid.cols * a.grid.rows * a.grid.layers;
-      const geo = { ice: iceGeo, cash: cashGeo, wood: woodGeo }[a.res];
+      const geo = { ice: iceGeo, cash: cashGeo, wood: woodGeo, coal: coalGeo }[a.res];
       s.pileMesh = new THREE.InstancedMesh(geo, a.res === 'ice' ? iceMat : vcMat, s.cap);
       s.decal = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
       s.decal.rotation.x = -Math.PI / 2; s.decal.position.set(yard[0] + 0.85, 0.33, yard[1] + 0.85); s.decal.renderOrder = 3;
@@ -1823,6 +1857,7 @@
     scene.add(h.heli);
     // ヘリの下にぶらさげる網(回収した氷が入る)
     h.net = new THREE.InstancedMesh(iceGeo, iceMat, 16); h.net.count = 0; h.net.frustumCulled = false; scene.add(h.net);
+    h.netCoal = new THREE.InstancedMesh(coalGeo, vcMat, 8); h.netCoal.count = 0; h.netCoal.frustumCulled = false; scene.add(h.netCoal);
     h.loaded = 0;
     helis.push(h);
     built[id] = { id, info, def: { ridge: 3 }, g: h.pad, box: [cx - c.w / 2, cz - c.d / 2, cx + c.w / 2, cz + c.d / 2], door: [cx, cz + c.d / 2 + 1], smoke: null, done: false, squash: 0, site: site.id, heli: h };
@@ -1831,7 +1866,7 @@
   }
   function yardPos(key) { return YARD_AT[key] || [0, 0]; }
   // 木の床(置き場)。ふちの色で何の置き場かわかる
-  const YARD_COL = { wood: '#c98a4a', ice: '#7fc7ea', cash: '#5fbf5a' };
+  const YARD_COL = { wood: '#c98a4a', ice: '#7fc7ea', cash: '#5fbf5a', coal: '#3a3a3a' };
   function makeYardMesh(key) {
     const Y = YARD_SIZE, h = Y / 2 - 0.05, col = YARD_COL[key] || '#ffffff';
     const g = new THREE.Mesh(mergeGeometries([
@@ -1844,8 +1879,10 @@
     const [x, z] = yardPos(key);
     g.position.set(x, 0, z);
     scene.add(g);
+    YARD_MESH[key] = g;
     return g;
   }
+  const YARD_MESH = {}, yardPops = [];
   const yardBuilds = [];
   function startYard(id, site) {
     const info = BUILDINGS[id], g = makeYardMesh(info.yard);
@@ -1856,6 +1893,12 @@
     built[id] = { id, info, def: { ridge: 1 }, g, box: null, door: [x, z], smoke: null, done: false, squash: 0, site: site.id };
   }
   function updateYards(dt) {
+    for (let i = yardPops.length - 1; i >= 0; i--) {
+      const y = yardPops[i]; y.t += dt;
+      y.g.scale.setScalar(Math.max(0.01, backOut(Math.min(1, y.t / 0.35))));
+      if (y.t === dt) { puff(y.g.position.x, 0.3, y.g.position.z, 6, '#ffffff', 1, 0.8, 1.6); SND.tok(); }
+      if (y.t > 0.4) yardPops.splice(i, 1);
+    }
     for (let i = yardBuilds.length - 1; i >= 0; i--) {
       const y = yardBuilds[i];
       y.t += dt;
@@ -1872,6 +1915,72 @@
   }
   function storeFor(res) { for (const id in sites) { const s = sites[id]; if (s.store && s.res === res) return s; } return null; }
   function storeStock(res) { const s = storeFor(res); return s ? s.stock : 0; }
+  // ---- 炭焼き窯のライン: 木材置き場 → コンベア → 窯 → 炭置き場 ----
+  const kilnLines = [];
+  const beltTex = canvasTexture(64, (g, n) => { g.fillStyle = '#3c4048'; g.fillRect(0, 0, n, n); g.fillStyle = '#5a606a'; for (let i = 0; i < 4; i++) g.fillRect(0, i * 16, n, 6); });
+  beltTex.wrapS = beltTex.wrapT = THREE.RepeatWrapping;
+  function startKilnLine(a) {
+    const kb = built[a.kiln], from = sites[a.from], to = sites[a.to];
+    if (!kb || !from || !to) return;
+    const [kx, kz] = kb.info.at;
+    // コンベアは木材置き場の手前のふちから、窯のうしろへ
+    const bx = from.fx, bz1 = from.fz + YARD_SIZE / 2 - 0.1, bz2 = kz - 1.25, len = bz2 - bz1;
+    const tex = beltTex.clone(); tex.needsUpdate = true; tex.repeat.set(1, len * 1.5);
+    const g = new THREE.Group();
+    const belt = new THREE.Mesh(Box(0.9, 0.12, len), new THREE.MeshLambertMaterial({ map: tex })); belt.position.set(0, 0.62, 0); g.add(belt);
+    g.add(new THREE.Mesh(mergeGeometries([
+      { geo: Box(0.1, 0.22, len), m: M(-0.5, 0.66, 0), color: '#ffd23a' }, { geo: Box(0.1, 0.22, len), m: M(0.5, 0.66, 0), color: '#ffd23a' },
+      ...[-1, 0, 1].map(k => ({ geo: Box(0.12, 0.56, 0.12), m: M(0.4, 0.28, k * len * 0.4), color: '#5a606a' })),
+      ...[-1, 0, 1].map(k => ({ geo: Box(0.12, 0.56, 0.12), m: M(-0.4, 0.28, k * len * 0.4), color: '#5a606a' })),
+    ]), vcMat));
+    g.position.set(bx, 0, (bz1 + bz2) / 2); g.scale.set(1, 0.01, 0.01);
+    scene.add(g);
+    const logs = new THREE.InstancedMesh(woodGeo, vcMat, 24); logs.count = 0; logs.frustumCulled = false; scene.add(logs);
+    kilnLines.push({ kb, from, to, g, tex, logs, items: [], bx, bz1, bz2, t: 0, takeT: 0, fuel: 0, burnT: 0, popT: 0, active: 0 });
+    shake(0.15); ring(bx, (bz1 + bz2) / 2, 3, 0.4, '#ffd23a'); SND.tok();
+  }
+  function updateKilns(dt) {
+    for (const L of kilnLines) {
+      L.t += dt;
+      const k = Math.min(1, L.t / 0.5);
+      L.g.scale.set(1, Math.max(0.01, backOut(k)), Math.max(0.01, k));
+      const room = L.to.stock + L.to.incoming + Math.ceil(L.fuel / KILN.per) < L.to.cap;
+      // 木材置き場の山のてっぺんから、1本ずつコンベアへ
+      L.takeT -= dt;
+      if (L.takeT <= 0 && room && L.from.stock > 0 && L.items.length < 20) {
+        L.takeT = KILN.every / KILN.per;
+        L.from.stock--; drawPile(L.from);
+        const q = gridPos(L.from, L.from.stock);
+        flyItem('wood', q[0], q[1], q[2], L.bx, 0.8, L.bz1, 0.25, 0.8, () => L.items.push({ p: 0, ry: Math.random() * 0.4 - 0.2 }));
+      }
+      // コンベアを流れて窯へ
+      let n = 0;
+      for (let i = L.items.length - 1; i >= 0; i--) {
+        const it = L.items[i];
+        it.p += dt / KILN.belt;
+        if (it.p >= 1) { L.items.splice(i, 1); L.fuel++; burstGibs(L.bx, 1.0, L.bz2 + 0.3, 2, '#ffb030', 1.2, 3); continue; }
+        setInst(L.logs, n++, L.bx, 0.82, lerp(L.bz1, L.bz2, it.p), 1, 1, 1, it.ry);
+      }
+      L.logs.count = n; L.logs.instanceMatrix.needsUpdate = true;
+      if (L.items.length || L.fuel) L.active = 1.2; else L.active = Math.max(0, L.active - dt);
+      L.tex.offset.y -= dt * (L.active > 0 ? 1.5 : 0);
+      // 薪 per 本で、炭が1個ポンと飛び出す
+      if (L.fuel >= KILN.per) {
+        L.burnT += dt;
+        if (L.burnT >= KILN.burn) {
+          L.burnT = 0; L.fuel -= KILN.per;
+          const [kx, kz] = L.kb.info.at, to = L.to;
+          to.incoming++;
+          const q = gridPos(to, Math.min(to.cap - 1, to.stock + to.incoming - 1));
+          flyItem('coal', kx, 1.0, kz + 1.3, q[0], q[1], q[2], 0.45, 2.2, () => { to.incoming--; to.stock = Math.min(to.cap, to.stock + 1); to.lastIn = gt; drawPile(to); if (!fastForwarding) tone(260 + (to.stock % 10) * 20, 0.06, 'square', 0.04, 0.7); }, 10);
+          burstGibs(kx, 1.0, kz + 1.3, 6, '#ffb030', 2, 4); puff(kx, 0.9, kz + 1.3, 2, '#9aa0a8', 0.6, 0.8, 0.8);
+          if (!fastForwarding) noise(0.12, 0.08, 700);
+        }
+      }
+      // 動いているあいだは、えんとつから煙・口が明るく
+      L.kb.smokeOn = L.active > 0;
+    }
+  }
   function drawPile(s) {
     const n = Math.min(s.stock, s.cap);
     for (let i = 0; i < n; i++) { const q = gridPos(s, i); setInst(s.pileMesh, i, q[0], q[1], q[2], 1, 1, 1, s.res === 'cash' ? ((i * 7) % 5 - 2) * 0.04 : 0); }
@@ -1912,32 +2021,41 @@
         }
       } else if (h.state === 'idle') {
         hp.set(h.home[0], h.home[1], h.home[2]); h.heli.rotation.x = 0;
-        if (ice && cash && h.st > 1 && (ice.stock >= h.cfg.batch || (ice.stock > 0 && gt - ice.lastIn > h.cfg.wait))) {
-          h.state = 'go'; h.st = 0; h.loaded = 0; h.netN = 0; h.bundles = undefined; h.from = [hp.x, hp.y, hp.z];
+        const coal = sites.coalpad;
+        if (ice && cash && h.st > 1 && (ice.stock >= h.cfg.batch || (ice.stock > 0 && gt - ice.lastIn > h.cfg.wait) || (coal && coal.stock >= 12))) {
+          // 回る順番: 氷置き場 → 炭置き場(あるものだけ)
+          h.queue = [ice, coal].filter(p => p && p.stock > 0); h.cur = h.queue.shift();
+          h.state = 'go'; h.st = 0; h.loaded = 0; h.loadedIce = 0; h.loadedCoal = 0; h.netN = 0; h.netC = 0; h.bundles = undefined; h.from = [hp.x, hp.y, hp.z];
           popText('🚁 回収に来た!', h.x, h.z, '#ffffff', 16, 3.5);
         }
       } else if (h.state === 'go') {
-        heliFly(h, h.from, above(ice.gx, ice.gz), 1.1, h.st / 1.1);
+        heliFly(h, h.from, above(h.cur.gx, h.cur.gz), 1.1, h.st / 1.1);
         if (h.st < 0.4) downwash(h);
         if (h.st >= 1.1) { h.state = 'load'; h.st = 0; h.loadT = 0; }
       } else if (h.state === 'load') {
         // 山のてっぺんから1個ずつ吸い上げる
-        hp.set(ice.gx, 6.2 + Math.sin(gt * 3) * 0.1, ice.gz);
+        const pile = h.cur, isCoal = pile.res === 'coal';
+        hp.set(pile.gx, 6.2 + Math.sin(gt * 3) * 0.1, pile.gz);
         h.loadT -= dt;
-        while (h.loadT <= 0 && ice.stock > 0 && h.loaded < 60) {
+        while (h.loadT <= 0 && pile.stock > 0 && h.loaded < 80) {
           h.loadT += 0.035;
-          ice.stock--; drawPile(ice);
-          const q = gridPos(ice, ice.stock);
-          h.loaded++;
-          flyItem('ice', q[0], q[1], q[2], hp.x + (Math.random() - 0.5) * 0.6, 4.6, hp.z + (Math.random() - 0.5) * 0.6, 0.32, 0.5, () => { h.netN = Math.min(16, (h.netN || 0) + 1); SND.give(h.netN); }, 6);
+          pile.stock--; drawPile(pile);
+          const q = gridPos(pile, pile.stock);
+          h.loaded++; if (isCoal) h.loadedCoal++; else h.loadedIce++;
+          flyItem(pile.res, q[0], q[1], q[2], hp.x + (Math.random() - 0.5) * 0.6, 4.6, hp.z + (Math.random() - 0.5) * 0.6, 0.32, 0.5, () => { if (isCoal) h.netC = Math.min(8, (h.netC || 0) + 1); else h.netN = Math.min(16, (h.netN || 0) + 1); SND.give(h.loaded); }, 6);
         }
         if (Math.random() < dt * 10) downwash(h);
-        if ((ice.stock === 0 || h.loaded >= 60) && h.loadT <= 0.3 && h.st > 0.5) { h.state = 'away'; h.st = 0; h.from = [hp.x, hp.y, hp.z]; SND.done(); }
+        if ((pile.stock === 0 || h.loaded >= 80) && h.loadT <= 0.3 && h.st > 0.5) {
+          h.from = [hp.x, hp.y, hp.z]; h.st = 0;
+          const next = h.queue.shift();
+          if (next && next.stock > 0 && h.loaded < 80) { h.cur = next; h.state = 'go'; }
+          else { h.state = 'away'; SND.done(); }
+        }
       } else if (h.state === 'away') {
         // 氷を受け取ったら、飛び去りながらお金置き場へ札束を投げ込む
         heliFly(h, h.from, [h.from[0] + 14, 20, h.from[2] - 30], 1.8, h.st / 1.8);
         if (h.bundles === undefined) {
-          const value = h.loaded * h.cfg.price + h.cfg.bonus;
+          const value = (h.loadedIce || 0) * h.cfg.price + (h.loadedCoal || 0) * KILN.price + h.cfg.bonus;
           h.bundles = Math.ceil(value / h.cfg.unit); h.payT = 0.15;
           popText('🚁 売れた! 💰+' + value, cash.gx, cash.gz, '#ffe27a', 24, 4);
           SND.done(); shake(0.15);
@@ -1961,7 +2079,11 @@
         if (h.st >= 1.8) { h.state = 'idle'; h.st = 0; h.heli.rotation.y = 0; }
       }
       // 網にぶらさがった氷
-      const nn = ['load', 'away'].includes(h.state) ? (h.netN || 0) : 0;
+      const carrying = ['load', 'away'].includes(h.state) || (h.state === 'go' && h.loaded > 0);
+      const nc = carrying ? (h.netC || 0) : 0;
+      for (let i = 0; i < nc; i++) setInst(h.netCoal, i, hp.x + (i % 2 - 0.5) * 0.5, hp.y - 2.4 - Math.floor(i / 4) * 0.4, hp.z + (Math.floor(i / 2) % 2 - 0.5) * 0.5, 1, 1, 1, i);
+      h.netCoal.count = nc; h.netCoal.instanceMatrix.needsUpdate = true;
+      const nn = carrying ? (h.netN || 0) : 0;
       for (let i = 0; i < nn; i++) { const ox = (i % 2 - 0.5) * 0.52, oz = (Math.floor(i / 2) % 2 - 0.5) * 0.52, oy = Math.floor(i / 4) * 0.48; setInst(h.net, i, hp.x + ox, hp.y - 1.0 - oy, hp.z + oz, 1, 1, 1, h.heli.rotation.y); }
       h.net.count = nn; h.net.instanceMatrix.needsUpdate = true;
       const fast = h.state !== 'idle' || h.t < 2.4;
@@ -2243,6 +2365,7 @@
     freeplay: () => { freeplay = true; },
     axes: (a) => setAxes(a),
     storage: (a) => createSite({ ...a, need: 1e9, build: [] }),
+    kilnline: (a) => startKilnLine(a),
     upgrade: (a) => {
       const s = createSite({ id: a.id, icon: a.icon, at: a.at, res: a.res, need: Math.round(a.levels[0].cost / CASH_UNIT), build: [] });
       s.upgrade = a; s.level = 0;
@@ -2676,7 +2799,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateYards(dt); updateTowers(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
@@ -2721,12 +2844,13 @@
       return { gt, elapsed, carried: { ...carried }, scenes: SCN.log.map(l => ({ ...l })), active: SCN.active.map(s => s.id), buildings: Object.keys(built).filter(k => built[k].done),
         villagers: villagers.length, targets: targets.filter(t => !t.gone).map(t => t.type + ':' + t.tag), drops: drops.wood.items.length + drops.meat.items.length,
         sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : '')])),
-        unlocked: Object.keys(unlocked), over: gameOver, axesOff, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
+        unlocked: Object.keys(unlocked), over: gameOver, axesOff, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
     },
     bot(on) { bot = on; },
     fastForward(sec, step = 1 / 30) { fastForwarding = true; try { for (let t = 0; t < sec; t += step) logic(step); } finally { fastForwarding = false; } return this.state; },
     teleport(x, z) { player.x = x; player.z = z; },
     god(on) { godMode = on; },
+    kiln() { return kilnLines.map(L => ({ items: L.items.length, fuel: L.fuel, burnT: L.burnT, from: L.from.stock, to: L.to.stock, inc: L.to.incoming, cap: L.to.cap })); },
     weapon() { return { n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0 }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
