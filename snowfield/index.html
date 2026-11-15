@@ -88,7 +88,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.21-s18';
+  const GAME_VERSION = '2026.11.22-s19';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -117,7 +117,7 @@
   const ROCKET = { range: 12, treeRange: 8, every: 0.2, blast: 2.6, speed: 26 };
   const CAM_YAW = Math.PI / 4;                                 // カメラは斜め45度から(四角いキャンプがひし形に見える)
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
-  const ZOMBIES = { safe: 6, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
+  const ZOMBIES = { safe: 6, front: 0.45, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
   const ZOOM_BASE = 12; // カメラの距離(オーナーの希望で 14 から寄せた)
   const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊', cash: '💵', coal: '⚫' };
 
@@ -134,10 +134,10 @@
     { id: 'scene_01', title: '森の空き地で伐採', after: null,
       enter: [
         // 森いっぱいに木を置く(まん中の空き地はあける)。見える木は全部切れる
-        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25, avoid: [[-13.8, -13.8, 13.8, 13.8]], avoidCircles: [[0, 0, 15.6], [13, -17, 1.5]] },
+        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25, avoid: [[-13.8, -13.8, 13.8, 13.8]], avoidCircles: [[0, 0, 15.6]] },
         // おまけ: 森の奥でワンコがふるえている。ゾンビから守って、キャンプで保護すると…
-        { do: 'dog', at: [13, -17], delay: 4 },
-        { do: 'toast', text: '🐶 森の奥でワンコが鳴いている…! ゾンビから守ってあげて', delay: 5.5 },
+        { do: 'dog', delay: 4 },
+        { do: 'toast', text: '🐶 空き地にワンコが…! ゾンビから守ってあげて', delay: 5.5 },
         { do: 'zombies', on: true, first: 9, delay: 0.5 },
         { do: 'toast', text: '🧟 森の奥からゾンビが…! 急いでキャンプを作ろう!', delay: 1.2 },
         { do: 'axes', n: 2, radius: 1.6, speed: 1.6, quiet: true },
@@ -190,7 +190,7 @@
           announce: '🤖 電気で動く「木こりマシン」を作れるようになった!',
           onBuilt: [{ do: 'toast', text: '🤖 木こりマシン出動! 木を切って木材置き場へ運ぶ' }] },
         // 拠点拡大(木こりマシンとバキューマーで全自動になってから)。大金
-        { do: 'site', id: 'expand', icon: '🏗️', at: [3.2, 5.4], res: 'cash', need: 600, build: [], special: 'expand', requires: ['lumber', 'vacuum'],
+        { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 600, build: [], special: 'expand', requires: ['lumber', 'vacuum'],
           announce: '🏗️ 全自動になった! 拠点を広げられる(💰6,000)' },
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧊', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
@@ -1463,7 +1463,11 @@
     // 文字は画面に対してまっすぐ読める向き(カメラが45度なので、絵の中では斜めに書く)
     g.save(); g.translate(n / 2, n / 2); g.rotate(-CAM_YAW);
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    if (s.iconCh) { g.globalAlpha = 1; g.fillStyle = '#ffffff'; g.font = '88px sans-serif'; g.fillText(s.iconCh, 0, -26); }
+    if (s.iconCh && s.iconCh.length > 2) {
+      // 文字のアイコン(「拠点UP」など)
+      g.globalAlpha = 1; g.font = 'bold 56px sans-serif'; g.lineWidth = 10; g.strokeStyle = 'rgba(20,60,30,0.9)'; g.fillStyle = '#fff6a0';
+      g.strokeText(s.iconCh, 0, -26); g.fillText(s.iconCh, 0, -26);
+    } else if (s.iconCh) { g.globalAlpha = 1; g.fillStyle = '#ffffff'; g.font = '88px sans-serif'; g.fillText(s.iconCh, 0, -26); }
     g.font = 'bold 58px sans-serif'; g.lineWidth = 9; g.strokeStyle = 'rgba(20,60,30,0.85)'; g.fillStyle = '#ffffff';
     g.strokeText(info.text, 0, s.iconCh ? 54 : 0); g.fillText(info.text, 0, s.iconCh ? 54 : 0);
     g.restore();
@@ -1471,12 +1475,12 @@
   }
   function createSite(a) {
     const at = a.at || yardPos(a.yard);
-    const s = { id: a.id, x: at[0], z: at[1], r: 1.55, res: a.res, need: a.need, paid: 0, incoming: 0, build: a.build, building: false, done: false, gap: DELIVER.gap, dT: 0, bump: 0, appear: 0, ghosts: [], deposit: a.deposit || null };
+    const s = { id: a.id, x: at[0], z: at[1], r: a.padSize ? a.padSize / 2 - 0.05 : 1.55, res: a.res, need: a.need, paid: 0, incoming: 0, build: a.build, building: false, done: false, gap: DELIVER.gap, dT: 0, bump: 0, appear: 0, ghosts: [], deposit: a.deposit || null };
     if (s.deposit) { s.pile = new THREE.InstancedMesh(a.res === 'meat' ? meatGeo : woodGeo, vcMat, s.deposit.piles.length * s.deposit.layers * 3); s.pile.count = 0; s.pile.frustumCulled = false; scene.add(s.pile); }
     // 敷地そのものに、進み具合(色の塗り)・アイコン・必要な数を描く
     s.cv = document.createElement('canvas'); s.cv.width = s.cv.height = 256;
     s.tex = new THREE.CanvasTexture(s.cv); s.tex.colorSpace = THREE.SRGBColorSpace;
-    s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
+    s.pad = new THREE.Mesh(new THREE.PlaneGeometry(a.padSize || 3.2, a.padSize || 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
     s.iconCh = a.icon || ''; s.padKey = '';
     s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null; s.onBuilt = a.onBuilt || null; s.special = a.special || null;
     if (a.grid) {
@@ -1745,6 +1749,7 @@
       if (!f.gateLanded) continue;
       const gx = f.x, gz = f.z + f.H, near = Math.hypot(player.x - gx, player.z - gz) < 3.4 || lumbers.some(L => Math.hypot(L.x - gx, L.z - gz) < 3.4) || (dog && dog.st === 'follow' && Math.hypot(dog.x - gx, dog.z - gz) < 2.6);
       const was = f.doorOpen > 0.5;
+      f.playerOpen = Math.hypot(player.x - gx, player.z - gz) < 3.4; // ゾンビが入れるのは、キャラクターが開けたときだけ
       f.doorOpen += ((near ? 1 : 0) - f.doorOpen) * Math.min(1, dt * 7);
       if ((f.doorOpen > 0.5) !== was) { if (!fastForwarding) { noise(0.18, 0.06, 900); tone(near ? 240 : 180, 0.16, 'triangle', 0.04, near ? 1.4 : 0.7); } }
       f.gateG.doorL.rotation.y = f.doorOpen * 1.7;
@@ -1832,7 +1837,9 @@
     const C = campInfo(), H = C.H, ox = C.x, oz = C.z;
     let cx = 0, cz = 0;
     for (let k = 0; k < 12; k++) {
-      const a = ZOMBIES.from + (Math.random() - 0.5) * ZOMBIES.spread;
+      // 拠点ができたら、入口側(手前)からも群れで来る
+      const front = fences.length && Math.random() < ZOMBIES.front;
+      const a = front ? Math.PI / 2 + (Math.random() - 0.5) * 1.3 : ZOMBIES.from + (Math.random() - 0.5) * ZOMBIES.spread;
       const d = dist || lerp(ZOMBIES.dist[0], ZOMBIES.dist[1], Math.random());
       cx = clamp(ox + Math.cos(a) * d, WORLD.x1 + 2, WORLD.x2 - 2); cz = clamp(oz + Math.sin(a) * d, WORLD.z1 + 2, WORLD.z2 - 2);
       if (Math.max(Math.abs(cx - ox), Math.abs(cz - oz)) > H + ZOMBIES.safe + 2.5) break;
@@ -1869,7 +1876,7 @@
       const pd = d;
       // ワンコが近くにいれば、ワンコを襲いに行く
       let onDog = false;
-      if (dog && (dog.st === 'lost' || dog.st === 'follow')) {
+      if (dog && (dog.st === 'lost' || dog.st === 'follow' || dog.st === 'run')) {
         const ddx = dog.x - zb.x, ddz = dog.z - zb.z, dd = Math.hypot(ddx, ddz) || 1;
         if (dd < 6.5 && dd < d) { dx = ddx; dz = ddz; d = dd; onDog = true; if (dd < 0.75 && zb.appear > 0.5) dogBite(dt); }
       }
@@ -1887,7 +1894,7 @@
         if (od < 0.78 && od > 1e-4) { vx += ox / od * (0.78 - od) * 8; vz += oz / od * (0.78 - od) * 8; }
       }
       zb.x = clamp(zb.x + vx * dt, WORLD.x1 + 0.5, WORLD.x2 - 0.5); zb.z = clamp(zb.z + vz * dt, WORLD.z1 + 0.5, WORLD.z2 - 0.5);
-      for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && f.doorOpen < 0.7) segPush(zb, f.door, 0.55); }
+      for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && (f.doorOpen < 0.7 || !f.playerOpen)) segPush(zb, f.door, 0.55); }
       // 発電所の建物には入れない(吸い込み口からだけ)
       if (built.plant && built.plant.done) { const [x1, z1, x2, z2] = built.plant.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 + 0.6 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, z2 - zb.z]; const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else zb.z = z2; } }
       zb.face = Math.atan2(dx, dz);
@@ -2615,13 +2622,21 @@
     const g = new THREE.Group(); g.add(new THREE.Mesh(dogGeo, vcMat));
     const tail = new THREE.Mesh(dogTailGeo, vcMat); tail.position.set(0, 0.55, -0.3); tail.rotation.x = -0.7; g.add(tail);
     scene.add(g);
-    dog = { g, tail, x: a.at[0], z: a.at[1], face: 0, st: 'lost', hp: 4, t: 0, barkT: 1, bitT: 0, wander: null, wanderT: 0, joy: 0, sp: 0 };
+    // 場所はランダム: 開けた空き地の中で、あとで柵ができる線の少し外側(入口の前はさける)
+    let at = a.at;
+    if (!at) {
+      const side = Math.floor(Math.random() * 4); let t = (Math.random() - 0.5) * 20;
+      if (side === 3 && Math.abs(t) < 3.5) t = Math.sign(t || 1) * (3.5 + Math.random() * 6);
+      const e = 11.7 + Math.random() * 0.4;
+      at = side === 0 ? [t, -e] : side === 1 ? [e, t] : side === 2 ? [-e, t] : [t, e];
+    }
+    dog = { g, tail, x: at[0], z: at[1], face: 0, st: 'lost', hp: 4, t: 0, barkT: 1, bitT: 0, wander: null, wanderT: 0, joy: 0, sp: 0, escT: 0 };
     g.position.set(dog.x, 0, dog.z);
     puff(dog.x, 0.3, dog.z, 4, '#ffffff', 0.8, 0.6, 0.8);
   }
   function dogBite(dt) {
     if (!dog || dog.st === 'dead' || dog.st === 'saved') return;
-    dog.hp -= dt; dog.bitT = 0.15;
+    dog.hp -= dt; dog.bitT = 0.15; dog.safeT = 0;
     if (dog.yelpT === undefined || gt - dog.yelpT > 0.6) { dog.yelpT = gt; popText('キャン!', dog.x, dog.z, '#ff8080', 15, 1.4); if (!fastForwarding) tone(1300, 0.08, 'sine', 0.05, 1.6); }
     if (dog.hp <= 0) {
       dog.st = 'dead';
@@ -2650,7 +2665,11 @@
       dog.barkT -= dt;
       if (dog.barkT <= 0) { dog.barkT = 2.2 + Math.random() * 1.5; if (!fastForwarding && pdist < 22) { tone(760, 0.07, 'square', 0.03, 1.4); tone(820, 0.07, 'square', 0.03, 1.4, 0.12); } }
       dog.face = Math.atan2(player.x - dog.x, player.z - dog.z);
-      if (pdist < 2.4) {
+      // まわりのゾンビをやっつけて守ってあげると、ついてくる
+      let zNear = false;
+      for (const zb of zs) if (!zb.dead && Math.abs(zb.x - dog.x) < 4.5 && Math.abs(zb.z - dog.z) < 4.5 && Math.hypot(zb.x - dog.x, zb.z - dog.z) < 4.5) { zNear = true; break; }
+      dog.zNear = zNear;
+      if (pdist < 2.6 && !zNear) {
         dog.st = 'follow'; dog.joy = 1.2;
         popText('🐶 ワン!', dog.x, dog.z, '#ffe27a', 18, 2);
         toast('🐶 ワンコがついてきた! キャンプの中で保護しよう');
@@ -2661,20 +2680,35 @@
       if (Math.hypot(bx - dog.x, bz - dog.z) > 0.4) dogMoveTo(bx, bz, 11, dt); else dog.sp = 0;
       if (Math.hypot(player.x - dog.x, player.z - dog.z) > 14) { dog.x = bx; dog.z = bz; }
       if (insideCamp(dog.x, dog.z, -0.4)) {
-        dog.st = 'saved'; dog.joy = 2.5;
+        dog.st = 'saved'; dog.joy = 2.5; dog.escT = 30;
         toast('🐶 ワンコを保護した!');
         popText('💕', dog.x, dog.z, '#ff8ab0', 26, 1.8); burstGibs(dog.x, 1, dog.z, 14, '#ff8ab0', 3, 5);
         SND.done();
       }
     } else if (dog.st === 'saved') {
-      // 拠点の中をのんびり歩く。近くにいると、ついてくる
-      const C = campInfo();
-      if (insideCamp(player.x, player.z) && pdist < 7 && pdist > 1.6) dogMoveTo(player.x - Math.sin(player.face) * 1.3, player.z - Math.cos(player.face) * 1.3, 7, dt);
-      else {
-        dog.wanderT -= dt;
-        if (!dog.wander || dog.wanderT <= 0) { dog.wanderT = 3 + Math.random() * 3; dog.wander = [C.x + (Math.random() - 0.5) * (C.H - 3) * 2, C.z + (Math.random() - 0.5) * (C.H - 3) * 2]; }
-        if (Math.hypot(dog.wander[0] - dog.x, dog.wander[1] - dog.z) > 0.4) dogMoveTo(dog.wander[0], dog.wander[1], 2.2, dt); else dog.sp = 0;
+      // 拠点の中では自由行動。なぜか外に出たがって、入口の近くをうろうろする
+      const C = campInfo(), f = fences[fences.length - 1], gx = C.x, gz = C.z + C.H;
+      dog.escT = Math.max(0, dog.escT - dt);
+      dog.wanderT -= dt;
+      if (!dog.wander || dog.wanderT <= 0) {
+        dog.wanderT = 2.5 + Math.random() * 3;
+        dog.wander = Math.random() < 0.5 ? [gx + (Math.random() - 0.5) * 4, gz - 1.2 - Math.random() * 2.5] : [C.x + (Math.random() - 0.5) * (C.H - 3) * 2, C.z + (Math.random() - 0.5) * (C.H - 3) * 2];
       }
+      if (Math.hypot(dog.wander[0] - dog.x, dog.wander[1] - dog.z) > 0.4) dogMoveTo(dog.wander[0], dog.wander[1], 2.6, dt); else dog.sp = 0;
+      // 扉が開いたすきに、外へ飛び出す
+      if (f && f.gateLanded && f.doorOpen > 0.6 && dog.escT <= 0 && Math.hypot(dog.x - gx, dog.z - gz) < 4.5) {
+        dog.st = 'run'; dog.runT = 0; dog.joy = 0.8;
+        dog.runTo = [gx + (Math.random() - 0.5) * 9, gz + 5 + Math.random() * 4];
+        toast('🐶 あっ! ワンコが外へ飛び出した!');
+        if (!fastForwarding) { tone(900, 0.07, 'square', 0.04, 1.4); tone(1000, 0.07, 'square', 0.04, 1.4, 0.12); }
+      }
+    } else if (dog.st === 'run') {
+      dog.runT += dt;
+      dogMoveTo(dog.runTo[0], dog.runTo[1], 7.5, dt);
+      const out = !insideCamp(dog.x, dog.z, 0.3);
+      if (out && Math.hypot(dog.runTo[0] - dog.x, dog.runTo[1] - dog.z) < 0.6) { dog.st = 'lost'; dog.escaped = true; }
+      // 扉が閉まって出られなかったら、あきらめる
+      else if (!out && dog.runT > 5) { dog.st = 'saved'; dog.escT = 8; }
     }
     // 見た目
     const hop = dog.joy > 0 ? Math.abs(Math.sin(dog.t * 12)) * 0.35 : dog.sp > 0.3 ? Math.abs(Math.sin(dog.t * 16)) * 0.08 : 0;
@@ -2684,12 +2718,12 @@
     dog.tail.rotation.x = dog.st === 'lost' ? 0.3 : -0.7;
     dog.g.scale.setScalar(dog.bitT > 0 ? 1.15 : 1);
     // 「たすけて!」の札(はぐれているあいだだけ)
-    if (dog.st === 'lost' && started) {
+    if ((dog.st === 'lost' || dog.st === 'run') && started) {
       const pos = project(dog.x, 1.4, dog.z);
       if (!pos.behind && pos.sx > 0 && pos.sx < innerWidth && pos.sy > 0 && pos.sy < innerHeight) {
         label.style.display = 'block';
         label.style.left = pos.sx + 'px'; label.style.top = pos.sy + 'px';
-        label.textContent = dog.hp < 4 ? '🐶 たすけて!! ❤️' + '■'.repeat(Math.max(1, Math.ceil(dog.hp))) : '🐶 たすけて!';
+        label.textContent = (pdist < 4 && dog.zNear ? '🐶 ゾンビをやっつけて!' : '🐶 たすけて!') + (dog.hp < 4 ? ' ❤️' + '■'.repeat(Math.max(1, Math.ceil(dog.hp))) : '');
       } else label.style.display = 'none';
     } else label.style.display = 'none';
   }
