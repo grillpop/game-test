@@ -34,6 +34,7 @@
   .pop { position: fixed; pointer-events: none; transform: translate(-50%, -50%); white-space: nowrap; font-weight: 900; font-size: 18px; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, .45); display: none; }
   .site-label { position: fixed; pointer-events: none; transform: translate(-50%, -100%); display: none; text-align: center; }
   .site-label b { display: inline-block; padding: 2px 10px; border-radius: 999px; background: rgba(20, 60, 30, .72); color: #fff; font-size: 15px; font-weight: 900; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .site-label .t { color: #fff; font-size: 13px; font-weight: 900; text-shadow: 0 1px 3px rgba(0, 0, 0, .6); margin-bottom: 2px; white-space: nowrap; }
   .site-label .bar { width: 92px; height: 8px; margin: 3px auto 0; border-radius: 4px; background: rgba(0, 0, 0, .35); overflow: hidden; border: 1px solid rgba(255, 255, 255, .6); }
   .site-label .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7dff6a, #3fd35a); }
   .site-label.full b { background: rgba(230, 150, 20, .85); }
@@ -49,7 +50,7 @@
   <div id="hud">
     <div id="wood-pill" class="pill">🪵 <span id="wood">0</span></div>
     <div id="meat-pill" class="pill hide">🍖 <span id="meat">0</span></div>
-    <div id="bld-pill" class="pill">🏠 <span id="bld">1</span></div>
+    <div id="bld-pill" class="pill">🏠 <span id="bld">0</span></div>
     <div id="pop-pill" class="pill hide">👥 <span id="pop">0</span></div>
   </div>
   <div id="toast"></div>
@@ -66,7 +67,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.14-s2';
+  const GAME_VERSION = '2026.11.15-s3';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 7.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -75,7 +76,7 @@
     meat: { per: 2, gap: 0.36, layerH: 0.31, max: 100 },
   };
   const DELIVER = { gap: 0.07, minGap: 0.016, speedUp: 0.92, flight: 0.3 }; // 納品: 最初の間隔・最短・だんだん速く・飛ぶ時間
-  const WORLD = { x1: -27, x2: 33, z1: -33, z2: 16 };
+  const WORLD = { x1: -30, x2: 30, z1: -30, z2: 30 };
   // まわりを回る斧(シナリオの 'axes' で本数・半径・速さが増える)。hitR = 斧の当たりの大きさ、cd = 同じ相手に続けて当たる間隔
   const AXES = { n: 2, radius: 1.6, speed: 1.6, hitR: 0.45, cd: 0.09 };
   const TREE_FALL = 0.28;                                      // 木が倒れきるまでの秒数
@@ -83,11 +84,7 @@
   const RES_ICON = { wood: '🪵', meat: '🍖' };
 
   // エリア(rect = x1, z1, x2, z2)。開くまで中に入れない。edges = 雪の吹きだまりの柵を置く線
-  const AREAS = {
-    forest: { name: '奥の森', rect: [-27, -33, 8, -7], edges: [[-27, -7, 8, -7]] },
-    hunt: { name: '東の雪原', rect: [8, -7, 33, 16], edges: [[8, -7, 8, 16]] },
-    bear: { name: '北東の雪原', rect: [8, -33, 33, -7], edges: [[8, -33, 8, -7], [8, -7, 33, -7]] },
-  };
+  const AREAS = {}; // 今はエリアの区切りなし(森の中の空き地から始まる)
 
   // ================================================================
   //  シナリオ(データだけで、木の本数・資材の数・建物・演出の順番を変えられる)
@@ -96,67 +93,21 @@
   //   goal.type: 'clear' = tag の対象を全部倒して、資材を全部拾った / 'gather' = このシーンが始まってから res を count 個拾った / 'build' = 建築エリアの建物が全部建った / 'none' = 終わらない
   // ================================================================
   const SCENARIO = [
-    { id: 'scene_01', title: '最初の伐採', after: null,
+    { id: 'scene_01', title: '森の空き地で伐採', after: null,
       enter: [
-        { do: 'place', building: 'hut' },
-        { do: 'spawn', what: 'tree', tag: 'first', hits: 2, drops: { wood: 6 }, at: [[2.6, 4.6], [4.3, 2.2], [2.3, 0.2]] },
-        // 画面に見える木は全部切れる(村の場所・柵のそば・狼と熊の場所はあける)
-        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25,
-          avoid: [[-15, -6.2, 7.4, 9.2], [-27, -8.4, 33, -5.6], [6.6, -33, 9.4, 16], [9.5, -5.5, 18.5, 8.5], [10.5, -18.5, 19.5, -9.5]] },
-        { do: 'axes', n: 2, radius: 1.6, speed: 1.6 },
+        // 森いっぱいに木を置く(まん中の空き地はあける)。見える木は全部切れる
+        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25, avoidCircles: [[0, 0, 7.4]] },
+        { do: 'axes', n: 2, radius: 1.6, speed: 1.6, quiet: true },
         { do: 'zoom', level: 1 },
       ],
-      goal: { type: 'clear', tag: 'first' } },
-    { id: 'scene_02', title: '最初の建築', after: 'scene_01',
-      enter: [{ do: 'site', id: 'camp', at: [-2.2, 1.2], res: 'wood', need: 18, build: ['campfire', 'storage'] }],
+      goal: { type: 'gather', res: 'wood', count: 6 } },
+    { id: 'scene_02', title: 'キャンプ場の立ち上げ', after: 'scene_01',
+      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut', 'campfire'], delays: [0.1, 1.7, 2.5] }],
       goal: { type: 'build', site: 'camp' },
-      exit: [{ do: 'zoom', level: 1.08 }] },
-    { id: 'scene_03', title: '森の大量伐採', after: 'scene_02', delay: 0.3,
-      enter: [
-        { do: 'unlock', area: 'forest' },
-        { do: 'camera', focus: [1.5, -11], hold: 1.3 },
-        { do: 'toast', text: '🌲 奥の森がひらけた! 斧が3本に!' },
-        { do: 'axes', n: 3, radius: 1.95, speed: 1.9, delay: 0.6 },
-      ],
-      goal: { type: 'gather', res: 'wood', count: 72 } },
-    { id: 'scene_04', title: '住宅建築ラッシュ', after: 'scene_03',
-      enter: [{ do: 'site', id: 'town', at: [-7.4, -0.4], res: 'wood', need: 72, build: ['house1', 'house2', 'warehouse'] }],
-      goal: { type: 'build', site: 'town' },
       exit: [
-        { do: 'villagers', n: 4, from: ['house1', 'house2', 'warehouse', 'hut'] },
-        { do: 'zoom', level: 1.25 },
-        { do: 'toast', text: '🏘️ 村ができてきた!' },
-        { do: 'stockpile', res: 'wood', at: [-4.6, 0.9], piles: [[-6.6, 0.1], [-6.6, 1.3], [-7.6, 0.1], [-7.6, 1.3], [-8.6, 0.1], [-8.6, 1.3]], layers: 12, delay: 1.5 },
+        { do: 'toast', text: '🎉 キャンプ場ができた!' },
+        { do: 'zoom', level: 1.15 },
       ] },
-    { id: 'scene_05', title: '狼の狩り', after: 'scene_04', delay: 0.6,
-      enter: [
-        { do: 'unlock', area: 'hunt' },
-        { do: 'spawn', what: 'wolf', tag: 'wolves', hits: 2, drops: { meat: 10 }, at: [[12.6, -1.6], [15.2, 2], [12.4, 4.6]] },
-        { do: 'camera', focus: [12, 1.5], hold: 1.3 },
-        { do: 'toast', text: '🐺 東の雪原に狼があらわれた! 斧が4本に!' },
-        { do: 'axes', n: 4, radius: 2.15, speed: 2.1, delay: 0.6 },
-      ],
-      goal: { type: 'clear', tag: 'wolves' } },
-    { id: 'scene_06', title: '調理場の建築', after: 'scene_05',
-      enter: [{ do: 'site', id: 'kitchen', at: [4.2, -1.6], res: 'meat', need: 30, build: ['kitchen'] }],
-      goal: { type: 'build', site: 'kitchen' },
-      exit: [
-        { do: 'smoke', buildings: ['kitchen', 'house1', 'house2'] },
-        { do: 'lights' },
-        { do: 'dusk', k: 1 },
-        { do: 'villagers', n: 6, from: ['kitchen', 'house1', 'house2', 'warehouse'] },
-        { do: 'zoom', level: 1.4 },
-        { do: 'toast', text: '🍲 調理場が完成! 村がにぎやかに!' },
-      ] },
-    { id: 'scene_07', title: '大きな熊', after: 'scene_06', delay: 2.2,
-      enter: [
-        { do: 'unlock', area: 'bear' },
-        { do: 'spawn', what: 'bear', tag: 'bear', at: [[15, -14]] },
-        { do: 'camera', focus: [14, -12], hold: 2.2 },
-        { do: 'toast', text: '🐻 遠くの雪原に、大きな熊が…!' },
-        { do: 'axes', n: 5, radius: 2.4, speed: 2.3, delay: 2.4 },
-      ],
-      goal: { type: 'none' } },
   ];
 
   const STICK_RADIUS = 56;
@@ -316,7 +267,7 @@
     const mounds = [], rocks = [];
     for (let i = 0; i < 40; i++) {
       const x = WORLD.x1 + Math.random() * (WORLD.x2 - WORLD.x1), z = WORLD.z1 + Math.random() * (WORLD.z2 - WORLD.z1);
-      if (Math.hypot(x + 2, z - 1) < 9) continue;
+      if (Math.hypot(x, z) < 8.5) continue;
       (i % 3 ? mounds : rocks).push([x, z, 0.5 + Math.random()]);
     }
     // 手前の端は、低い雪の吹きだまりの列
@@ -339,9 +290,9 @@
     }), transparent: true, depthWrite: false,
   }));
   plaza.rotation.x = -Math.PI / 2;
-  plaza.position.set(-3, 0.02, 0.5);
+  plaza.position.set(0, 0.02, 0);
   scene.add(plaza);
-  let plazaR = 3.4, plazaShown = 3.4;
+  let plazaR = 2.6, plazaShown = 2.6;
 
   // ちらちら降る雪
   const FLAKES = 150;
@@ -434,6 +385,7 @@
     open() { noise(0.7, 0.16, 1200); [392, 523, 659].forEach((f, i) => tone(f, 0.22, 'sine', 0.06, 1.01, i * 0.1)); },
     yelp() { tone(950, 0.16, 'sawtooth', 0.04, 1.6); },
     poof() { noise(0.25, 0.18, 1600); tone(500, 0.12, 'sine', 0.05, 0.4); },
+    boom() { noise(0.6, 0.32, 380); tone(65, 0.6, 'sine', 0.3, 0.5); },
     roar() { noise(1.1, 0.28, 320); tone(95, 1.0, 'sawtooth', 0.1, 0.6); },
   };
 
@@ -533,8 +485,9 @@
     return { parts, size: [2.7, 1.8] };
   }
   const BUILDINGS = {
-    hut: { name: '小屋', at: [-4.6, 4.2], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
-    campfire: { name: '焚き火', at: [-0.2, -1.4], rot: 0, def: campfireDef },
+    fence: { name: 'キャンプの柵', at: [0, 0], fence: { R: 5.8, gate: Math.PI / 2, gateHalf: 0.33, posts: 30 } },
+    hut: { name: '小屋', at: [-2.2, -2.5], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
+    campfire: { name: '焚き火', at: [0.4, 0.5], rot: 0, def: campfireDef },
     storage: { name: '物資置き場', at: [-4.4, -1.6], rot: 0, def: storageDef },
     house1: { name: '民家', at: [-11, 2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#c0453a', chimney: [0.9, -0.7] }) },
     house2: { name: '民家', at: [-11, -2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#3a6fb0', wall: '#c4925e', chimney: [-0.9, -0.7] }) },
@@ -584,7 +537,7 @@
   // ================================================================
   //  プレイヤー(ちびの木こり。右手の斧を振りかぶって打ち込む)
   // ================================================================
-  const player = { x: -1.6, z: 5.2, vx: 0, vz: 0, face: Math.PI * 0.85, swing: 0, arm: -0.3, bob: 0, walk: 0, target: null };
+  const player = { x: 0, z: 0.6, vx: 0, vz: 0, face: 0, swing: 0, arm: -0.3, bob: 0, walk: 0, target: null };
   const playerG = new THREE.Group();
   scene.add(playerG);
   playerG.add(new THREE.Mesh(mergeGeometries([
@@ -867,6 +820,7 @@
   }
   function setAxes(a) {
     for (const k of ['n', 'radius', 'speed']) if (a[k] !== undefined) AXES[k] = a[k];
+    if (a.quiet) return;
     axeGrow = 1;
     ring(player.x, player.z, AXES.radius + 0.6, 0.45, '#ffe27a');
     popText('🪓×' + AXES.n + '!', player.x, player.z, '#ffe27a', 22, 3.2);
@@ -998,6 +952,12 @@
           it.ry = lerp(it.ry, slot.ry, e); it.rx = 0;
           sc = 1 + Math.sin(e * Math.PI) * 0.25;
           if (e >= 1) { arrive(kind, it.tag); continue; }
+        } else if (it.st === 'fx') {
+          const e = Math.min(1, it.t / it.dur);
+          it.x = lerp(it.sx, it.tx, e); it.z = lerp(it.sz, it.tz, e);
+          it.y = lerp(it.sy, it.ty, e) + Math.sin(e * Math.PI) * it.arc;
+          it.rx += 14 * dt; it.ry += 5 * dt;
+          if (e >= 1) { if (it.cb) safe('fly', it.cb); continue; }
         } else if (it.st === 'deliver') {
           const e = Math.min(1, it.t / it.dur), ee = 1 - (1 - e) * (1 - e);
           it.x = lerp(it.sx, it.tx, ee); it.z = lerp(it.sz, it.tz, ee);
@@ -1014,6 +974,12 @@
       pool.mesh.count = i;
       pool.mesh.instanceMatrix.needsUpdate = true;
     }
+  }
+  // 演出用に薪を1本飛ばす(着いたら cb を呼ぶ)
+  function flyLog(sx, sy, sz, tx, ty, tz, dur, arc, cb) {
+    const pool = drops.wood;
+    if (pool.items.length >= pool.max) { if (cb) cb(); return; }
+    pool.items.push({ kind: 'wood', st: 'fx', t: 0, dur, arc, sx, sy, sz, tx, ty, tz, x: sx, y: sy, z: sz, rx: 0, ry: Math.random() * 6, cb });
   }
   function arrive(kind, tag) {
     carried[kind]++; gathered[kind]++;
@@ -1050,7 +1016,27 @@
   // ================================================================
   //  建築エリア(緑の枠): 入ると背中の資材が上から順に飛んでいく → 揃ったら組み上がる
   // ================================================================
-  const padTex = canvasTexture(256, (g, n) => {
+  const padTexCache = {};
+  function padTexture(icon) {
+    if (padTexCache[icon]) return padTexCache[icon];
+    return padTexCache[icon] = canvasTexture(256, (g, n) => {
+      drawPad(g, n);
+      if (icon) { g.globalAlpha = 0.85; g.font = '120px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, n / 2, n / 2 + 6); g.globalAlpha = 1; }
+    });
+  }
+  // 建築エリアの上に浮かぶアイコン(白い丸に絵文字)
+  function iconSprite(icon) {
+    const tex = canvasTexture(128, (g, n) => {
+      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(n / 2, n / 2, n / 2 - 6, 0, 7); g.fill();
+      g.lineWidth = 8; g.strokeStyle = '#3fd35a'; g.stroke();
+      g.font = '72px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, n / 2, n / 2 + 4);
+    });
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    sp.scale.set(1.5, 1.5, 1); sp.renderOrder = 5;
+    scene.add(sp);
+    return sp;
+  }
+  function drawPad(g, n) {
     g.fillStyle = 'rgba(80,220,100,0.28)'; g.fillRect(14, 14, n - 28, n - 28);
     g.save(); g.beginPath(); g.rect(14, 14, n - 28, n - 28); g.clip();
     g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 14;
@@ -1058,19 +1044,25 @@
     g.restore();
     g.strokeStyle = '#5dff7a'; g.lineWidth = 12; g.lineJoin = 'round'; g.strokeRect(14, 14, n - 28, n - 28);
     g.strokeStyle = '#ffffff'; g.lineWidth = 4; g.strokeRect(14, 14, n - 28, n - 28);
-  });
+  }
   function createSite(a) {
     const s = { id: a.id, x: a.at[0], z: a.at[1], r: 1.55, res: a.res, need: a.need, paid: 0, incoming: 0, build: a.build, building: false, done: false, gap: DELIVER.gap, dT: 0, bump: 0, appear: 0, ghosts: [], deposit: a.deposit || null };
     if (s.deposit) { s.pile = new THREE.InstancedMesh(a.res === 'meat' ? meatGeo : woodGeo, vcMat, s.deposit.piles.length * s.deposit.layers * 3); s.pile.count = 0; s.pile.frustumCulled = false; scene.add(s.pile); }
-    s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: padTex, transparent: true, depthWrite: false }));
+    s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: padTexture(a.icon || ''), transparent: true, depthWrite: false }));
+    if (a.icon) s.icon = iconSprite(a.icon);
+    s.title = a.title || ''; s.delays = a.delays || null;
     s.pad.rotation.x = -Math.PI / 2; s.pad.position.set(s.x, 0.05, s.z);
     scene.add(s.pad);
     s.el = document.createElement('div'); s.el.className = 'site-label';
-    s.el.innerHTML = '<b></b><div class="bar"><i></i></div>';
+    s.el.innerHTML = '<div class="t"></div><b></b><div class="bar"><i></i></div>';
     document.body.appendChild(s.el);
+    s.elT = s.el.querySelector('.t'); s.elB = s.el.querySelector('b'); s.elBar = s.el.querySelector('.bar'); s.elFill = s.el.querySelector('.bar i');
+    s.elT.textContent = s.title; if (!s.title) s.elT.style.display = 'none';
     // これから建つ建物の青い設計図
     for (const id of a.build) {
-      const info = BUILDINGS[id], def = info.def();
+      const info = BUILDINGS[id];
+      if (info.fence) continue;
+      const def = info.def();
       const gm = new THREE.Mesh(mergeGeometries(def.parts.map(p => ({ geo: partGeo(p), m: M(...p.p, 1, 1, 1, ...p.r), color: '#ffffff' }))), ghostMat);
       gm.position.set(info.at[0], 0, info.at[1]); gm.rotation.y = info.rot;
       scene.add(gm);
@@ -1133,6 +1125,11 @@
       const sc = backOut(s.appear) * (1 + s.bump * 0.06) * (s.building ? Math.max(0.01, 1 - (gt - s.buildAt) * 3) : 1);
       s.pad.scale.set(sc, sc, 1);
       s.pad.material.opacity = 0.75 + Math.sin(gt * 5) * 0.2;
+      if (s.icon) {
+        s.icon.position.set(s.x, 2.6 + Math.sin(gt * 3) * 0.18, s.z);
+        const k = s.building ? Math.max(0, 1 - (gt - s.buildAt) * 3) : backOut(s.appear) * (1 + s.bump * 0.15);
+        s.icon.scale.set(1.5 * k + 0.001, 1.5 * k + 0.001, 1); s.icon.visible = k > 0.01;
+      }
       if (s.building && gt - s.buildAt > 0.35) s.pad.visible = false;
     }
   }
@@ -1141,11 +1138,132 @@
     s.el.style.display = 'none';
     s.ghosts.forEach(g => { scene.remove(g); g.geometry.dispose(); });
     let cx = 0, cz = 0;
-    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(0.15 + i * 0.7, () => construct(id, false, s)); });
+    const delays = s.build.map((id, i) => s.delays && s.delays[i] !== undefined ? s.delays[i] : 0.15 + i * 0.7);
+    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : construct(id, false, s)); });
     cx /= s.build.length; cz /= s.build.length;
-    camFocus((cx + s.x) / 2, (cz + s.z) / 2, 0.6 + s.build.length * 0.75, 0.18);
+    const fenced = s.build.some(id => BUILDINGS[id].fence);
+    camFocus((cx + s.x) / 2, (cz + s.z) / 2, Math.max(...delays) + 1.6, fenced ? 0.35 : 0.18);
     ring(s.x, s.z, 3.5, 0.4, '#5dff7a');
     SND.done();
+  }
+
+  // ---- キャンプの柵: 中心から薪が飛んでいき、杭が入口の左右から一周ぶん「ポンポン」と立ち上がる → 横木 → 門がドカンと落ちる ----
+  const fences = [];
+  const fenceBuilds = [];
+  const postGeo = mergeGeometries([
+    { geo: Cyl(0.14, 0.16, 1.5, 7), m: M(0, 0.75, 0), color: '#7a4d24' },
+    { geo: Cyl(0.16, 0.16, 0.07, 7), m: M(0, 1.52, 0), color: '#f6fafd' },
+    { geo: Cone(0.16, 0.22, 7), m: M(0, 1.66, 0), color: '#f6fafd' },
+    { geo: Box(0.3, 0.12, 0.3), m: M(0, 0.06, 0), color: '#e8eef4' },
+  ]);
+  const railGeo = mergeGeometries([{ geo: Box(1, 0.13, 0.11), m: M(0, 0, 0), color: '#93602f' }, { geo: Box(1, 0.05, 0.12), m: M(0, 0.09, 0), color: '#f6fafd' }]);
+  function gateGroup(w) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(mergeGeometries([
+      { geo: Cyl(0.24, 0.27, 3.4, 8), m: M(-w, 1.7, 0), color: '#6b4426' },
+      { geo: Cyl(0.24, 0.27, 3.4, 8), m: M(w, 1.7, 0), color: '#6b4426' },
+      { geo: Cyl(0.2, 0.2, 2 * w + 0.9, 8), m: M(0, 3.25, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#7a4d24' },
+      { geo: Box(2 * w + 0.9, 0.12, 0.42), m: M(0, 3.48, 0), color: '#f6fafd' },
+      { geo: Cone(0.3, 0.4, 8), m: M(-w, 3.6, 0), color: '#f6fafd' },
+      { geo: Cone(0.3, 0.4, 8), m: M(w, 3.6, 0), color: '#f6fafd' },
+      { geo: Box(1.9, 0.75, 0.1), m: M(0, 2.6, 0.02), color: '#8a5a2e' },
+      { geo: Box(0.06, 0.6, 0.06), m: M(-0.6, 2.95, 0.04), color: '#5a3a1e' },
+      { geo: Box(0.06, 0.6, 0.06), m: M(0.6, 2.95, 0.04), color: '#5a3a1e' },
+      { geo: Sph(0.12, 6, 5), m: M(-w - 0.3, 0.3, 0.3), color: '#e0453a' },
+    ]), vcMat));
+    // 看板(横長の絵に文字を書く)
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 188;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#8a5a2e'; c.fillRect(0, 0, 512, 188);
+    c.strokeStyle = '#5a3a1e'; c.lineWidth = 12; c.strokeRect(6, 6, 500, 176);
+    c.fillStyle = '#fff6e0'; c.font = 'bold 104px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('⛺ CAMP', 256, 100);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.7), new THREE.MeshBasicMaterial({ map: tex }));
+    sign.position.set(0, 2.6, 0.08);
+    g.add(sign);
+    return g;
+  }
+  function startFence(id, site) {
+    const info = BUILDINGS[id], cfg = info.fence, N = cfg.posts;
+    const f = { x: info.at[0], z: info.at[1], R: cfg.R, gate: cfg.gate, gateHalf: cfg.gateHalf, t: 0, posts: [], rails: [], done: false, from: [site.x, site.z] };
+    const span = Math.PI * 2 - cfg.gateHalf * 2;
+    for (let k = 0; k <= N; k++) {
+      const a = cfg.gate + cfg.gateHalf + span * k / N, step = Math.min(k, N - k);
+      f.posts.push({ a, x: f.x + Math.cos(a) * f.R, z: f.z + Math.sin(a) * f.R, at: 0.25 + step * 0.075, step, flew: false, up: false });
+    }
+    for (let k = 0; k < N; k++) for (const h of [0.55, 1.05]) f.rails.push({ p: f.posts[k], q: f.posts[k + 1], h, at: Math.max(f.posts[k].at, f.posts[k + 1].at) + 0.12 });
+    f.gateAt = 0.25 + Math.ceil(N / 2) * 0.075 + 0.35;
+    f.postMesh = new THREE.InstancedMesh(postGeo, vcMat, N + 1);
+    f.railMesh = new THREE.InstancedMesh(railGeo, vcMat, f.rails.length);
+    for (const m of [f.postMesh, f.railMesh]) { m.count = 0; m.frustumCulled = false; scene.add(m); }
+    const w = f.R * Math.sin(cfg.gateHalf);
+    f.gateG = gateGroup(w);
+    f.gateY = f.R * Math.cos(cfg.gateHalf);
+    f.gateG.position.set(f.x + Math.cos(f.gate) * f.gateY, 12, f.z + Math.sin(f.gate) * f.gateY);
+    f.gateG.rotation.y = Math.PI / 2 - f.gate;
+    f.gateG.visible = false;
+    scene.add(f.gateG);
+    fences.push(f); fenceBuilds.push(f);
+    built[id] = { id, info, def: { ridge: 3 }, g: f.gateG, box: null, door: [f.x + Math.cos(f.gate) * (f.R + 1), f.z + Math.sin(f.gate) * (f.R + 1)], smoke: null, done: false, squash: 0, site: site.id, fence: f };
+    // まずドカンと衝撃波。キャンプの地面が広がる
+    shake(0.35); SND.boom();
+    ring(f.x, f.z, f.R + 1.5, 0.6, '#ffe27a'); ring(f.x, f.z, f.R * 0.6, 0.45, '#ffffff');
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; puff(f.x + Math.cos(a) * 2.5, 0.3, f.z + Math.sin(a) * 2.5, 2, '#ffffff', 1.1, 1, 2.2); }
+    plazaR = f.R + 0.6;
+    pushOut(player, PLAYER_CFG.radius);
+  }
+  function updateFences(dt) {
+    for (let fi = fenceBuilds.length - 1; fi >= 0; fi--) {
+      const f = fenceBuilds[fi];
+      f.t += dt;
+      let n = 0;
+      for (const p of f.posts) {
+        if (!p.flew && f.t >= p.at - 0.26) { p.flew = true; flyLog(f.from[0], 0.6, f.from[1], p.x, 1.0, p.z, 0.26, 2.2); }
+        const k = (f.t - p.at) / 0.22;
+        if (k <= 0) { setInst(f.postMesh, n++, p.x, -5, p.z, 0.001, 0.001, 0.001); continue; }
+        const s = Math.max(0.01, backOut(Math.min(1, k)));
+        setInst(f.postMesh, n++, p.x, 0, p.z, 1 + (1 - Math.min(1, k)) * 0.4, s, 1 + (1 - Math.min(1, k)) * 0.4, -p.a);
+        if (!p.up && k >= 0.4) {
+          p.up = true;
+          puff(p.x, 0.15, p.z, 2, '#ffffff', 0.7, 0.8, 0.8);
+          burstGibs(p.x, 0.8, p.z, 3, '#e0aa62', 2.5, 3);
+          if (!fastForwarding) tone(520 + p.step * 45, 0.07, 'triangle', 0.06, 1.25);
+          shake(0.04);
+        }
+      }
+      f.postMesh.count = n; f.postMesh.instanceMatrix.needsUpdate = true;
+      let r = 0;
+      for (const rl of f.rails) {
+        const k = Math.min(1, Math.max(0, (f.t - rl.at) / 0.14));
+        const dx = rl.q.x - rl.p.x, dz = rl.q.z - rl.p.z, L = Math.hypot(dx, dz);
+        setInst(f.railMesh, r++, (rl.p.x + rl.q.x) / 2, rl.h, (rl.p.z + rl.q.z) / 2, Math.max(0.001, L * k), k > 0 ? 1 : 0.001, k > 0 ? 1 : 0.001, Math.atan2(-dz, dx));
+      }
+      f.railMesh.count = r; f.railMesh.instanceMatrix.needsUpdate = true;
+      // 門が空から落ちてくる
+      const gk = (f.t - f.gateAt) / 0.45;
+      if (gk > 0) {
+        f.gateG.visible = true;
+        f.gateG.position.y = (1 - bounceOut(Math.min(1, gk))) * 12;
+        if (!f.gateLanded && gk >= 0.36) {
+          f.gateLanded = true;
+          const gx = f.gateG.position.x, gz = f.gateG.position.z;
+          shake(0.45); SND.boom(); SND.done();
+          ring(gx, gz, 4.5, 0.5, '#ffffff'); ring(f.x, f.z, f.R + 2, 0.7, '#ffe27a');
+          for (let i = 0; i < 10; i++) puff(gx + (Math.random() - 0.5) * 3.5, 0.3, gz + (Math.random() - 0.5) * 1.2, 1, '#ffffff', 1.2, 1.2, 1.6);
+          burstGibs(gx, 3.2, gz, 30, '#ffd23a', 5, 7); burstGibs(gx, 3.2, gz, 16, '#ff6b6b', 5, 7);
+          popText('⛺ キャンプ場 オープン!', gx, gz, '#fff6b0', 24, 5);
+        }
+      }
+      if (gk > 1.6 && !f.done) {
+        f.done = true;
+        fenceBuilds.splice(fi, 1);
+        const b = built[Object.keys(built).find(k => built[k].fence === f)];
+        b.done = true;
+        updateBuildCount();
+        const s = b.site && sites[b.site];
+        if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); s.el.remove(); if (s.icon) scene.remove(s.icon); }
+      }
+    }
   }
 
   // ---- 建物が組み上がる ----
@@ -1174,7 +1292,7 @@
       const n = counters[p.st] = (counters[p.st] || 0) + 1;
       return { p, m, at: STAGE_AT[p.st] + Math.min(0.2, (n - 1) * 0.03), landed: false };
     });
-    constructions.push({ b, parts, t: 0, end: Math.max(...parts.map(q => q.at)) + PART_DUR + 0.05 });
+    constructions.push({ b, parts, t: 0, end: Math.max(...parts.map(q => q.at)) + PART_DUR + 0.05, from: site ? [site.x, site.z] : null });
     return b;
   }
   function updateConstructions(dt) {
@@ -1184,6 +1302,8 @@
       for (const q of c.parts) {
         const k = (c.t - q.at) / PART_DUR;
         const { p, m } = q;
+        // 部品が出る少し前に、建築エリアから薪が飛んでいく
+        if (c.from && !q.flew && k > -0.9 && p.st !== 'deco') { q.flew = true; const lp = V(...p.p); c.b.g.localToWorld(lp); flyLog(c.from[0], 0.5, c.from[1], lp.x, lp.y, lp.z, PART_DUR * 0.85, 1.6); }
         if (k <= 0) { m.visible = false; continue; }
         m.visible = true;
         const e = Math.min(1, k), [x, y, z] = p.p;
@@ -1227,12 +1347,11 @@
       for (let i = 0; i < 6; i++) puff(lerp(x1, x2, Math.random()), 0.2, lerp(z1, z2, Math.random()), 1, '#ffffff', 0.9, 0.6, 1.2);
       popText('✨ ' + b.info.name + ' 完成!', cx, cz, '#fff6b0', 20, top + 1.6);
       SND.done(); shake(0.12);
-      plazaR += b.info.name === '焚き火' ? 1.2 : 1.1;
       updateBuildCount();
     }
     const s = b.site && sites[b.site];
     if (s && s.build.every(id => built[id] && built[id].done)) {
-      s.done = true; scene.remove(s.pad); s.el.remove();
+      s.done = true; scene.remove(s.pad); s.el.remove(); if (s.icon) scene.remove(s.icon);
     }
   }
   function updateBuildings(dt) {
@@ -1405,6 +1524,7 @@
     for (let i = 0; i < (a.tries || 9000); i++) {
       const x = lerp(x1, x2, Math.random()), z = lerp(z1, z2, Math.random());
       if ((a.avoid || []).some(([ax1, az1, ax2, az2]) => x > ax1 && x < ax2 && z > az1 && z < az2)) continue;
+      if ((a.avoidCircles || []).some(([cx, cz, r]) => Math.hypot(x - cx, z - cz) < r)) continue;
       const cx = Math.floor(x / sp), cz = Math.floor(z / sp);
       let close = false;
       for (let dx = -1; dx <= 1 && !close; dx++) for (let dz = -1; dz <= 1 && !close; dz++) for (const [ox, oz] of cells.get((cx + dx) + ',' + (cz + dz)) || []) if (Math.hypot(ox - x, oz - z) < sp) { close = true; break; }
@@ -1523,7 +1643,17 @@
   //  プレイヤーの更新(移動・ぶつかり・自動で斧を振る)
   // ================================================================
   function pushOut(o, rad, skipTrees) {
+    for (const f of fences) {
+      // 丸い柵: 入口の切れ目以外は通れない
+      const dx = o.x - f.x, dz = o.z - f.z, d = Math.hypot(dx, dz) || 1e-4;
+      if (Math.abs(d - f.R) > rad + 0.18) continue;
+      let da = Math.atan2(dz, dx) - f.gate; da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (Math.abs(da) < f.gateHalf - 0.06) continue;
+      const to = d < f.R ? f.R - rad - 0.18 : f.R + rad + 0.18;
+      o.x = f.x + dx / d * to; o.z = f.z + dz / d * to;
+    }
     for (const id in built) {
+      if (!built[id].box) continue;
       const [x1, z1, x2, z2] = built[id].box;
       const px = clamp(o.x, x1, x2), pz = clamp(o.z, z1, z2);
       const dx = o.x - px, dz = o.z - pz, d = Math.hypot(dx, dz);
@@ -1601,12 +1731,12 @@
     for (const id in sites) {
       const s = sites[id];
       if (s.done || s.building) continue;
-      const sp = project(s.x, 2.0, s.z);
+      const sp = project(s.x, s.icon ? 3.6 : 2.0, s.z);
       s.el.style.display = sp.behind ? 'none' : 'block';
       s.el.style.left = sp.sx + 'px'; s.el.style.top = sp.sy + 'px';
-      if (s.deposit) { s.el.firstChild.textContent = '📦 倉庫 ' + RES_ICON[s.res] + ' ' + s.paid.toLocaleString(); s.el.lastChild.style.display = 'none'; continue; }
-      s.el.firstChild.textContent = RES_ICON[s.res] + ' ' + s.paid + ' / ' + s.need;
-      s.el.lastChild.firstChild.style.width = (s.paid / s.need * 100) + '%';
+      if (s.deposit) { s.elB.textContent = '📦 倉庫 ' + RES_ICON[s.res] + ' ' + s.paid.toLocaleString(); s.elBar.style.display = 'none'; continue; }
+      s.elB.textContent = RES_ICON[s.res] + ' ' + s.paid + ' / ' + s.need;
+      s.elFill.style.width = (s.paid / s.need * 100) + '%';
       s.el.classList.toggle('full', s.paid + s.incoming >= s.need);
     }
     if (fellT > 0) { fellT -= dt; if (fellT <= 0) $('combo').classList.remove('show'); }
@@ -1767,7 +1897,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
