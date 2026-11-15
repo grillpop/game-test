@@ -41,6 +41,14 @@
   #arrow { position: fixed; display: none; width: 40px; height: 40px; margin: -20px 0 0 -20px; font-size: 28px; line-height: 40px; text-align: center; color: #ffd23f; text-shadow: 0 0 3px #000; pointer-events: none; }
   #version { position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom) + 6px); color: rgba(30, 50, 70, .5); font-size: 11px; pointer-events: none; }
   #debug { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 4px 8px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font: 11px/1.4 monospace; white-space: pre; pointer-events: none; display: none; }
+  #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(40, 10, 20, .55); z-index: 10; }
+  #over.show { display: flex; animation: overIn .35s ease-out; }
+  @keyframes overIn { from { opacity: 0; transform: scale(1.1); } }
+  #over .card { min-width: 260px; padding: 22px 26px; border-radius: 18px; background: rgba(255, 255, 255, .95); text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+  #over .big { font-size: 30px; font-weight: 900; color: #b5303a; }
+  #over .sub { font-size: 13px; color: #555; margin: 6px 0 14px; }
+  #over .row { display: flex; justify-content: space-between; gap: 18px; font-size: 16px; font-weight: 700; color: #333; margin: 4px 0; }
+  #over button { margin-top: 16px; padding: 12px 28px; border: 0; border-radius: 999px; background: #3fb34f; color: #fff; font-size: 18px; font-weight: 900; }
   #error { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 60px); padding: 8px 10px; border-radius: 10px; background: rgba(180, 30, 30, .92); color: #fff; font-size: 12px; white-space: pre-wrap; display: none; pointer-events: none; }
 </style>
 </head>
@@ -63,6 +71,14 @@
   <div id="version"></div>
   <div id="debug"></div>
   <div id="error"></div>
+  <div id="over"><div class="card">
+    <div class="big">🧟 やられた…</div>
+    <div class="sub">キャンプに入りこんだゾンビにつかまった</div>
+    <div class="row">🧟 倒した数 <b id="over-kills">0</b></div>
+    <div class="row">💰 背中のお金 <b id="over-money">0</b></div>
+    <div class="row">⏱ 遊んだ時間 <b id="over-time">0:00</b></div>
+    <button id="over-retry" type="button">もう一度 ▶</button>
+  </div></div>
 
 <script type="module">
   import * as THREE from '../vendor/three.module.min.js';
@@ -70,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.17-s9';
+  const GAME_VERSION = '2026.11.18-s10';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -85,9 +101,17 @@
   // まわりを回る斧(シナリオの 'axes' で本数・半径・速さが増える)。hitR = 斧の当たりの大きさ、cd = 同じ相手に続けて当たる間隔
   const AXES = { n: 2, radius: 1.6, speed: 1.6, hitR: 0.45, cd: 0.09 };
   const TREE_FALL = 0.28;
+  // 武器パワーアップ(お金で払う)。払うたびに次のレベルへ
+  const WEAPON_LEVELS = [
+    { cost: 200, n: 3, radius: 1.9, speed: 1.9 },
+    { cost: 400, n: 4, radius: 2.2, speed: 2.1 },
+    { cost: 800, n: 5, radius: 2.5, speed: 2.3 },
+    { cost: 1500, n: 6, radius: 2.8, speed: 2.6 },
+  ];
+  const ZOMBIE_SAFE = 6; // 拠点の柵からこれ以上離れた所にだけゾンビが出る
   const CAM_YAW = Math.PI / 4;                                 // カメラは斜め45度から(四角いキャンプがひし形に見える)
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
-  const ZOMBIES = { drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [20, 26] };                                      // 木が倒れきるまでの秒数
+  const ZOMBIES = { drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
   const ZOOM_BASE = 14;
   const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊', cash: '💵' };
 
@@ -132,6 +156,8 @@
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧊', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
         { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💰', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
         { do: 'toast', text: '🧊 凍ったゾンビを氷置き場へ! ヘリが売ってくれる 💰' },
+        // 武器パワーアップ(拠点の左手前)。お金で払う
+        { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-6.5, 6.2], res: 'cash', levels: WEAPON_LEVELS, delay: 1.5 },
       ] },
     { id: 'scene_05', title: '見張り台', after: 'scene_04', delay: 1.0,
       enter: [{ do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'wood', need: 80, build: ['tower'] }],
@@ -868,7 +894,17 @@
   scene.add(axeTrail);
   let axeR = AXES.radius, axeAng = 0, axeGrow = 0, axeLap = 0;
   const nearT = [];
+  let axesOff = false;
   function updateAxes(dt) {
+    // 拠点の中では斧は引っこんで止まる(中から外は攻撃できない)
+    const off = insideCamp(player.x, player.z, -0.2);
+    if (off !== axesOff) { axesOff = off; if (!fastForwarding) tone(off ? 300 : 520, 0.12, 'triangle', 0.05, off ? 0.6 : 1.6); if (!off) axeGrow = 0.6; }
+    if (axesOff) {
+      axeR += (0.2 - axeR) * Math.min(1, dt * 8);
+      axeInst.count = 0; axeGhost.count = 0; axeTrail.visible = false;
+      return;
+    }
+    axeTrail.visible = true;
     axeR += (AXES.radius - axeR) * Math.min(1, dt * 4);
     axeAng += dt * AXES.speed * Math.PI * 2;
     axeGrow = Math.max(0, axeGrow - dt * 1.5);
@@ -1145,6 +1181,7 @@
   }
   // 敷地の絵: 手前の角(画面の下)から奥へ明るい緑で塗られていく。まん中にアイコン、その下に「🪵 28」(あと何個)
   function padInfo(s) {
+    if (s.upgrade) { const left = Math.max(0, s.need - s.paid); return { k: s.paid / s.need, text: '💰' + (left * CASH_UNIT).toLocaleString() }; }
     if (s.store) return { k: s.stock / s.cap, text: RES_ICON[s.res] + ' ' + s.stock + (s.stock >= s.cap ? ' MAX' : '') };
     if (s.pickup) return { k: Math.min(1, s.stock / 40), text: '💰 ' + (s.stock * CASH_UNIT).toLocaleString() };
     if (s.deposit) return { k: 0, text: RES_ICON[s.res] + ' ' + s.paid.toLocaleString() };
@@ -1320,7 +1357,8 @@
             bumpPill(s.res);
           }
         } else { s.gap = DELIVER.gap; s.dT = 0; }
-        if (s.paid >= s.need) startBuilding(s);
+        if (s.upgrade) { if (s.paid >= s.need && s.incoming === 0) applyUpgrade(s); }
+        else if (s.paid >= s.need) startBuilding(s);
       }
       const sc = backOut(s.appear) * (1 + s.bump * 0.06) * (s.building ? Math.max(0.01, 1 - (gt - s.buildAt) * 3) : 1);
       s.pad.scale.set(sc, sc, 1);
@@ -1328,6 +1366,18 @@
       drawPadFace(s);
       if (s.building && gt - s.buildAt > 0.35) s.pad.visible = false;
     }
+  }
+  // パワーアップ: 払い終わると、その場で効果が出て、次のレベルの値段に変わる
+  function applyUpgrade(s) {
+    const lv = s.upgrade.levels[s.level];
+    s.level++;
+    setAxes(lv);
+    popText('⚔️ 武器 Lv' + (s.level + 1) + '! 斧が' + lv.n + '本に', s.x, s.z, '#ffe27a', 22, 3);
+    ring(s.x, s.z, 4, 0.5, '#ffe27a'); burstGibs(s.x, 1, s.z, 26, '#ffd23a', 4, 7);
+    SND.done(); shake(0.2);
+    const next = s.upgrade.levels[s.level];
+    if (!next) { s.done = true; scene.remove(s.pad); toast('⚔️ 武器が最大レベルになった!'); return; }
+    s.paid = 0; s.need = Math.round(next.cost / CASH_UNIT); s.padKey = '';
   }
   function startBuilding(s) {
     s.building = true; s.buildAt = gt;
@@ -1422,6 +1472,8 @@
     f.ground.rotation.x = -Math.PI / 2; f.ground.position.set(cx, 0.025, cz); f.ground.scale.set(0.01, 0.01, 1);
     scene.add(f.ground);
     fences.push(f); fenceBuilds.push(f);
+    // 柵の中にいたゾンビは衝撃波で吹き飛ぶ
+    for (const zb of zs) if (!zb.dead && Math.abs(zb.x - cx) < cfg.H + 0.8 && Math.abs(zb.z - cz) < cfg.H + 0.8) later(0.1 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
     built[id] = { id, info, def: { ridge: 3 }, g: f.gateG, box: null, door: [cx, cz + cfg.H + 1], smoke: null, done: false, squash: 0, site: site.id, fence: f };
     // まずドカンと衝撃波
     shake(0.35); SND.boom();
@@ -1526,12 +1578,19 @@
   const zs = [];
   let zSpawnT = 0, zKills = 0;
   const Z_TINTS = ['#ffffff', '#e8ffe0', '#ffe8e0', '#e0ecff', '#fff6d8'].map(c => new THREE.Color(c));
+  // ゾンビは拠点の中心から離れた森の中(奥側)に出る。拠点の柵から ZOMBIE_SAFE 以内には出ない
   function spawnZombies(n, dist) {
-    const a = ZOMBIES.from + (Math.random() - 0.5) * ZOMBIES.spread;
-    const d = dist || lerp(ZOMBIES.dist[0], ZOMBIES.dist[1], Math.random());
-    const cx = clamp(player.x + Math.cos(a) * d, WORLD.x1 + 2, WORLD.x2 - 2), cz = clamp(player.z + Math.sin(a) * d, WORLD.z1 + 2, WORLD.z2 - 2);
+    const H = BUILDINGS.fence.fence.H, [ox, oz] = BUILDINGS.fence.at;
+    let cx = 0, cz = 0;
+    for (let k = 0; k < 12; k++) {
+      const a = ZOMBIES.from + (Math.random() - 0.5) * ZOMBIES.spread;
+      const d = dist || lerp(ZOMBIES.dist[0], ZOMBIES.dist[1], Math.random());
+      cx = clamp(ox + Math.cos(a) * d, WORLD.x1 + 2, WORLD.x2 - 2); cz = clamp(oz + Math.sin(a) * d, WORLD.z1 + 2, WORLD.z2 - 2);
+      if (Math.max(Math.abs(cx - ox), Math.abs(cz - oz)) > H + ZOMBIE_SAFE + 2.5) break;
+    }
     for (let i = 0; i < n && zs.length < ZOMBIES.max; i++) {
       const x = cx + (Math.random() - 0.5) * 5, z = cz + (Math.random() - 0.5) * 5;
+      if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIE_SAFE) continue;
       zs.push({ x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
   }
@@ -1572,6 +1631,7 @@
       zb.x = clamp(zb.x + vx * dt, WORLD.x1 + 0.5, WORLD.x2 - 0.5); zb.z = clamp(zb.z + vz * dt, WORLD.z1 + 0.5, WORLD.z2 - 0.5);
       for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && f.doorOpen < 0.7) segPush(zb, f.door, 0.55); }
       zb.face = Math.atan2(dx, dz);
+      if (!godMode && !gameOver && zb.appear > 0.5 && d < 0.95 && insideCamp(player.x, player.z) && insideCamp(zb.x, zb.z)) showGameOver();
       if (zb.appear <= 0) { setInst(zombieMesh, n, zb.x, -5, zb.z, 0.001, 0.001, 0.001); zombieMesh.setColorAt(n++, zb.tint); continue; }
       const s = Math.max(0.01, backOut(zb.appear)) * (zb.hit > 0 ? 1.15 : 1);
       const w = Math.sin(gt * 8 + zb.ph);
@@ -2183,6 +2243,11 @@
     freeplay: () => { freeplay = true; },
     axes: (a) => setAxes(a),
     storage: (a) => createSite({ ...a, need: 1e9, build: [] }),
+    upgrade: (a) => {
+      const s = createSite({ id: a.id, icon: a.icon, at: a.at, res: a.res, need: Math.round(a.levels[0].cost / CASH_UNIT), build: [] });
+      s.upgrade = a; s.level = 0;
+      return s;
+    },
     zombies: (a) => { for (const k in a) if (k in ZOMBIES) ZOMBIES[k] = a[k]; if (a.first) spawnZombies(a.first, 17); zSpawnT = ZOMBIES.interval; },
     scatter: (a) => scatter(a),
     stockpile: (a) => createSite({ id: 'stock', at: a.at, res: a.res, need: 1e9, build: [], deposit: a }),
@@ -2242,7 +2307,7 @@
     supplyT = 1;
     for (const id in sites) {
       const s = sites[id];
-      if (s.building || s.done || s.deposit || s.store || s.pickup) continue;
+      if (s.building || s.done || s.deposit || s.store || s.pickup || s.upgrade) continue;
       let have = s.paid + s.incoming + carried[s.res] + storeStock(s.res);
       for (const it of drops[s.res].items) if (it.st !== 'deliver') have++;
       for (const t of targets) if (!t.gone && t.drops[s.res] && (t.type !== 'bear')) have += t.drops[s.res];
@@ -2340,6 +2405,11 @@
   // ================================================================
   //  プレイヤーの更新(移動・ぶつかり・自動で斧を振る)
   // ================================================================
+  // 拠点(柵ができたあと)の中にいるか
+  function insideCamp(x, z, pad = 0) {
+    for (const f of fences) if (f.gateLanded && Math.abs(x - f.x) < f.H + pad && Math.abs(z - f.z) < f.H + pad) return true;
+    return false;
+  }
   function segPush(o, w, rad) {
     const [ax, az, bx, bz] = w, vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz;
     const t = clamp(((o.x - ax) * vx + (o.z - az) * vz) / L2, 0, 1);
@@ -2580,7 +2650,19 @@
   // ================================================================
   //  メインループ
   // ================================================================
+  // ゲームオーバー(拠点の中に入りこんだゾンビにつかまったとき)
+  let gameOver = false, godMode = false;
+  function showGameOver() {
+    gameOver = true;
+    shake(0.6); SND.boom(); if (!fastForwarding) tone(220, 0.8, 'sawtooth', 0.08, 0.4);
+    $('over-kills').textContent = zKills;
+    $('over-money').textContent = (carried.cash * CASH_UNIT).toLocaleString();
+    $('over-time').textContent = Math.floor(elapsed / 60) + ':' + String(Math.floor(elapsed % 60)).padStart(2, '0');
+    $('over').classList.add('show');
+  }
+  $('over-retry').addEventListener('click', () => location.reload());
   function logic(dt) {
+    if (gameOver) return;
     gt += dt;
     if (started) elapsed += dt;
     sfxTick(dt);
@@ -2639,11 +2721,13 @@
       return { gt, elapsed, carried: { ...carried }, scenes: SCN.log.map(l => ({ ...l })), active: SCN.active.map(s => s.id), buildings: Object.keys(built).filter(k => built[k].done),
         villagers: villagers.length, targets: targets.filter(t => !t.gone).map(t => t.type + ':' + t.tag), drops: drops.wood.items.length + drops.meat.items.length,
         sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : '')])),
-        unlocked: Object.keys(unlocked), money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
+        unlocked: Object.keys(unlocked), over: gameOver, axesOff, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
     },
     bot(on) { bot = on; },
     fastForward(sec, step = 1 / 30) { fastForwarding = true; try { for (let t = 0; t < sec; t += step) logic(step); } finally { fastForwarding = false; } return this.state; },
     teleport(x, z) { player.x = x; player.z = z; },
+    god(on) { godMode = on; },
+    weapon() { return { n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0 }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
 </script>
