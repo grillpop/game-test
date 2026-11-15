@@ -86,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.19-s13';
+  const GAME_VERSION = '2026.11.20-s14';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -99,15 +99,20 @@
   const DELIVER = { gap: 0.07, minGap: 0.016, speedUp: 0.92, flight: 0.3 }; // 納品: 最初の間隔・最短・だんだん速く・飛ぶ時間
   const WORLD = { x1: -30, x2: 30, z1: -30, z2: 30 };
   // まわりを回る斧(シナリオの 'axes' で本数・半径・速さが増える)。hitR = 斧の当たりの大きさ、cd = 同じ相手に続けて当たる間隔
-  const AXES = { n: 2, radius: 1.6, speed: 1.6, hitR: 0.45, cd: 0.09 };
+  const AXES = { kind: 'axe', n: 2, radius: 1.6, speed: 1.6, hitR: 0.45, cd: 0.09 };
   const TREE_FALL = 0.28;
   // 武器パワーアップ(お金で払う)。払うたびに次のレベルへ
+  // 斧 2本 → 3 → 4 → 5本 → 剣(リーチが長い) → トゲ鉄球(鎖の先) → ロケットランチャー
   const WEAPON_LEVELS = [
-    { cost: 200, n: 3, radius: 1.9, speed: 1.9 },
-    { cost: 400, n: 4, radius: 2.2, speed: 2.1 },
-    { cost: 800, n: 5, radius: 2.5, speed: 2.3 },
-    { cost: 1500, n: 6, radius: 2.8, speed: 2.6 },
+    { cost: 200, kind: 'axe', icon: '🪓', label: '斧が3本に', n: 3, radius: 1.9, speed: 1.9, hitR: 0.45 },
+    { cost: 400, kind: 'axe', icon: '🪓', label: '斧が4本に', n: 4, radius: 2.2, speed: 2.1, hitR: 0.45 },
+    { cost: 800, kind: 'axe', icon: '🪓', label: '斧が5本に', n: 5, radius: 2.5, speed: 2.3, hitR: 0.45 },
+    { cost: 1500, kind: 'sword', icon: '🗡️', label: '剣に進化! リーチがのびた', n: 4, radius: 3.2, speed: 2.0, hitR: 0.6 },
+    { cost: 2500, kind: 'flail', icon: '⛓️', label: 'トゲ鉄球に進化!', n: 2, radius: 3.9, speed: 1.45, hitR: 1.0 },
+    { cost: 4000, kind: 'rocket', icon: '🚀', label: 'ロケットランチャー!', n: 0, radius: 1, speed: 1, hitR: 0.45 },
   ];
+  // ロケットランチャー: range 以内のゾンビ(いなければ木)へ every 秒ごとに発射。爆発の半径 blast
+  const ROCKET = { range: 12, treeRange: 8, every: 0.2, blast: 2.6, speed: 26 };
   const ZOMBIE_SAFE = 6; // 拠点の柵からこれ以上離れた所にだけゾンビが出る
   const CAM_YAW = Math.PI / 4;                                 // カメラは斜め45度から(四角いキャンプがひし形に見える)
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
@@ -149,43 +154,40 @@
       goal: { type: 'build', site: 'bonfire' },
       exit: [{ do: 'toast', text: '🔥 立派なキャンプファイアーができた!' }] },
     { id: 'scene_04', title: '出荷ヘリポート', after: 'scene_03', delay: 1.2,
-      enter: [{ do: 'site', id: 'heli', title: '🚁 出荷ヘリポートをつくる', icon: '🚁', at: [5.2, -2.4], res: 'wood', need: 50, build: ['helipad'] }],
+      enter: [
+        { do: 'site', id: 'heli', title: '🚁 出荷ヘリポートをつくる', icon: '🚁', at: [5.2, -2.4], res: 'wood', need: 50, build: ['helipad'] },
+        // ヘリポートと同時に、お金で建てるアップデートエリアが全部開く(どれから建ててもいい)
+        { do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'cash', need: 30, build: ['tower'], delay: 0.5,
+          onBuilt: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
+        { do: 'site', id: 'vacuum', icon: '🌀', at: [8.3, 3.9], res: 'cash', need: 60, build: ['vacuum'], delay: 0.7,
+          onBuilt: [{ do: 'toast', text: '🌀 バキューマー完成! 散らばった氷を吸いこんで氷置き場へ' }] },
+        { do: 'site', id: 'kiln', icon: '🏭', at: [-6.8, 1.4], res: 'cash', need: 50, build: ['kiln'], delay: 0.9,
+          onBuilt: [
+            // 炭置き場(窯の前)。木材置き場の薪が3本ずつコンベアで窯へ → 炭1個。炭はヘリが高く買う
+            { do: 'storage', id: 'coalpad', kind: 'deposit', icon: '⚫', res: 'coal', yard: 'coal', grid: { cols: 4, rows: 4, layers: 6, cx: 0.5, cz: 0.5, h: 0.44, y0: 0.52 } },
+            { do: 'kilnline', kiln: 'kiln', from: 'woodpad', to: 'coalpad' },
+            { do: 'toast', text: '🏭 炭焼き窯ができた! 薪が自動で炭になる(ヘリが高く買う)' },
+          ] },
+        { do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'], camera: [3, -16], delay: 1.1,
+          onBuilt: [
+            { do: 'power', from: 'plant', lamps: [[3.2, -10.2], [10.0, -5.6], [9.6, 5.0], [2.6, 9.6], [-2.6, 9.6], [-9.6, 9.6], [-9.6, -0.6], [-9.6, -9.6]] },
+            { do: 'toast', text: '⚡ ゾンビ発電所が動き出した! 拠点に電気が通った' },
+          ] },
+        { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 1.3 },
+        // ガトリングは電気(発電所)と見張り台ができてから
+        { do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 80, build: ['gatling'], requires: ['plant', 'tower'],
+          announce: '🔫 電気が来た! 見張り台にガトリングを積めるようになった',
+          onBuilt: [{ do: 'toast', text: '🔫 ガトリング設置! 柵に来たゾンビをなぎ倒す' }] },
+      ],
       goal: { type: 'build', site: 'heli' },
       exit: [
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧊', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
         { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💰', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
         { do: 'toast', text: '🧊 凍ったゾンビを氷置き場へ! ヘリが売ってくれる 💰' },
-        // 武器パワーアップ(拠点の左手前)。お金で払う
-        { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 1.5 },
+        { do: 'toast', text: '💰 お金で建てるエリアは、どれから建ててもOK!', delay: 4 },
       ] },
-    { id: 'scene_05', title: '見張り台', after: 'scene_04', delay: 1.0,
-      enter: [{ do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'wood', need: 80, build: ['tower'] }],
-      goal: { type: 'build', site: 'tower' },
-      exit: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
-    { id: 'scene_06', title: '炭焼き窯', after: 'scene_05', delay: 1.0,
-      enter: [{ do: 'site', id: 'kiln', icon: '🏭', at: [-6.8, 1.4], res: 'wood', need: 100, build: ['kiln'] }],
-      goal: { type: 'build', site: 'kiln' },
-      exit: [
-        // 炭置き場(窯の前)。木材置き場の薪が3本ずつコンベアで窯へ → 炭1個。炭はヘリが高く買う
-        { do: 'storage', id: 'coalpad', kind: 'deposit', icon: '⚫', res: 'coal', yard: 'coal', grid: { cols: 4, rows: 4, layers: 6, cx: 0.5, cz: 0.5, h: 0.44, y0: 0.52 } },
-        { do: 'kilnline', kiln: 'kiln', from: 'woodpad', to: 'coalpad' },
-        { do: 'toast', text: '🏭 炭焼き窯ができた! 薪が自動で炭になる(ヘリが高く買う)' },
-      ] },
-    { id: 'scene_07', title: 'ゾンビ発電所', after: 'scene_06', delay: 1.0,
-      // お金で建てる(大金)。完成すると定期的にお金が入り、拠点に電気が通る
-      enter: [{ do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'], camera: [3, -16] }],
-      goal: { type: 'build', site: 'plant' },
-      exit: [
-        { do: 'power', from: 'plant', lamps: [[3.2, -10.2], [10.0, -5.6], [9.6, 5.0], [2.6, 9.6], [-2.6, 9.6], [-9.6, 9.6], [-9.6, -0.6], [-9.6, -9.6]] },
-        { do: 'toast', text: '⚡ ゾンビ発電所が動き出した! 拠点に電気が通った' },
-      ] },
-    { id: 'scene_08', title: 'ガトリング', after: 'scene_07', delay: 2.5,
-      // 電気があるので、見張り台にガトリングを積める
-      enter: [{ do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 80, build: ['gatling'] }],
-      goal: { type: 'build', site: 'gatling' },
-      exit: [{ do: 'toast', text: '🔫 ガトリング設置! 近づくゾンビをなぎ倒す' }] },
-    { id: 'scene_09', title: '出荷でかせぐ', after: 'scene_08', goal: { type: 'none' } },
+    { id: 'scene_05', title: '拠点を育てる', after: 'scene_04', goal: { type: 'none' } },
   ];
 
   const STICK_RADIUS = 56;
@@ -641,6 +643,17 @@
     for (const x of [6.6, 8.6]) parts.push(S(0.14, x, 7.15, 4.9, '#bfe9ff', 'deco'));
     return { parts, size: [17, 10], ridge: 6.4, smoke: null };
   }
+  // バキューマー(氷吸い取り機): 青い機械・タンク・上の吸い込み口・柵の外へ向いたホース
+  function vacuumDef() {
+    const parts = [];
+    parts.push(B(2.4, 0.3, 2.0, 0, 0.15, 0, '#8e959e', 'base'));
+    parts.push(B(1.9, 1.5, 1.5, 0, 1.05, 0, '#3f8fd0', 'wall'), B(1.95, 0.12, 1.55, 0, 1.2, 0, '#ffd23a', 'wall'));
+    parts.push(C(0.55, 0.55, 1.3, -0.45, 2.45, -0.1, '#c3cad2', 'pillar', { seg: 12 }), C(0.57, 0.57, 0.15, -0.45, 3.1, -0.1, '#ffd23a', 'pillar', { seg: 12 }));
+    parts.push({ t: 'cyl', a: [0.85, 0.3, 0.9, 12], p: [0.45, 2.3, 0.1], r: [0, 0, 0], c: '#ffd23a', st: 'roof' });
+    parts.push(C(0.2, 0.2, 2.4, 1.6, 2.2, 0.1, '#2f343c', 'deco', { rz: -1.0 }), C(0.42, 0.2, 0.5, 2.65, 2.85, 0.1, '#ffd23a', 'deco', { rz: -1.0 }));
+    parts.push(S(0.14, -0.6, 1.4, 0.77, '#5dff7a', 'deco'), S(0.14, -0.2, 1.4, 0.77, '#ff6a4a', 'deco'), B(0.8, 0.4, 0.04, 0.45, 1.1, 0.77, '#2a2f3a', 'deco'));
+    return { parts, size: [2.4, 2.0], ridge: 3.4 };
+  }
   function towerDef() {
     const parts = [], wood = '#7a4d24', plank = '#a8774a';
     for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
@@ -674,11 +687,13 @@
     plant: { name: 'ゾンビ発電所', at: [0, -18.6], rot: 0, def: plantDef, clear: 2.5,
       plant: { every: 3, perWorker: 2, bonus: 5, lure: 0.7, intake: [9.9, 0], pylon: [7.6, 7.4, -13.7] } },
     // ガトリング: 見張り台の屋根の上に積む(電気で動く)
-    gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.09, y: 7.55 } },
+    gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.08, y: 7.55 } },
+    // バキューマー: 地面に落ちている氷を every 秒に1個吸いこみ、コンベアで氷置き場へ
+    vacuum: { name: 'バキューマー', at: [8.3, 3.9], rot: 0, def: vacuumDef, vacuum: { every: 0.07, range: 40, belt: 1.1 } },
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
     // ヘリポート。yards = 氷置き場とお金置き場の台。氷1個 💰price、1回の出荷ボーナス 💰bonus、札束1つ 💰unit
-    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: YARD_AT.ice, cash: YARD_AT.cash }, price: 5, bonus: 50, unit: 10, batch: 20, wait: 6 } },
+    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: YARD_AT.ice, cash: YARD_AT.cash }, price: 5, bonus: 50, unit: 10, batch: 12, wait: 10, maxIce: 12 } }, // maxIce = 1回に運ぶ氷の最大
     bonfire: { name: 'キャンプファイアー', at: [0, 0], bonfire: { stones: 14, r: 1.55, layers: 7, benches: 4, benchR: 3.2 } },
     storage: { name: '物資置き場', at: [-4.4, -1.6], rot: 0, def: storageDef },
     house1: { name: '民家', at: [-11, 2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#c0453a', chimney: [0.9, -0.7] }) },
@@ -975,15 +990,120 @@
   axeTrail.rotation.x = -Math.PI / 2;
   scene.add(axeTrail);
   let axeR = AXES.radius, axeAng = 0, axeGrow = 0, axeLap = 0;
+  // 剣(刃は +x の向き。先が x=1.5)
+  const swordGeo = mergeGeometries([
+    { geo: Box(1.7, 0.06, 0.22), m: M(0.35, 0, 0), color: '#e4ebf2' },
+    { geo: Box(1.7, 0.07, 0.05), m: M(0.35, 0.01, 0), color: '#ffffff' },
+    { geo: Cone(0.11, 0.3, 4), m: M(1.35, 0, 0, 1, 0.5, 1, 0, 0, -Math.PI / 2), color: '#e4ebf2' },
+    { geo: Box(0.1, 0.12, 0.62), m: M(-0.55, 0, 0), color: '#ffd23a' },
+    { geo: Box(0.45, 0.1, 0.1), m: M(-0.85, 0, 0), color: '#5a3a1e' },
+    { geo: Sph(0.09, 8, 6), m: M(-1.1, 0, 0), color: '#ffd23a' },
+  ]);
+  swordGeo.scale(1.3, 1.3, 1.3);
+  const SWORD_TIP = 1.95;
+  // トゲ鉄球
+  const flailGeo = (() => {
+    const list = [{ geo: Sph(0.5, 12, 10), m: M(), color: '#4a4f58' }];
+    const dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    for (const a of [1, -1]) for (const b of [1, -1]) for (const c of [1, -1]) dirs.push([a, b, c]);
+    const up = V(0, 1, 0);
+    for (const d of dirs) {
+      const v = V(...d).normalize();
+      list.push({ geo: Cone(0.13, 0.42, 5), m: new THREE.Matrix4().compose(v.clone().multiplyScalar(0.56), new THREE.Quaternion().setFromUnitVectors(up, v), V(1, 1, 1)), color: '#c3cad2' });
+    }
+    return mergeGeometries(list);
+  })();
+  const chainMesh = new THREE.InstancedMesh(Box(0.13, 0.13, 0.13), new THREE.MeshLambertMaterial({ color: '#8d97a3' }), 40);
+  chainMesh.count = 0; chainMesh.frustumCulled = false; scene.add(chainMesh);
+  // ロケット(+z の向き)と、肩にかつぐ発射機
+  const rocketGeo = mergeGeometries([
+    { geo: Cyl(0.1, 0.1, 0.6, 8), m: M(0, 0, 0, 1, 1, 1, Math.PI / 2, 0, 0), color: '#d8402f' },
+    { geo: Cone(0.1, 0.24, 8), m: M(0, 0, 0.42, 1, 1, 1, Math.PI / 2, 0, 0), color: '#ffd23a' },
+    { geo: Box(0.36, 0.03, 0.14), m: M(0, 0, -0.26), color: '#4a4f58' },
+    { geo: Box(0.03, 0.36, 0.14), m: M(0, 0, -0.26), color: '#4a4f58' },
+  ]);
+  const rocketMesh = new THREE.InstancedMesh(rocketGeo, vcMat, 40); rocketMesh.count = 0; rocketMesh.frustumCulled = false; scene.add(rocketMesh);
+  const launcher = new THREE.Group(); launcher.visible = false; scene.add(launcher);
+  launcher.add(new THREE.Mesh(mergeGeometries([
+    { geo: Cyl(0.17, 0.17, 1.3, 10), m: M(0, 0, 0, 1, 1, 1, Math.PI / 2, 0, 0), color: '#4f6b3a' },
+    { geo: Cyl(0.21, 0.21, 0.16, 10), m: M(0, 0, 0.62, 1, 1, 1, Math.PI / 2, 0, 0), color: '#2f343c' },
+    { geo: Cyl(0.21, 0.21, 0.16, 10), m: M(0, 0, -0.62, 1, 1, 1, Math.PI / 2, 0, 0), color: '#2f343c' },
+    { geo: Box(0.1, 0.3, 0.12), m: M(0, -0.25, 0.1), color: '#2f343c' },
+    { geo: Box(0.16, 0.12, 0.2), m: M(0.2, 0.1, 0.15), color: '#ffd23a' },
+  ]), vcMat));
+  const rockets = [];
+  let rocketT = 0, launcherFace = 0, rocketSide = 1, boomSfx = 0;
+  function rocketTarget() {
+    let best = null, bd = ROCKET.range;
+    for (const zb of zs) {
+      if (zb.dead || zb.appear < 0.5 || (zb.rk || 0) > gt) continue;
+      const d = Math.hypot(zb.x - player.x, zb.z - player.z);
+      if (d < bd && !insideCamp(zb.x, zb.z)) { bd = d; best = zb; }
+    }
+    if (best) { best.rk = gt + 0.5; return [best.x, best.z]; }
+    bd = ROCKET.treeRange;
+    for (const t of targets) {
+      if (!targetable(t) || (t.rk || 0) > gt) continue;
+      const d = Math.hypot(t.x - player.x, t.z - player.z);
+      if (d < bd) { bd = d; best = t; }
+    }
+    if (best) { best.rk = gt + 0.35; return [best.x, best.z]; }
+    return null;
+  }
+  function explode(x, z) {
+    const r = ROCKET.blast;
+    for (const zb of zs) if (!zb.dead && Math.abs(zb.x - x) < r && Math.abs(zb.z - z) < r && Math.hypot(zb.x - x, zb.z - z) < r) { zb.hp = 1; hitZombie(zb, x, z); }
+    for (const t of targets) if (targetable(t) && Math.hypot(t.x - x, t.z - z) < r + t.r && gt - t.lastHit > 0.12) { t.lastHit = gt; hitTarget(t, x, z); }
+    ring(x, z, r, 0.32, '#ffb030');
+    burstGibs(x, 0.7, z, 12, '#ffb030', 5, 6); burstGibs(x, 0.7, z, 6, '#fff2a0', 3, 5);
+    puff(x, 0.4, z, 2, '#a8adb5', 1.3, 0.9, 1);
+    shake(0.05);
+    if (!fastForwarding && boomSfx >= 1) { boomSfx--; noise(0.3, 0.18, 520); tone(80, 0.3, 'sine', 0.16, 0.5); }
+  }
+  function updateRockets(dt) {
+    boomSfx = Math.min(3, boomSfx + dt * 8);
+    const on = AXES.kind === 'rocket' && !axesOff;
+    launcher.visible = on;
+    if (on) {
+      const a = launcherFace;
+      launcher.position.set(player.x + Math.cos(a + Math.PI / 2) * 0.45, 1.75 + player.bob, player.z - Math.sin(a + Math.PI / 2) * 0.45);
+      launcher.rotation.y = a;
+      rocketT -= dt;
+      if (rocketT <= 0) {
+        const tg = rocketTarget();
+        if (tg) {
+          rocketT = ROCKET.every;
+          launcherFace = Math.atan2(tg[0] - player.x, tg[1] - player.z);
+          const sx = player.x + Math.sin(launcherFace) * 0.8, sz = player.z + Math.cos(launcherFace) * 0.8;
+          const d = Math.hypot(tg[0] - sx, tg[1] - sz);
+          rockets.push({ sx, sy: 1.8, sz, tx: tg[0], tz: tg[1], t: 0, dur: 0.12 + d / ROCKET.speed, arc: 0.6 + d * 0.08, side: rocketSide = -rocketSide });
+          puff(sx, 1.8, sz, 1, '#ffffff', 0.5, 0.4, 0.3);
+          if (!fastForwarding && sfx.whoosh >= 1) { sfx.whoosh--; noise(0.12, 0.08, 1800); tone(520, 0.12, 'sawtooth', 0.03, 0.5); }
+        } else rocketT = 0.1;
+      }
+    }
+    let n = 0;
+    for (let i = rockets.length - 1; i >= 0; i--) {
+      const r = rockets[i]; r.t += dt;
+      const e = Math.min(1, r.t / r.dur);
+      if (e >= 1) { rockets.splice(i, 1); explode(r.tx, r.tz); continue; }
+      const x = lerp(r.sx, r.tx, e), z = lerp(r.sz, r.tz, e), y = lerp(r.sy, 0.5, e) + Math.sin(e * Math.PI) * r.arc;
+      const vy = (0.5 - r.sy) + Math.cos(e * Math.PI) * Math.PI * r.arc, hd = Math.hypot(r.tx - r.sx, r.tz - r.sz) || 1;
+      setInst(rocketMesh, n++, x, y, z, 1, 1, 1, Math.atan2(r.tx - r.sx, r.tz - r.sz), -Math.atan2(vy, hd));
+      if (Math.random() < dt * 30) puff(x, y, z, 1, '#e8ecf0', 0.35, 0.3, 0.1);
+    }
+    rocketMesh.count = n; rocketMesh.instanceMatrix.needsUpdate = true;
+  }
   const nearT = [];
   let axesOff = false;
   function updateAxes(dt) {
     // 拠点の中では斧は引っこんで止まる(中から外は攻撃できない)
     const off = insideCamp(player.x, player.z, -0.2);
     if (off !== axesOff) { axesOff = off; if (!fastForwarding) tone(off ? 300 : 520, 0.12, 'triangle', 0.05, off ? 0.6 : 1.6); if (!off) axeGrow = 0.6; }
-    if (axesOff) {
+    updateRockets(dt);
+    if (axesOff || AXES.kind === 'rocket') {
       axeR += (0.2 - axeR) * Math.min(1, dt * 8);
-      axeInst.count = 0; axeGhost.count = 0; axeTrail.visible = false;
+      axeInst.count = 0; axeGhost.count = 0; chainMesh.count = 0; axeTrail.visible = false;
       return;
     }
     axeTrail.visible = true;
@@ -993,8 +1113,8 @@
     const n = Math.min(AXE_MAX, AXES.n), px = player.x, pz = player.z, reach = axeR + 2;
     nearT.length = 0;
     for (const t of targets) if (Math.abs(t.x - px) < reach && Math.abs(t.z - pz) < reach && targetable(t)) nearT.push(t);
-    const y = 0.95 + player.bob, spin = -gt * 17, s = 1 + axeGrow * 0.7;
-    let gi = 0;
+    const y = 0.95 + player.bob, spin = -gt * 17, s = 1 + axeGrow * 0.7, kind = AXES.kind;
+    let gi = 0, ci = 0;
     for (let i = 0; i < n; i++) {
       const a = axeAng + i * Math.PI * 2 / n, ax = px + Math.cos(a) * axeR, az = pz + Math.sin(a) * axeR;
       // 斧は中心から輪まで「掃く」ように当たる(すぐ隣の木にも届く)
@@ -1019,9 +1139,22 @@
         zb.lastHit = gt;
         hitZombie(zb, ax, az);
       }
-      setInst(axeInst, i, ax, y + 0.15, az, s, s, s, spin, 0.35);
-      for (let k = 1; k <= 3; k++) { const b = a - k * 0.16; const ks = s * (1 - k * 0.18); setInst(axeGhost, gi++, px + Math.cos(b) * axeR, y, pz + Math.sin(b) * axeR, ks, ks, ks, spin + k * 0.7, 0.35); }
+      if (kind === 'sword') {
+        // 刃が外向き。先が輪のところ
+        const rc = Math.max(0.4, axeR - SWORD_TIP * s);
+        setInst(axeInst, i, px + Math.cos(a) * rc, y + 0.2, pz + Math.sin(a) * rc, s, s, s, -a, 0, 0.12);
+        for (let k = 1; k <= 3; k++) { const b = a - k * 0.13; const ks = s * (1 - k * 0.12); setInst(axeGhost, gi++, px + Math.cos(b) * rc, y + 0.2, pz + Math.sin(b) * rc, ks, ks, ks, -b, 0, 0.12); }
+      } else if (kind === 'flail') {
+        // 鎖の先のトゲ鉄球
+        setInst(axeInst, i, ax, y + 0.25, az, s, s, s, spin * 0.4, spin * 0.3);
+        for (let k = 1; k <= 3; k++) { const b = a - k * 0.12; const ks = s * (1 - k * 0.15); setInst(axeGhost, gi++, px + Math.cos(b) * axeR, y + 0.25, pz + Math.sin(b) * axeR, ks, ks, ks, spin * 0.4, 0); }
+        for (let k = 1; k <= 9; k++) { const f = k / 10; setInst(chainMesh, ci++, lerp(px, ax, f), lerp(1.2 + player.bob, y + 0.25, f) + Math.sin(f * Math.PI) * 0.15, lerp(pz, az, f), 1, 1, 1, -a + k, k * 0.7); }
+      } else {
+        setInst(axeInst, i, ax, y + 0.15, az, s, s, s, spin, 0.35);
+        for (let k = 1; k <= 3; k++) { const b = a - k * 0.16; const ks = s * (1 - k * 0.18); setInst(axeGhost, gi++, px + Math.cos(b) * axeR, y, pz + Math.sin(b) * axeR, ks, ks, ks, spin + k * 0.7, 0.35); }
+      }
     }
+    chainMesh.count = ci; chainMesh.instanceMatrix.needsUpdate = true;
     axeInst.count = n; axeGhost.count = gi;
     axeInst.instanceMatrix.needsUpdate = axeGhost.instanceMatrix.needsUpdate = true;
     axeTrail.position.set(px, 0.06, pz);
@@ -1032,11 +1165,16 @@
     if (lap !== axeLap) { axeLap = lap; if (started) SND.whoosh(); }
   }
   function setAxes(a) {
-    for (const k of ['n', 'radius', 'speed']) if (a[k] !== undefined) AXES[k] = a[k];
+    for (const k of ['n', 'radius', 'speed', 'hitR']) if (a[k] !== undefined) AXES[k] = a[k];
+    if (a.kind && a.kind !== AXES.kind) {
+      AXES.kind = a.kind;
+      const geo = a.kind === 'sword' ? swordGeo : a.kind === 'flail' ? flailGeo : axeGeo;
+      axeInst.geometry = geo; axeGhost.geometry = geo;
+    }
     if (a.quiet) return;
     axeGrow = 1;
     ring(player.x, player.z, AXES.radius + 0.6, 0.45, '#ffe27a');
-    popText('🪓×' + AXES.n + '!', player.x, player.z, '#ffe27a', 22, 3.2);
+    popText((a.icon || '🪓') + (AXES.kind === 'axe' ? '×' + AXES.n : '') + '!', player.x, player.z, '#ffe27a', 22, 3.2);
   }
   function updateWolf(t, dt) {
     t.appear = Math.min(1, t.appear + dt * 2.5);
@@ -1320,7 +1458,7 @@
     s.tex = new THREE.CanvasTexture(s.cv); s.tex.colorSpace = THREE.SRGBColorSpace;
     s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
     s.iconCh = a.icon || ''; s.padKey = '';
-    s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null;
+    s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null; s.onBuilt = a.onBuilt || null;
     if (a.grid) {
       // 置き場: 横の台の上に、決まった並びで積み上がる
       // 山は床の奥側、手前の角に置き場のアイコンと数を描く
@@ -1461,12 +1599,13 @@
     const lv = s.upgrade.levels[s.level];
     s.level++;
     setAxes(lv);
-    popText('⚔️ 武器 Lv' + (s.level + 1) + '! 斧が' + lv.n + '本に', s.x, s.z, '#ffe27a', 22, 3);
+    popText((lv.icon || '⚔️') + ' 武器 Lv' + (s.level + 1) + '! ' + (lv.label || ''), s.x, s.z, '#ffe27a', 22, 3);
+    toast((lv.icon || '⚔️') + ' ' + (lv.label || '武器が強くなった'));
     ring(s.x, s.z, 4, 0.5, '#ffe27a'); burstGibs(s.x, 1, s.z, 26, '#ffd23a', 4, 7);
     SND.done(); shake(0.2);
     const next = s.upgrade.levels[s.level];
     if (!next) { s.done = true; scene.remove(s.pad); toast('⚔️ 武器が最大レベルになった!'); return; }
-    s.paid = 0; s.need = Math.round(next.cost / CASH_UNIT); s.padKey = '';
+    s.paid = 0; s.need = Math.round(next.cost / CASH_UNIT); s.iconCh = next.icon || s.iconCh; s.padKey = '';
   }
   function startBuilding(s) {
     s.building = true; s.buildAt = gt;
@@ -1640,8 +1779,7 @@
         const b = built[Object.keys(built).find(k => built[k].fence === f)];
         b.done = true;
         updateBuildCount();
-        const s = b.site && sites[b.site];
-        if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); }
+        siteDoneCheck(b);
       }
     }
   }
@@ -1792,7 +1930,20 @@
   }
   function siteDoneCheck(b) {
     const s = b.site && sites[b.site];
-    if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); }
+    if (s && s.build.every(id => built[id] && built[id].done)) markSiteDone(s);
+  }
+  // 建築エリアの建物が全部建った: そのエリアの出来事(onBuilt)と、条件を待っているエリア
+  const pendingSites = [];
+  function markSiteDone(s) {
+    if (s.done) return;
+    s.done = true; scene.remove(s.pad);
+    if (s.onBuilt) runActions(s.onBuilt);
+    for (let i = pendingSites.length - 1; i >= 0; i--) {
+      const a = pendingSites[i];
+      if (!a.requires.every(id => sites[id] && sites[id].done)) continue;
+      pendingSites.splice(i, 1);
+      later(1.2, () => safe('site ' + a.id, () => { createSite(a); if (a.announce) toast(a.announce); }));
+    }
   }
   function updateBonfires(dt) {
     for (const f of bonfires) {
@@ -2097,7 +2248,8 @@
         const pile = h.cur, isCoal = pile.res === 'coal';
         hp.set(pile.gx, 6.2 + Math.sin(gt * 3) * 0.1, pile.gz);
         h.loadT -= dt;
-        while (h.loadT <= 0 && pile.stock > 0 && h.loaded < 80) {
+        const capped = () => !isCoal && h.loadedIce >= h.cfg.maxIce;
+        while (h.loadT <= 0 && pile.stock > 0 && h.loaded < 80 && !capped()) {
           h.loadT += 0.035;
           pile.stock--; drawPile(pile);
           const q = gridPos(pile, pile.stock);
@@ -2105,7 +2257,7 @@
           flyItem(pile.res, q[0], q[1], q[2], hp.x + (Math.random() - 0.5) * 0.6, 4.6, hp.z + (Math.random() - 0.5) * 0.6, 0.32, 0.5, () => { if (isCoal) h.netC = Math.min(8, (h.netC || 0) + 1); else h.netN = Math.min(16, (h.netN || 0) + 1); SND.give(h.loaded); }, 6);
         }
         if (Math.random() < dt * 10) downwash(h);
-        if ((pile.stock === 0 || h.loaded >= 80) && h.loadT <= 0.3 && h.st > 0.5) {
+        if ((pile.stock === 0 || h.loaded >= 80 || capped()) && h.loadT <= 0.3 && h.st > 0.5) {
           h.from = [hp.x, hp.y, hp.z]; h.st = 0;
           const next = h.queue.shift();
           if (next && next.stock > 0 && h.loaded < 80) { h.cur = next; h.state = 'go'; }
@@ -2250,9 +2402,70 @@
       updateBuildCount();
     }
     if (!instant && b.info.plant) startPlant(b);
-    const s = b.site && sites[b.site];
-    if (s && s.build.every(id => built[id] && built[id].done)) {
-      s.done = true; scene.remove(s.pad);
+    if (!instant && b.info.vacuum) startVacuum(b);
+    siteDoneCheck(b);
+  }
+  // ---- バキューマー: 落ちている氷を吸いこみ、コンベアで氷置き場へ ----
+  const vacuums = [];
+  function startVacuum(b) {
+    const ice = sites.icepad, c = b.info.vacuum, [vx, vz] = b.info.at;
+    const fy = ice ? ice.fz : YARD_AT.ice[1];
+    const bx = vx, bz1 = vz - 1.05, bz2 = fy + YARD_SIZE / 2 - 0.1, len = bz1 - bz2;
+    const tex = beltTex.clone(); tex.needsUpdate = true; tex.repeat.set(1, len * 1.5);
+    const g = new THREE.Group();
+    const belt = new THREE.Mesh(Box(0.9, 0.12, len), new THREE.MeshLambertMaterial({ map: tex })); belt.position.set(0, 0.62, 0); g.add(belt);
+    g.add(new THREE.Mesh(mergeGeometries([
+      { geo: Box(0.1, 0.22, len), m: M(-0.5, 0.66, 0), color: '#5dc8ff' }, { geo: Box(0.1, 0.22, len), m: M(0.5, 0.66, 0), color: '#5dc8ff' },
+      ...[-1, 0, 1].map(k => ({ geo: Box(0.12, 0.56, 0.12), m: M(0.4, 0.28, k * len * 0.4), color: '#5a606a' })),
+      ...[-1, 0, 1].map(k => ({ geo: Box(0.12, 0.56, 0.12), m: M(-0.4, 0.28, k * len * 0.4), color: '#5a606a' })),
+    ]), vcMat));
+    g.position.set(bx, 0, (bz1 + bz2) / 2); g.scale.set(1, 0.01, 0.01); scene.add(g);
+    const mesh = new THREE.InstancedMesh(iceGeo, iceMat, 40); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    const swirl = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.06, 6, 24), new THREE.MeshBasicMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.7 }));
+    swirl.rotation.x = Math.PI / 2; swirl.position.set(vx + 0.45, 2.85, vz + 0.1); scene.add(swirl);
+    vacuums.push({ b, c, x: vx, z: vz, top: [vx + 0.45, 2.7, vz + 0.1], g, tex, mesh, swirl, items: [], bx, bz1, bz2, t: 0, suckT: 0, flying: 0, active: 0, total: 0 });
+    shake(0.15); ring(bx, (bz1 + bz2) / 2, 3, 0.4, '#5dc8ff'); SND.tok();
+  }
+  function updateVacuums(dt) {
+    const ice = sites.icepad;
+    for (const V of vacuums) {
+      V.t += dt;
+      const k = Math.min(1, V.t / 0.5);
+      V.g.scale.set(1, Math.max(0.01, backOut(k)), Math.max(0.01, k));
+      if (!ice) continue;
+      // 地面に落ちている氷を、遠くからでも1個ずつ吸いこむ(氷置き場がいっぱいのときは止まる)
+      V.suckT -= dt;
+      while (V.suckT <= 0) {
+        V.suckT += V.c.every;
+        if (ice.stock + ice.incoming >= ice.cap) break;
+        let it = null, bd = V.c.range;
+        for (const q of drops.ice.items) { if (q.st !== 'ground' || q.t < 0.3) continue; const d = Math.hypot(q.x - V.x, q.z - V.z); if (d < bd) { bd = d; it = q; } }
+        if (!it) { V.suckT = 0.15; break; }
+        if (it.tag && dropsLeft[it.tag] > 0) dropsLeft[it.tag]--;
+        ice.incoming++; V.flying++;
+        it.st = 'fx'; it.t = 0; it.sx = it.x; it.sy = it.y; it.sz = it.z; it.tx = V.top[0]; it.ty = V.top[1]; it.tz = V.top[2];
+        it.dur = 0.35 + bd * 0.025; it.arc = 1.5 + bd * 0.08; it.spin = 18;
+        it.cb = () => { V.flying--; V.items.push({ p: 0, ry: Math.random() * 0.6 - 0.3 }); V.total++; if (!fastForwarding && sfx.pick >= 1) { sfx.pick--; tone(900 + Math.random() * 300, 0.05, 'sine', 0.035, 1.6); } };
+      }
+      // コンベアを流れて、氷置き場の山へ
+      let n = 0;
+      for (let i = V.items.length - 1; i >= 0; i--) {
+        const q = V.items[i];
+        q.p += dt / V.c.belt;
+        if (q.p >= 1 || n >= 39) {
+          V.items.splice(i, 1);
+          const g = gridPos(ice, Math.min(ice.cap - 1, ice.stock + ice.incoming - 1));
+          flyItem('ice', V.bx, 0.85, V.bz2, g[0], g[1], g[2], 0.3, 0.9, () => { ice.incoming--; ice.stock = Math.min(ice.cap, ice.stock + 1); ice.lastIn = gt; drawPile(ice); ice.bump = 1; }, 8);
+          continue;
+        }
+        setInst(V.mesh, n++, V.bx, 0.88, lerp(V.bz1, V.bz2, q.p), 0.8, 0.8, 0.8, q.ry);
+      }
+      V.mesh.count = n; V.mesh.instanceMatrix.needsUpdate = true;
+      V.active = V.items.length || V.flying ? 1 : Math.max(0, V.active - dt);
+      V.tex.offset.y += dt * (V.active > 0 ? 1.5 : 0);
+      V.swirl.rotation.z += dt * (V.active > 0 ? 14 : 2);
+      V.swirl.scale.setScalar(1 + (V.active > 0 ? Math.sin(gt * 20) * 0.12 : 0));
+      if (V.active > 0 && Math.random() < dt * 6) puff(V.top[0], V.top[1] + 0.3, V.top[2], 1, '#e6f6ff', 0.4, 0.5, 0.4);
     }
   }
   // ---- ゾンビ発電所: 吸い込み口に寄ってきたゾンビは、空いているランニングマシンまで歩かされて、ずっと走らされる ----
@@ -2468,20 +2681,27 @@
         }
         continue;
       }
-      // いちばん近いゾンビを狙って、銃身を回しながら撃つ
-      let best = null, bd = G.c.range;
-      for (const zb of zs) { if (zb.dead || zb.appear < 0.6) continue; const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; } }
+      // 柵に取りついた(または中に入った)ゾンビは、反対側の柵でも最優先。いなければ、いちばん近いゾンビ
+      const F = BUILDINGS.fence, FH = F.fence.H;
+      let best = null, bd = 1e9;
+      for (const zb of zs) {
+        if (zb.dead || zb.appear < 0.6 || (zb.gat || 0) > gt) continue;
+        const m = Math.max(Math.abs(zb.x - F.at[0]), Math.abs(zb.z - F.at[1]));
+        if (m > FH + 1.7) continue;
+        const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; }
+      }
+      if (!best) { bd = G.c.range; for (const zb of zs) { if (zb.dead || zb.appear < 0.6 || (zb.gat || 0) > gt) continue; const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; } } }
       G.spin += dt * (best ? 40 : 3);
       G.barrel.rotation.z = G.spin;
       if (best) {
         let want = Math.atan2(best.x - G.x, best.z - G.z), d = want - G.face; d = Math.atan2(Math.sin(d), Math.cos(d));
-        G.face += d * Math.min(1, dt * 14);
+        G.face += d * Math.min(1, dt * 22);
         G.yaw.rotation.y = G.face;
         G.fireT -= dt;
-        if (G.fireT <= 0 && Math.abs(d) < 0.4) {
+        if (G.fireT <= 0 && Math.abs(d) < 0.6) {
           G.fireT = G.c.every;
           const mx = G.x + Math.sin(G.face) * 1.5, my = G.c.y + 0.65, mz = G.z + Math.cos(G.face) * 1.5;
-          if (tracers.length < 60) tracers.push({ sx: mx, sy: my, sz: mz, zb: best, t: 0, dur: 0.05 + bd * 0.008 });
+          if (tracers.length < 60) { tracers.push({ sx: mx, sy: my, sz: mz, zb: best, t: 0, dur: 0.05 + bd * 0.008 }); best.gat = gt + 0.05 + bd * 0.008 + 0.02; }
           muzzle.visible = true; muzzle.position.set(mx, my, mz); muzzle.scale.setScalar(0.7 + Math.random() * 0.8); G.flash = 0.04;
           if (!fastForwarding && sfx.chop >= 1) { sfx.chop--; noise(0.05, 0.12, 2600); }
         }
@@ -2670,7 +2890,10 @@
   const ACTIONS = {
     place: (a) => construct(a.building, true),
     spawn: (a) => a.at.forEach(([x, z]) => spawnTarget(a.what, x, z, a)),
-    site: (a) => createSite(a),
+    site: (a) => {
+      if (a.requires && !a.requires.every(id => sites[id] && sites[id].done)) { pendingSites.push(a); return null; }
+      return createSite(a);
+    },
     unlock: (a) => unlockArea(a.area),
     camera: (a) => camFocus(a.focus[0], a.focus[1], a.hold || 1.2, a.zoom || 0),
     zoom: (a) => { zoomTarget = a.level; },
@@ -2686,7 +2909,7 @@
     power: (a) => startPower(a),
     upgrade: (a) => {
       const s = createSite({ id: a.id, icon: a.icon, at: a.at, res: a.res, need: Math.round(a.levels[0].cost / CASH_UNIT), build: [] });
-      s.upgrade = a; s.level = 0;
+      s.upgrade = a; s.level = 0; s.iconCh = a.levels[0].icon || s.iconCh; s.padKey = '';
       return s;
     },
     zombies: (a) => { for (const k in a) if (k in ZOMBIES) ZOMBIES[k] = a[k]; if (a.first) spawnZombies(a.first, 17); zSpawnT = ZOMBIES.interval; },
@@ -2953,7 +3176,10 @@
   }
   // 次の行き先: 運べる資材があれば建築エリア → いちばん近い木・狼・落ちている資材 → 熊
   function guideTarget() {
-    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.store && !s.pickup && !s.building && !s.done && (carried[s.res] > 0 || storeStock(s.res) > 0) && s.paid + s.incoming < s.need) return { kind: 'site', x: s.x, z: s.z, site: s }; }
+    // 払える建築エリア(残りがいちばん少ないところ)
+    let sb = null;
+    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.store && !s.pickup && !s.building && !s.done && (carried[s.res] > 0 || storeStock(s.res) > 0) && s.paid + s.incoming < s.need && (!sb || s.need - s.paid < sb.need - sb.paid)) sb = s; }
+    if (sb) return { kind: 'site', x: sb.x, z: sb.z, site: sb };
     // 今のシーンで倒すもの(狼など)があれば、そちらを先に
     const focus = SCN.active.filter(sc => sc.goal && sc.goal.type === 'clear').map(sc => sc.goal.tag);
     let fb = null, fd = 1e9;
@@ -3117,7 +3343,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
@@ -3162,7 +3388,7 @@
       return { gt, elapsed, carried: { ...carried }, scenes: SCN.log.map(l => ({ ...l })), active: SCN.active.map(s => s.id), buildings: Object.keys(built).filter(k => built[k].done),
         villagers: villagers.length, targets: targets.filter(t => !t.gone).map(t => t.type + ':' + t.tag), drops: drops.wood.items.length + drops.meat.items.length,
         sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : '')])),
-        unlocked: Object.keys(unlocked), over: gameOver, axesOff, workers: plants[0] ? plants[0].workers.length : 0, lampsLit: lamps.filter(l => l.lit).length, gatling: gatlings.length, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
+        unlocked: Object.keys(unlocked), over: gameOver, axesOff, workers: plants[0] ? plants[0].workers.length : 0, vacuumed: vacuums[0] ? vacuums[0].total : null, lampsLit: lamps.filter(l => l.lit).length, gatling: gatlings.length, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
     },
     bot(on) { bot = on; },
     fastForward(sec, step = 1 / 30) { fastForwarding = true; try { for (let t = 0; t < sec; t += step) logic(step); } finally { fastForwarding = false; } return this.state; },
@@ -3170,7 +3396,8 @@
     god(on) { godMode = on; },
     giveCash(n) { carried.cash += n; },
     kiln() { return kilnLines.map(L => ({ items: L.items.length, fuel: L.fuel, burnT: L.burnT, from: L.from.stock, to: L.to.stock, inc: L.to.incoming, cap: L.to.cap })); },
-    weapon() { return { n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0 }; },
+    weapon() { return { kind: AXES.kind, n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0, rockets: rockets.length }; },
+    setWeapon(i) { const lv = WEAPON_LEVELS[i]; if (lv) setAxes(lv); return AXES.kind; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
 </script>
