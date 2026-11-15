@@ -84,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.24-s25';
+  const GAME_VERSION = '2026.11.25-s26';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -95,7 +95,7 @@
     cash: { per: 2, gap: 0.32, layerH: 0.17, max: 160 }, // 札束(1つ 💰10)
   };
   const DELIVER = { gap: 0.07, minGap: 0.016, speedUp: 0.92, flight: 0.3 }; // 納品: 最初の間隔・最短・だんだん速く・飛ぶ時間
-  const WORLD = { x1: -30, x2: 30, z1: -30, z2: 30 };
+  const WORLD = { x1: -30, x2: 46, z1: -46, z2: 30 }; // 研究所のために東と北へ広げた
   // まわりを回る斧(シナリオの 'axes' で本数・半径・速さが増える)。hitR = 斧の当たりの大きさ、cd = 同じ相手に続けて当たる間隔
   const AXES = { kind: 'axe', n: 2, radius: 1.6, speed: 1.6, hitR: 0.45, cd: 0.09 };
   const TREE_FALL = 0.28;
@@ -115,7 +115,7 @@
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
   const ZOMBIES = { safe: 6, front: 0.45, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
   // 川(最初から東の森の向こうに流れている)。(x0,z0)→(x1,z1) の線に幅 w
-  const RIVER = { x0: 19, z0: -31, x1: 26, z1: 31, w: 3.6 };
+  const RIVER = { x0: 17.2, z0: -47, x1: 26, z1: 31, w: 3.6 };
   function riverDist(x, z) {
     const { x0, z0, x1, z1 } = RIVER, vx = x1 - x0, vz = z1 - z0, t = clamp(((x - x0) * vx + (z - z0) * vz) / (vx * vx + vz * vz), 0, 1);
     return Math.hypot(x - (x0 + vx * t), z - (z0 + vz * t));
@@ -123,7 +123,7 @@
   // 水: くみ上げの速さ・貯水槽の容量。畑: 1つの作物が育つ秒数・使う水。研究所: 人間1人に使う頭と炭・何秒ごと
   const WATER = { rate: 2.5, cap: 200 };
   const FARM = { grow: 9, water: 0.35, cap: 54 };
-  const LAB = { heads: 4, coal: 2, every: 7, max: 40, startHeads: 160, startCoal: 90 };
+  const LAB = { heads: 4, coal: 2, every: 7, max: 40, startHeads: 420, startCoal: 250 };
   const HUMAN = { speed: 3.2, notice: 10, hp: 1.2, hunger: 28, starve: 7 };
   const ZOOM_BASE = 12;
   const DOG_NOTICE = 12; // ゾンビがワンコに気づく距離(キャラクターより6以上遠くなければ、ワンコを追う)
@@ -143,7 +143,7 @@
     { id: 'scene_01', title: '森の空き地で伐採', after: null,
       enter: [
         // 森いっぱいに木を置く(まん中の空き地はあける)。見える木は全部切れる
-        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25, avoid: [[-13.8, -13.8, 13.8, 13.8]], avoidCircles: [[0, 0, 15.6]], river: true },
+        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25, avoid: [[-13.8, -13.8, 13.8, 13.8]], avoidCircles: [[0, 0, 15.6]], river: true, tries: 16000 },
         // おまけ: 森の奥でワンコがふるえている。ゾンビから守って、キャンプで保護すると…
         { do: 'dog', delay: 4 },
         { do: 'toast', text: '🐶 空き地にワンコが…! ゾンビから守ってあげて', delay: 5.5 },
@@ -199,20 +199,20 @@
           announce: '🤖 電気で動く「木こりマシン」を作れるようになった!',
           onBuilt: [{ do: 'toast', text: '🤖 木こりマシン出動! 木を切って木材置き場へ運ぶ' }] },
         // 拠点拡大(木こりマシンとバキューマーで全自動になってから)。大金
-        { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 600, build: [], special: 'expand', requires: ['lumber', 'vacuum'],
-          announce: '🏗️ 全自動になった! 拠点を広げられる(💰6,000)' },
+        { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 300, build: [], special: 'expand', requires: ['lumber', 'vacuum'],
+          announce: '🏗️ 全自動になった! 拠点を広げられる' },
         // 拠点を広げたら: 川の水くみ(→ 村の貯水槽)と、研究所
-        { do: 'site', id: 'water', icon: '💧', at: [12.0, 10.4], res: 'cash', need: 300, build: ['pump', 'cistern'], requires: ['expand'], delays: [0.2, 1.4],
+        { do: 'site', id: 'water', icon: '💧', at: [12.0, 10.4], res: 'cash', need: 150, build: ['pump', 'cistern'], requires: ['expand'], delays: [0.2, 1.4],
           announce: '💧 川から水をくめるようになった!',
           onBuilt: [{ do: 'water' }, { do: 'toast', text: '💧 水くみ完成! 川の水が村の貯水槽にたまっていく' }] },
-        { do: 'site', id: 'lab', icon: '🧪', at: [6.6, 14.0], res: 'cash', need: 800, build: ['lab'], requires: ['expand'], camera: [0, 22],
+        { do: 'site', id: 'lab', icon: '🧪', at: [6.6, 14.0], res: 'cash', need: 350, build: ['lab'], requires: ['expand'], camera: [24, -24],
           onBuilt: [{ do: 'lab' }] },
         // 畑(水があると作れる)。作物が育つと食べ物がたまる
-        { do: 'site', id: 'farm', icon: '🌱', at: [-7.6, 14.2], res: 'cash', need: 250, build: ['farm'], requires: ['water'],
+        { do: 'site', id: 'farm', icon: '🌱', at: [-7.6, 14.2], res: 'cash', need: 150, build: ['farm'], requires: ['water'],
           announce: '🌱 水がたまった! 畑を作れるようになった',
           onBuilt: [{ do: 'farm' }, { do: 'toast', text: '🌱 畑ができた! 水で作物が育つ' }] },
         // 研究所から拠点までの柵つき通路
-        { do: 'site', id: 'corridor', icon: '🚧', at: [2.9, 15.0], res: 'cash', need: 150, build: [], special: 'corridor', requires: ['lab'],
+        { do: 'site', id: 'corridor', icon: '🚧', at: [10.9, -8.6], res: 'cash', need: 150, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧟', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
@@ -337,14 +337,14 @@
       g.fillStyle = '#f2f7fb'; g.fillRect(0, 0, n, n);
       for (let i = 0; i < 260; i++) { g.fillStyle = i % 3 ? 'rgba(160,190,215,.10)' : 'rgba(255,255,255,.7)'; const r = 2 + Math.random() * 7; g.beginPath(); g.arc(Math.random() * n, Math.random() * n, r, 0, 7); g.fill(); }
     }, 14);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 120), new THREE.MeshLambertMaterial({ map: tex }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(190, 150), new THREE.MeshLambertMaterial({ map: tex }));
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(3, 0, -6);
     scene.add(ground);
     // 遠くの山(大きな白い三角)
     const mtn = [];
     for (let i = 0; i < 22; i++) {
-      const x = -80 + i * 8 + Math.random() * 4, z = -62 - Math.random() * 10, h = 14 + Math.random() * 16;
+      const x = -80 + i * 9 + Math.random() * 4, z = -78 - Math.random() * 10, h = 16 + Math.random() * 18;
       mtn.push({ geo: Cone(8 + Math.random() * 5, h, 7), m: M(x, h / 2 - 1, z), color: i % 2 ? '#b9cadb' : '#c9d7e5' });
       mtn.push({ geo: Cone(3.6, h * 0.36, 7), m: M(x, h - h * 0.18 - 1, z + 0.4), color: '#ffffff' });
     }
@@ -783,9 +783,9 @@
     // 電動木こりマシンの車庫。マシンは森へ行って木を切り、積んで、木材置き場へ運ぶ
     lumber: { name: '木こりマシン', at: [-8.3, 8.3], rot: 0, def: garageDef, lumber: { speed: 6.5, cap: 36, saw: 0.2, collectR: 6 } },
     pump: { name: '水くみ', at: [19.0, 3.0], rot: 0, def: pumpDef, clear: 1.0 },
-    cistern: { name: '村の貯水槽', at: [12.2, -5.6], rot: 0, def: cisternDef },
+    cistern: { name: '村の貯水槽', at: [12.2, -1.2], rot: 0, def: cisternDef },
     farm: { name: '畑', at: [-7.6, 14.2], rot: 0, def: farmDef },
-    lab: { name: '研究所', at: [0, 25.2], rot: 0, def: labDef, clear: 2.0 },
+    lab: { name: '研究所', at: [30, -31], rot: Math.PI, def: labDef, clear: 2.5 }, // 扉は南(拠点のほう)、裏庭は北
     // バキューマー: 地面に落ちている氷を every 秒に1個吸いこみ、コンベアで氷置き場へ
     vacuum: { name: 'バキューマー', at: [8.3, 3.9], rot: 0, def: vacuumDef, vacuum: { every: 0.07, range: 40, belt: 1.1 } },
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
@@ -916,7 +916,7 @@
     { geo: Sph(0.45, 10, 6), m: M(0, 1.28, -0.1, 1.3, 0.3, 1.4), color: '#f6fafd' },
   ]);
   // 木は数百本あるので、上の部分・切り株・影をそれぞれ1回で描く(倒れる動きも、その1本の向きを変えるだけ)
-  const TREE_MAX = 800;
+  const TREE_MAX = 1500;
   const treeTops = new THREE.InstancedMesh(treeTopGeo, vcMat, TREE_MAX);
   const treeStumps = new THREE.InstancedMesh(stumpGeo, vcMat, TREE_MAX);
   const treeShadows = new THREE.InstancedMesh(blobGeo, blobMat, TREE_MAX);
@@ -1922,7 +1922,8 @@
     for (let i = 0; i < n && zs.length < ZOMBIES.max; i++) {
       const x = cx + (Math.random() - 0.5) * 5, z = cz + (Math.random() - 0.5) * 5;
       if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIES.safe) continue;
-      if (built.lab && built.lab.box) { const [x1, z1, x2, z2] = built.lab.box; if (x > x1 - 3 && x < x2 + 3 && z > z1 - 6 && z < z2 + 3) continue; } // 研究所と通路のまわりには出ない
+      if (built.lab && built.lab.box) { const [x1, z1, x2, z2] = built.lab.box; if (x > x1 - 3 && x < x2 + 3 && z > z1 - 3 && z < z2 + 3) continue; } // 研究所と通路のまわりには出ない
+      if (corridorPath && polyDist(corridorPath, x, z) < 4) continue;
       zs.push({ x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
   }
@@ -1980,7 +1981,7 @@
       zb.x = clamp(zb.x + vx * dt, WORLD.x1 + 0.5, WORLD.x2 - 0.5); zb.z = clamp(zb.z + vz * dt, WORLD.z1 + 0.5, WORLD.z2 - 0.5);
       for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && (f.doorOpen < 0.7 || !f.playerOpen)) segPush(zb, f.door, 0.55); }
       // 発電所の建物には入れない(吸い込み口からだけ)
-      for (const id of ['lab', 'pump', 'cistern']) { const b = built[id]; if (!b || !b.box) continue; const [x1, z1, x2, z2] = b.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, zb.z - z1, z2 - zb.z]; if (id === 'lab' && Math.abs(zb.x - b.info.at[0]) < 2.8) m[2] = 99; /* 通路側(北)へは押し出さない */ const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else if (k === 2) zb.z = z1; else zb.z = z2; } }
+      for (const id of ['lab', 'pump', 'cistern']) { const b = built[id]; if (!b || !b.box) continue; const [x1, z1, x2, z2] = b.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, zb.z - z1, z2 - zb.z]; if (id === 'lab' && Math.abs(zb.x - b.info.at[0]) < 2.8) m[3] = 99; /* 扉の側(通路)へは押し出さない */ const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else if (k === 2) zb.z = z1; else zb.z = z2; } }
       for (const w of extraWalls) segPush(zb, w, 0.55);
       if (built.plant && built.plant.done) { const [x1, z1, x2, z2] = built.plant.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 + 0.6 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, z2 - zb.z]; const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else zb.z = z2; } }
       zb.face = Math.atan2(dx, dz);
@@ -2253,7 +2254,8 @@
     const c = k % g.cols, r = Math.floor(k / g.cols);
     return [s.gx + (c - (g.cols - 1) / 2) * g.cx, g.y0 + Math.min(layer, g.layers - 1) * g.h, s.gz + (r - (g.rows - 1) / 2) * g.cz];
   }
-  function storeFor(res) { for (const id in sites) { const s = sites[id]; if (s.store && s.res === res) return s; } return null; }
+  // 置き場の山から直接払える(背中が空のとき)。お金はお金置き場の札束から
+  function storeFor(res) { for (const id in sites) { const s = sites[id]; if ((s.store || (s.pickup && res === 'cash')) && s.res === res) return s; } return null; }
   function storeStock(res) { const s = storeFor(res); return s ? s.stock : 0; }
   // ---- 炭焼き窯のライン: 木材置き場 → コンベア → 窯 → 炭置き場 ----
   const kilnLines = [];
@@ -3068,30 +3070,31 @@
   const labs = [];
   function startLab() {
     const [lx, lz] = built.lab.info.at;
-    const heads = new THREE.InstancedMesh(iceGeo, iceMat, 320), coal = new THREE.InstancedMesh(coalGeo, vcMat, 200);
+    const heads = new THREE.InstancedMesh(iceGeo, iceMat, 640), coal = new THREE.InstancedMesh(coalGeo, vcMat, 420);
     for (const m of [heads, coal]) { m.count = 0; m.frustumCulled = false; scene.add(m); }
     // 看板(南の面 = カメラ側)
     const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
     const g = cv.getContext('2d'); g.fillStyle = '#1f3a4a'; g.fillRect(0, 0, 512, 128); g.strokeStyle = '#7dffb0'; g.lineWidth = 10; g.strokeRect(5, 5, 502, 118);
     g.fillStyle = '#c8ffe0'; g.font = 'bold 66px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🧪 HUMAN LAB', 256, 68);
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.1), new THREE.MeshBasicMaterial({ map: tex })); sign.position.set(lx, 3.0, lz + 2.78); scene.add(sign);
-    const L = { lx, lz, heads, coal, nHeads: LAB.startHeads, nCoal: LAB.startCoal, made: 0, t: 0, makeT: 3, feedT: 0, hx: lx - 3.4, cx: lx + 3.6, yz: lz + 3.8, drop: [lx, lz + 3.8], door: [lx, lz - 3.3], busy: 0 };
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 1.1), new THREE.MeshBasicMaterial({ map: tex })); sign.position.set(lx + 4.2, 3.0, lz + 2.84); scene.add(sign);
+    const L = { lx, lz, heads, coal, nHeads: LAB.startHeads, nCoal: LAB.startCoal, made: 0, t: 0, makeT: 3, feedT: 0, hx: lx - 3.2, cx: lx + 3.6, yz: lz - 4.6, drop: [lx, lz - 4.6], door: [lx, lz + 3.3], hop: [lx, lz - 2.2], chim: [[lx - 3.0, lz - 0.8], [lx - 5.6, lz - 0.8]], busy: 0 };
     labs.push(L); drawLabPiles(L);
     toast('🧪 研究所が完成! …実はヘリは、ここへゾンビの頭と炭を運んでいた!');
     popText('🧪 研究所 完成!', lx, lz, '#7dffb0', 24, 9);
   }
-  function labPilePos(cx, cz, i, cols, sp, h) { const per = cols * 3, layer = Math.floor(i / per), k = i % per; const shrink = Math.min(layer, cols - 1) * 0.5; return [cx + ((k % cols) - (cols - 1) / 2) * sp * (1 - shrink / cols), 0.25 + layer * h, cz + (Math.floor(k / cols) - 1) * sp * 0.9]; }
+  // 裏庭の山(下の段ほど広く、上へいくほど細くなって、建物より高く積み上がる)
+  function labPilePos(cx, cz, i, cols, sp, h) { const per = cols * 3, layer = Math.floor(i / per), k = i % per; const shrink = 1 - Math.min(layer, 20) * 0.03; return [cx + ((k % cols) - (cols - 1) / 2) * sp * shrink, 0.25 + layer * h, cz + ((Math.floor(k / cols)) - 1) * sp * 0.95 * shrink]; }
   function drawLabPiles(L) {
-    const nh = Math.min(L.nHeads, 320), nc = Math.min(L.nCoal, 200);
-    for (let i = 0; i < nh; i++) { const q = labPilePos(L.hx, L.yz, i, 8, 0.5, 0.44); setInst(L.heads, i, q[0], q[1], q[2], 1, 1, 1, (i * 1.7) % 6.28); }
-    for (let i = 0; i < nc; i++) { const q = labPilePos(L.cx, L.yz, i, 7, 0.5, 0.42); setInst(L.coal, i, q[0], q[1], q[2], 1, 1, 1, (i * 2.3) % 6.28); }
+    const nh = Math.min(L.nHeads, 640), nc = Math.min(L.nCoal, 420);
+    for (let i = 0; i < nh; i++) { const q = labPilePos(L.hx, L.yz, i, 6, 0.5, 0.44); setInst(L.heads, i, q[0], q[1], q[2], 1, 1, 1, (i * 1.7) % 6.28); }
+    for (let i = 0; i < nc; i++) { const q = labPilePos(L.cx, L.yz, i, 5, 0.5, 0.42); setInst(L.coal, i, q[0], q[1], q[2], 1, 1, 1, (i * 2.3) % 6.28); }
     L.heads.count = nh; L.coal.count = nc; L.heads.instanceMatrix.needsUpdate = L.coal.instanceMatrix.needsUpdate = true;
   }
   // ヘリが運んできた頭と炭を、裏庭の山へ落とす(お金はこれまでどおり)
   function labReceive(L, ni, nc, hp) {
-    for (let i = 0; i < Math.min(ni, 30); i++) { const q = labPilePos(L.hx, L.yz, Math.min(319, L.nHeads + i), 8, 0.5, 0.44); flyItem('ice', hp.x, hp.y - 1, hp.z, q[0], q[1], q[2], 0.5 + i * 0.02, 1, null, 6); }
-    for (let i = 0; i < Math.min(nc, 20); i++) { const q = labPilePos(L.cx, L.yz, Math.min(199, L.nCoal + i), 7, 0.5, 0.42); flyItem('coal', hp.x, hp.y - 1, hp.z, q[0], q[1], q[2], 0.5 + i * 0.02, 1, null, 6); }
+    for (let i = 0; i < Math.min(ni, 30); i++) { const q = labPilePos(L.hx, L.yz, Math.min(639, L.nHeads + i), 6, 0.5, 0.44); flyItem('ice', hp.x, hp.y - 1, hp.z, q[0], q[1], q[2], 0.5 + i * 0.02, 1, null, 6); }
+    for (let i = 0; i < Math.min(nc, 20); i++) { const q = labPilePos(L.cx, L.yz, Math.min(419, L.nCoal + i), 5, 0.5, 0.42); flyItem('coal', hp.x, hp.y - 1, hp.z, q[0], q[1], q[2], 0.5 + i * 0.02, 1, null, 6); }
     later(0.8, () => { L.nHeads += ni; L.nCoal += nc; drawLabPiles(L); });
   }
   function updateLabs(dt) {
@@ -3099,15 +3102,15 @@
       L.t += dt;
       L.busy = Math.max(0, L.busy - dt);
       // えんとつからもくもく
-      if (Math.random() < dt * (L.busy > 0 ? 8 : 2)) for (const x of [3.0, 5.6]) smokePuff(L.lx + x, 9, L.lz + 0.8);
+      if (Math.random() < dt * (L.busy > 0 ? 8 : 2)) for (const [x, z] of L.chim) smokePuff(x, 9, z);
       L.makeT -= dt;
       if (L.makeT <= 0) {
         L.makeT = LAB.every;
         if (L.nHeads >= LAB.heads && L.nCoal >= LAB.coal && humans.length < LAB.max) {
           L.nHeads -= LAB.heads; L.nCoal -= LAB.coal; L.busy = 3;
           // 山から投入口へ、頭と炭が飛んでいく
-          for (let i = 0; i < LAB.heads; i++) later(i * 0.15, () => flyItem('ice', L.hx, 1, L.yz, L.lx, 6.6, L.lz + 2.2, 0.45, 2, null, 8));
-          for (let i = 0; i < LAB.coal; i++) later(0.1 + i * 0.2, () => flyItem('coal', L.cx, 1, L.yz, L.lx, 6.6, L.lz + 2.2, 0.45, 2, null, 8));
+          for (let i = 0; i < LAB.heads; i++) later(i * 0.15, () => flyItem('ice', L.hx, 4, L.yz, L.hop[0], 6.6, L.hop[1], 0.45, 2, null, 8));
+          for (let i = 0; i < LAB.coal; i++) later(0.1 + i * 0.2, () => flyItem('coal', L.cx, 3, L.yz, L.hop[0], 6.6, L.hop[1], 0.45, 2, null, 8));
           drawLabPiles(L);
           later(1.8, () => spawnHuman(L));
         }
@@ -3129,7 +3132,8 @@
   const humans = [];
   let humanMsg = {};
   function spawnHuman(L) {
-    const h = { x: L.door[0], z: L.door[1], st: 'walk', hp: HUMAN.hp, t: 0, face: Math.PI, tint: HUMAN_TINTS[L.made % HUMAN_TINTS.length], hunger: HUMAN.hunger, starve: 0, wander: null, wanderT: 0, ph: Math.random() * 6 };
+    const cp = corridorBuilds.find(cb => cb.done);
+    const h = { path: cp ? [[cp.path[1][0], cp.path[1][1]], [cp.path[0][0], cp.path[0][1]], [cp.path[0][0] - 3, cp.path[0][1]]] : null, x: L.door[0], z: L.door[1], st: 'walk', hp: HUMAN.hp, t: 0, face: Math.PI, tint: HUMAN_TINTS[L.made % HUMAN_TINTS.length], hunger: HUMAN.hunger, starve: 0, wander: null, wanderT: 0, ph: Math.random() * 6 };
     L.made++;
     humans.push(h);
     puff(h.x, 0.6, h.z, 4, '#c8ffe0', 1, 0.8, 1); burstGibs(h.x, 1.2, h.z, 10, '#7dffb0', 3, 4);
@@ -3156,7 +3160,11 @@
       let tx = h.x, tz = h.z, sp = 0;
       if (h.st === 'walk') {
         const C = campInfo();
-        [tx, tz] = routeTo(h, C.x + (Math.random() - 0.5) * 0.2, C.z + C.H - 4);
+        if (h.path && h.path.length) {
+          // 柵つき通路を通って、拠点の東の出入口へ
+          [tx, tz] = h.path[0];
+          if (Math.hypot(tx - h.x, tz - h.z) < 0.5) h.path.shift();
+        } else [tx, tz] = routeTo(h, C.x + (Math.random() - 0.5) * 0.2, C.z + C.H - 4);
         sp = HUMAN.speed;
         if (insideCamp(h.x, h.z, -0.5)) { h.st = 'villager'; h.hunger = HUMAN.hunger; popText('🏠', h.x, h.z, '#ffffff', 16, 2.2); }
       } else if (h.st === 'villager') {
@@ -3191,19 +3199,65 @@
     if (humanMesh.instanceColor) humanMesh.instanceColor.needsUpdate = true;
   }
 
-  // ---- 柵つき通路: 研究所の扉から拠点の入口まで。ゾンビは入れない ----
+  // ---- 柵つき通路: 拠点の東の柵に新しい出入口をあけ、研究所の扉まで柵の道をつなぐ。ゾンビは入れない ----
   const extraWalls = [];
   const corridorBuilds = [];
+  let corridorPath = null;
+  const CORRIDOR_W = 2.0;
+  function polyDist(pts, x, z) {
+    let best = 1e9;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1], vx = bx - ax, vz = bz - az, t = clamp(((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz), 0, 1);
+      best = Math.min(best, Math.hypot(x - (ax + vx * t), z - (az + vz * t)));
+    }
+    return best;
+  }
+  // 折れ線を左右に w だけずらした線(角はとがらせてつなぐ)
+  function offsetPath(pts, w) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const nrm = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1; return [-dz / L, dx / L]; };
+      const n1 = i > 0 ? nrm(pts[i - 1], pts[i]) : null, n2 = i < pts.length - 1 ? nrm(pts[i], pts[i + 1]) : null;
+      let n = n1 && n2 ? [n1[0] + n2[0], n1[1] + n2[1]] : (n1 || n2);
+      const L = Math.hypot(n[0], n[1]) || 1; n = [n[0] / L, n[1] / L];
+      const k = n1 && n2 ? w / Math.max(0.3, n[0] * n1[0] + n[1] * n1[1]) : w;
+      out.push([pts[i][0] + n[0] * k, pts[i][1] + n[1] * k]);
+    }
+    return out;
+  }
   function buildCorridor(s) {
-    const L = labs[0], C = campInfo(); if (!L) return;
-    const z1 = C.z + C.H + 0.1, z2 = L.door[1] + 0.4, gx = C.x;
-    const posts = [];
-    for (const x of [gx - 2.1, gx + 2.1]) for (let z = z1; z <= z2 + 0.01; z += (z2 - z1) / 5) posts.push({ x, z, at: 0.2 + posts.length * 0.06, up: false });
+    const L = labs[0], C = campInfo(), f = fences[fences.length - 1]; if (!L || !f) return;
+    const ex = C.x + C.H, ez = -7.2, dx = L.door[0], labFace = L.lz + 3.0;
+    const path = [[ex, ez], [dx, ez], [dx, labFace + 0.05]];
+    corridorPath = path;
+    // 東の柵に出入口をあける(杭と横木を消して、壁を2つに分ける)
+    const gap = 1.7;
+    f.walls = f.walls.flatMap(w => {
+      const [ax, az, bx, bz] = w;
+      if (Math.abs(ax - ex) > 0.01 || Math.abs(bx - ex) > 0.01) return [w];
+      const lo = Math.min(az, bz), hi = Math.max(az, bz);
+      if (ez - gap < lo || ez + gap > hi) return [w];
+      return [[ex, lo, ex, ez - gap], [ex, ez + gap, ex, hi]];
+    });
+    f.posts.forEach((q, i) => { if (Math.abs(q.x - ex) < 0.05 && Math.abs(q.z - ez) < gap) { setInst(f.postMesh, i, q.x, -5, q.z, 0.001, 0.001, 0.001); burstGibs(q.x, 1, q.z, 4, '#a8774a', 3, 4); } });
+    f.rails.forEach((rl, i) => { const mx = (rl.p.x + rl.q.x) / 2, mz = (rl.p.z + rl.q.z) / 2; if (Math.abs(mx - ex) < 0.05 && Math.abs(mz - ez) < gap + 0.7) setInst(f.railMesh, i, mx, -5, mz, 0.001, 0.001, 0.001); });
+    f.postMesh.instanceMatrix.needsUpdate = f.railMesh.instanceMatrix.needsUpdate = true;
+    // 両側の柵
+    const sides = [offsetPath(path, CORRIDOR_W), offsetPath(path, -CORRIDOR_W)];
+    const posts = [], railSegs = [];
+    for (const side of sides) for (let i = 0; i < side.length - 1; i++) {
+      const [ax, az] = side[i], [bx, bz] = side[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.4));
+      let prev = null;
+      for (let k = i ? 1 : 0; k <= n; k++) { const q = { x: lerp(ax, bx, k / n), z: lerp(az, bz, k / n), at: 0.2 + posts.length * 0.025, up: false }; posts.push(q); if (prev) railSegs.push([prev, q]); prev = q; }
+      if (i > 0) railSegs.push([posts[posts.length - n - 1], posts[posts.length - n]]);
+    }
     const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
-    const rails = new THREE.InstancedMesh(railGeo, vcMat, 4); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
-    corridorBuilds.push({ posts, mesh, rails, t: 0, x1: gx - 2.1, x2: gx + 2.1, z1, z2, s });
-    for (const zb of zs) if (!zb.dead && zb.x > gx - 2.4 && zb.x < gx + 2.4 && zb.z > z1 - 0.3 && zb.z < z2 + 0.3) later(0.2 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
-    camFocus(gx, (z1 + z2) / 2, 2.5, 0.3);
+    const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
+    corridorBuilds.push({ posts, railSegs, mesh, rails, t: 0, sides, path, s, end: 0.2 + posts.length * 0.025 + 0.4 });
+    // 通り道の木は倒れて、中にいたゾンビは吹き飛ぶ
+    for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && polyDist(path, t.x, t.z) < CORRIDOR_W + 1.2) { later(0.1 + Math.random() * 0.6, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); }); }
+    for (const zb of zs) if (!zb.dead && polyDist(path, zb.x, zb.z) < CORRIDOR_W + 0.5) later(0.2 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
+    camFocus((ex + dx) / 2, (ez + labFace) / 2, 4, 0.9);
   }
   function updateCorridors(dt) {
     for (const cb of corridorBuilds) {
@@ -3214,18 +3268,20 @@
         const k = (cb.t - q.at) / 0.2;
         const sc = k <= 0 ? 0.001 : Math.max(0.01, backOut(Math.min(1, k)));
         setInst(cb.mesh, n++, q.x, 0, q.z, 1, sc, 1);
-        if (!q.up && k >= 0.5) { q.up = true; puff(q.x, 0.2, q.z, 1, '#ffffff', 0.6, 0.6, 0.6); if (!fastForwarding) tone(500 + n * 20, 0.06, 'triangle', 0.05, 1.2); }
+        if (!q.up && k >= 0.5) { q.up = true; puff(q.x, 0.2, q.z, 1, '#ffffff', 0.6, 0.6, 0.6); if (!fastForwarding && n % 3 === 0) tone(480 + (n % 30) * 18, 0.05, 'triangle', 0.045, 1.2); }
       }
       cb.mesh.count = n; cb.mesh.instanceMatrix.needsUpdate = true;
-      const rk = Math.min(1, Math.max(0, (cb.t - 1.0) / 0.3)), L = cb.z2 - cb.z1;
       let r = 0;
-      for (const x of [cb.x1, cb.x2]) for (const hgt of [0.55, 1.05]) setInst(cb.rails, r++, x, hgt, (cb.z1 + cb.z2) / 2, Math.max(0.001, L * rk), rk > 0 ? 1 : 0.001, rk > 0 ? 1 : 0.001, Math.PI / 2);
+      for (const [a, b] of cb.railSegs) {
+        const rk = Math.min(1, Math.max(0, (cb.t - Math.max(a.at, b.at) - 0.12) / 0.14)), ddx = b.x - a.x, ddz = b.z - a.z, L = Math.hypot(ddx, ddz);
+        for (const hgt of [0.55, 1.05]) setInst(cb.rails, r++, (a.x + b.x) / 2, hgt, (a.z + b.z) / 2, Math.max(0.001, L * rk), rk > 0 ? 1 : 0.001, rk > 0 ? 1 : 0.001, Math.atan2(-ddz, ddx));
+      }
       cb.rails.count = r; cb.rails.instanceMatrix.needsUpdate = true;
-      if (cb.t > 1.4) {
+      if (cb.t > cb.end) {
         cb.done = true;
-        extraWalls.push([cb.x1, cb.z1, cb.x1, cb.z2], [cb.x2, cb.z1, cb.x2, cb.z2]);
+        for (const side of cb.sides) for (let i = 0; i < side.length - 1; i++) extraWalls.push([side[i][0], side[i][1], side[i + 1][0], side[i + 1][1]]);
         shake(0.2); SND.done(); toast('🚧 柵つき通路ができた! 生まれた人を守れる');
-        popText('🚧 通路 完成!', (cb.x1 + cb.x2) / 2, cb.z1 + 2, '#fff6b0', 20, 3);
+        popText('🚧 通路 完成!', cb.path[1][0], cb.path[1][1], '#fff6b0', 20, 3);
       }
     }
   }
@@ -3312,11 +3368,13 @@
     P.workerMesh = new THREE.InstancedMesh(zombieGeo, vcMat, P.slots.length + 8); P.workerMesh.count = 0; P.workerMesh.frustumCulled = false;
     for (const m of [P.tread, P.belt, P.workerMesh]) { m.frustumCulled = false; scene.add(m); }
     // 看板「⚡ ZOMBIE POWER」(屋根の前)
-    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
-    const g = cv.getContext('2d'); g.fillStyle = '#2a2f3a'; g.fillRect(0, 0, 512, 128); g.strokeStyle = '#ffd23a'; g.lineWidth = 10; g.strokeRect(5, 5, 502, 118);
-    g.fillStyle = '#ffe066'; g.font = 'bold 72px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('⚡ ZOMBIE POWER', 256, 68);
+    const cv = document.createElement('canvas'); cv.width = 768; cv.height = 128;
+    const g = cv.getContext('2d'); g.fillStyle = '#2a2f3a'; g.fillRect(0, 0, 768, 128); g.strokeStyle = '#ffd23a'; g.lineWidth = 10; g.strokeRect(5, 5, 758, 118);
+    g.fillStyle = '#ffe066'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    let fs = 76; g.font = 'bold ' + fs + 'px sans-serif'; while (g.measureText('⚡ ZOMBIE POWER').width > 700 && fs > 30) { fs -= 4; g.font = 'bold ' + fs + 'px sans-serif'; }
+    g.fillText('⚡ ZOMBIE POWER', 384, 68);
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-    P.sign = new THREE.Mesh(new THREE.PlaneGeometry(7, 1.75), new THREE.MeshBasicMaterial({ map: tex })); P.sign.position.set(ox, 6.7, oz + 3.6); scene.add(P.sign);
+    P.sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.5), new THREE.MeshBasicMaterial({ map: tex })); P.sign.position.set(ox, 6.7, oz + 3.6); scene.add(P.sign);
     // 吸い込み口のサイレン(回る赤と黄色のライト)
     P.siren = new THREE.Group(); P.siren.position.set(ox + c.intake[0] - 1.4, 3.7, oz + c.intake[1]); scene.add(P.siren);
     for (const [col, a] of [['#ff3a3a', 0], ['#ffd23a', Math.PI]]) { const m = new THREE.Mesh(Sph(0.28, 8, 6), new THREE.MeshBasicMaterial({ color: col })); m.position.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5); P.siren.add(m); }
