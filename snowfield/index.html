@@ -86,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.18-s11';
+  const GAME_VERSION = '2026.11.19-s12';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -172,7 +172,20 @@
         { do: 'kilnline', kiln: 'kiln', from: 'woodpad', to: 'coalpad' },
         { do: 'toast', text: '🏭 炭焼き窯ができた! 薪が自動で炭になる(ヘリが高く買う)' },
       ] },
-    { id: 'scene_07', title: '出荷でかせぐ', after: 'scene_06', goal: { type: 'none' } },
+    { id: 'scene_07', title: 'ゾンビ発電所', after: 'scene_06', delay: 1.0,
+      // お金で建てる(大金)。完成すると定期的にお金が入り、拠点に電気が通る
+      enter: [{ do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'] }],
+      goal: { type: 'build', site: 'plant' },
+      exit: [
+        { do: 'power', from: 'plant', lamps: [[-9.6, -9.6], [-9.6, -0.6], [-9.6, 9.6], [-2.6, 9.6], [2.6, 9.6], [9.6, 5.0], [10.0, -5.6], [3.2, -10.2]] },
+        { do: 'toast', text: '⚡ ゾンビ発電所が動き出した! 拠点に電気が通った' },
+      ] },
+    { id: 'scene_08', title: 'ガトリング', after: 'scene_07', delay: 2.5,
+      // 電気があるので、見張り台にガトリングを積める
+      enter: [{ do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 80, build: ['gatling'] }],
+      goal: { type: 'build', site: 'gatling' },
+      exit: [{ do: 'toast', text: '🔫 ガトリング設置! 近づくゾンビをなぎ倒す' }] },
+    { id: 'scene_09', title: '出荷でかせぐ', after: 'scene_08', goal: { type: 'none' } },
   ];
 
   const STICK_RADIUS = 56;
@@ -597,6 +610,20 @@
     parts.push(B(0.7, 0.08, 0.9, 0, 0.42, 1.6, '#4a4f58', 'deco', { rx: 0.35 }));
     return { parts, size: [2.8, 2.6], smoke: [0.5, 3.4, -0.4], ridge: 3 };
   }
+  // ゾンビ発電所(土台・発電機・電柱・回し車の支え。回し車と走るゾンビは完成後に動く物として足す)
+  function plantDef() {
+    const parts = [], metal = '#6f7883', dark = '#4a4f58';
+    parts.push(B(3.4, 0.3, 3.0, 0, 0.15, 0, '#7a828c', 'base'));
+    parts.push(B(3.2, 0.08, 0.12, 0, 0.34, 1.45, '#ffd23a', 'base'), B(3.2, 0.08, 0.12, 0, 0.34, -1.45, '#ffd23a', 'base'));
+    for (const z of [-0.75, 0.75]) parts.push(B(0.16, 2.6, 0.16, -0.7, 1.6, z, metal, 'pillar'));
+    parts.push(B(0.16, 0.16, 1.66, -0.7, 2.9, 0, metal, 'pillar'));
+    parts.push(B(1.1, 1.3, 1.4, 1.0, 0.95, 0, '#3f7d5a', 'wall'), B(1.16, 0.14, 1.46, 1.0, 1.66, 0, dark, 'wall'));
+    parts.push(B(0.06, 0.5, 0.5, 1.56, 1.05, 0, '#ffd23a', 'deco'), B(0.07, 0.24, 0.12, 1.58, 1.15, 0.05, '#2a2a2a', 'deco'));
+    parts.push(C(0.3, 0.3, 0.5, 1.0, 1.9, 0.35, metal, 'roof'), C(0.3, 0.3, 0.5, 1.0, 1.9, -0.35, metal, 'roof'));
+    parts.push(C(0.08, 0.1, 3.4, 1.3, 1.7, -1.2, '#5a3a1e', 'pillar'), B(1.0, 0.1, 0.1, 1.3, 3.3, -1.2, '#5a3a1e', 'roof'));
+    parts.push(S(0.1, 0.85, 3.4, -1.2, '#bfe9ff', 'deco'), S(0.1, 1.75, 3.4, -1.2, '#bfe9ff', 'deco'));
+    return { parts, size: [3.4, 3.0], ridge: 3.4 };
+  }
   function towerDef() {
     const parts = [], wood = '#7a4d24', plank = '#a8774a';
     for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
@@ -625,6 +652,10 @@
     woodyard: { name: '木材置き場', at: [-6.5, -3.4], yard: 'wood' },
     kiln: { name: '炭焼き窯', at: [-6.8, 1.4], rot: 0, def: kilnDef },
     tower: { name: '見張り台', at: [8.3, 8.3], rot: Math.PI / 4, def: towerDef, shoot: { range: 13, every: 0.28, y: 5.2 } },
+    // ゾンビ発電所: 回し車の中をゾンビが走って発電。every 秒ごとに札束 bundles 個がお金置き場へ
+    plant: { name: 'ゾンビ発電所', at: [-3.4, -8.6], rot: 0, def: plantDef, plant: { every: 5, bundles: 3 } },
+    // ガトリング: 見張り台の屋根の上に積む(電気で動く)
+    gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.09, y: 7.55 } },
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
     // ヘリポート。yards = 氷置き場とお金置き場の台。氷1個 💰price、1回の出荷ボーナス 💰bonus、札束1つ 💰unit
@@ -1213,7 +1244,7 @@
   }
   // 敷地の絵: 手前の角(画面の下)から奥へ明るい緑で塗られていく。まん中にアイコン、その下に「🪵 28」(あと何個)
   function padInfo(s) {
-    if (s.upgrade) { const left = Math.max(0, s.need - s.paid); return { k: s.paid / s.need, text: '💰' + (left * CASH_UNIT).toLocaleString() }; }
+    if (s.upgrade || (s.res === 'cash' && !s.pickup)) { const left = Math.max(0, s.need - s.paid); return { k: s.paid / s.need, text: '💰' + (left * CASH_UNIT).toLocaleString() }; }
     if (s.store) return { k: s.stock / s.cap, text: RES_ICON[s.res] + ' ' + s.stock + (s.stock >= s.cap ? ' MAX' : '') };
     if (s.pickup) return { k: Math.min(1, s.stock / 40), text: '💰 ' + (s.stock * CASH_UNIT).toLocaleString() };
     if (s.deposit) return { k: 0, text: RES_ICON[s.res] + ' ' + s.paid.toLocaleString() };
@@ -1297,6 +1328,11 @@
         // 柵の設計図: 杭の並びを青く見せる
         const plan = fencePlan(info.fence, info.at[0], info.at[1]);
         const gm = new THREE.Mesh(mergeGeometries(plan.pts.map(([x, z]) => ({ geo: Cyl(0.12, 0.12, 1.3, 6), m: M(x, 0.65, z) }))), ghostMat);
+        scene.add(gm); s.ghosts.push(gm);
+        continue;
+      }
+      if (info.gatling) {
+        const gm = new THREE.Mesh(mergeGeometries([{ geo: Cyl(0.5, 0.55, 0.9, 10), m: M(info.at[0], info.gatling.y + 0.4, info.at[1]) }, { geo: Box(0.4, 0.4, 1.6), m: M(info.at[0], info.gatling.y + 0.7, info.at[1] + 0.8) }]), ghostMat);
         scene.add(gm); s.ghosts.push(gm);
         continue;
       }
@@ -1418,7 +1454,7 @@
     s.ghosts.forEach(g => { scene.remove(g); g.geometry.dispose(); });
     let cx = 0, cz = 0;
     const delays = s.build.map((id, i) => s.delays && s.delays[i] !== undefined ? s.delays[i] : 0.15 + i * 0.7);
-    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : BUILDINGS[id].helipad ? startHelipad(id, s) : BUILDINGS[id].yard ? startYard(id, s) : construct(id, false, s)); });
+    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : BUILDINGS[id].helipad ? startHelipad(id, s) : BUILDINGS[id].yard ? startYard(id, s) : BUILDINGS[id].gatling ? startGatling(id, s) : construct(id, false, s)); });
     cx /= s.build.length; cz /= s.build.length;
     const fenced = s.build.some(id => BUILDINGS[id].fence);
     camFocus((cx + s.x) / 2, (cz + s.z) / 2, Math.max(...delays) + 1.6, fenced ? 0.35 : 0.18);
@@ -2176,10 +2212,181 @@
       SND.done(); shake(0.12);
       updateBuildCount();
     }
+    if (!instant && b.info.plant) startPlant(b);
     const s = b.site && sites[b.site];
     if (s && s.build.every(id => built[id] && built[id].done)) {
       s.done = true; scene.remove(s.pad);
     }
+  }
+  // ---- ゾンビ発電所: 回し車の中でゾンビが走り続け、定期的にお金をお金置き場へ飛ばす ----
+  const plants = [];
+  const wheelGeo = mergeGeometries([
+    { geo: new THREE.TorusGeometry(1.25, 0.09, 6, 28), m: M(0, 0, 0, 1, 1, 1, 0, Math.PI / 2, 0), color: '#c0453a' },
+    { geo: new THREE.TorusGeometry(1.25, 0.09, 6, 28), m: M(0.55, 0, 0, 1, 1, 1, 0, Math.PI / 2, 0), color: '#c0453a' },
+    ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => ({ geo: Box(0.6, 0.08, 0.08), m: M(0.27, Math.cos(i * Math.PI / 4) * 1.25, Math.sin(i * Math.PI / 4) * 1.25), color: '#d8dde4' })),
+    ...[0, 1, 2, 3].map(i => ({ geo: Box(0.05, 2.5, 0.05), m: M(0, 0, 0, 1, 1, 1, i * Math.PI / 4, 0, 0), color: '#8d97a3' })),
+    { geo: Cyl(0.12, 0.12, 0.7, 8), m: M(0.27, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#4a4f58' },
+  ]);
+  function startPlant(b) {
+    const [x, z] = b.info.at;
+    const g = new THREE.Group(); g.position.set(x - 0.7, 1.65, z); scene.add(g);
+    const wheel = new THREE.Mesh(wheelGeo, vcMat); wheel.position.x = -0.27; g.add(wheel);
+    const runner = new THREE.Mesh(zombieGeo, vcMat); runner.scale.setScalar(0.75); runner.position.set(0, -1.2, 0); runner.rotation.y = Math.PI / 2; g.add(runner);
+    plants.push({ b, g, wheel, runner, t: 0, payT: b.info.plant.every, x, z });
+    ring(x, z, 4, 0.5, '#ffe066'); burstGibs(x + 1, 2, z, 20, '#ffe066', 4, 6);
+  }
+  function updatePlants(dt) {
+    for (const P of plants) {
+      P.t += dt;
+      P.wheel.rotation.x -= dt * 4.2;
+      P.runner.position.y = -1.2 + Math.abs(Math.sin(P.t * 12)) * 0.12;
+      P.runner.rotation.z = Math.sin(P.t * 12) * 0.12;
+      if (Math.random() < dt * 6) burstGibs(P.x + 1.0, 2.2, P.z, 2, Math.random() < 0.5 ? '#ffe066' : '#bfe9ff', 2, 3);
+      P.payT -= dt;
+      const cash = sites.cashpad;
+      if (P.payT <= 0 && cash) {
+        P.payT = P.b.info.plant.every;
+        const n = P.b.info.plant.bundles;
+        popText('⚡ 💰+' + n * CASH_UNIT, P.x, P.z, '#ffe066', 18, 3.8);
+        if (!fastForwarding) { noise(0.15, 0.08, 4000); tone(880, 0.1, 'square', 0.03, 1.5); }
+        for (let i = 0; i < n; i++) {
+          cash.incoming++;
+          const q = gridPos(cash, Math.min(cash.cap - 1, cash.stock + cash.incoming - 1));
+          later(i * 0.12, () => flyItem('cash', P.x + 1.0, 2.4, P.z, q[0], q[1], q[2], 0.55, 2.5, () => {
+            cash.incoming--; cash.stock = Math.min(cash.cap, cash.stock + 1); drawPile(cash); cash.bump = 1;
+            if (!fastForwarding && sfx.give >= 1) { sfx.give--; tone(1180 + (cash.stock % 20) * 30, 0.05, 'sine', 0.045, 1.3); }
+          }, 8));
+        }
+      }
+    }
+  }
+
+  // ---- 電気: 発電所から電線を伝って光が走り、街灯が順に灯る。窓にも明かり ----
+  const lamps = [];
+  const lampPostGeo = mergeGeometries([
+    { geo: Cyl(0.08, 0.11, 3.0, 7), m: M(0, 1.5, 0), color: '#3a3f48' },
+    { geo: Box(0.6, 0.08, 0.08), m: M(0.2, 2.95, 0), color: '#3a3f48' },
+    { geo: Box(0.3, 0.12, 0.3), m: M(0, 0.06, 0), color: '#5a606a' },
+  ]);
+  const bulbOff = new THREE.Color('#6a7380'), bulbOn = new THREE.Color('#ffe9a0');
+  const glowTexL = canvasTexture(64, (g, n) => { const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); gr.addColorStop(0, 'rgba(255,230,140,1)'); gr.addColorStop(1, 'rgba(255,200,80,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
+  const cables = [];
+  function startPower(a) {
+    const pb = built[a.from]; if (!pb) return;
+    const [px, pz] = pb.info.at, top = [px + 1.3, 3.3, pz - 1.2];
+    lightsTarget = 1;
+    let prev = V(...top), at = 0.3;
+    a.lamps.forEach(([x, z], i) => {
+      const post = new THREE.Mesh(lampPostGeo, vcMat); post.position.set(x, 0, z); post.scale.setScalar(0.01); scene.add(post);
+      const bulb = new THREE.Mesh(Sph(0.2, 8, 6), new THREE.MeshBasicMaterial({ color: bulbOff.clone() })); bulb.position.set(x + 0.45, 2.8, z); scene.add(bulb); bulb.visible = false;
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.position.copy(bulb.position); glow.scale.setScalar(0.01); scene.add(glow);
+      // 電線は柵ぞいに、発電所 → 街灯 → 次の街灯…とつなぐ。少したるませる
+      const from = prev.clone(), to = V(x + 0.45, 3.0, z), mid = from.clone().lerp(to, 0.5); mid.y -= 0.6;
+      prev = to;
+      const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
+      const cable = new THREE.Mesh(new THREE.TubeGeometry(curve, 12, 0.025, 4), new THREE.MeshBasicMaterial({ color: '#2a2a2e' }));
+      cable.visible = false; scene.add(cable);
+      const dur = Math.max(0.25, from.distanceTo(to) / 22);
+      lamps.push({ post, bulb, glow, curve, cable, at, dur, t: 0, lit: false, x, z });
+      at += dur + 0.05;
+    });
+    shake(0.2); SND.boom();
+  }
+  const sparkBall = new THREE.Mesh(Sph(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff6b0' }));
+  function updateLamps(dt) {
+    lamps.forEach((L, i) => {
+      L.t += dt;
+      // 街灯は柵ぞいに順にポンポン立ち、電線が張られる
+      const k = (L.t - 0.1 - i * 0.07) / 0.3;
+      if (k > 0) {
+        L.post.scale.setScalar(Math.max(0.01, backOut(Math.min(1, k))));
+        if (!L.up) { L.up = true; puff(L.x, 0.2, L.z, 2, '#ffffff', 0.7, 0.6, 0.8); SND.tok(); }
+        if (k > 1) { L.cable.visible = true; L.bulb.visible = true; }
+      }
+      // 光の玉が電線を走ってきて、着いたら灯る(発電所 → 1本目 → 2本目…)
+      const e = (L.t - 1.0 - L.at) / L.dur;
+      if (e > 0 && e < 1) { if (!L.spark) { L.spark = sparkBall.clone(); scene.add(L.spark); } L.spark.position.copy(L.curve.getPoint(e)); }
+      if (e >= 1 && !L.lit) {
+        L.lit = true; if (L.spark) { scene.remove(L.spark); L.spark = null; }
+        L.bulb.material.color.copy(bulbOn);
+        burstGibs(L.bulb.position.x, 2.8, L.bulb.position.z, 6, '#ffe066', 2, 3);
+        if (!fastForwarding) tone(900 + i * 70, 0.08, 'triangle', 0.05, 1.4);
+      }
+      if (L.lit) L.glow.scale.setScalar(2.2 + Math.sin(gt * 3 + L.x) * 0.15);
+    });
+  }
+
+  // ---- ガトリング: 見張り台の屋根の上にドスンと載り、銃身を回しながら連射する ----
+  const gatlings = [];
+  const gatBaseGeo = mergeGeometries([
+    { geo: Cyl(0.45, 0.55, 0.35, 10), m: M(0, 0.18, 0), color: '#3a3f48' },
+    { geo: Box(0.9, 0.5, 0.7), m: M(0, 0.6, -0.1), color: '#4a5560' },
+    { geo: Box(0.95, 0.12, 0.75), m: M(0, 0.9, -0.1), color: '#ffd23a' },
+    { geo: Box(0.5, 0.4, 0.4), m: M(0, 0.55, -0.6), color: '#2f343c' },
+  ]);
+  const gatBarrelGeo = mergeGeometries([
+    ...[0, 1, 2, 3, 4, 5].map(i => ({ geo: Cyl(0.055, 0.055, 1.5, 6), m: M(Math.cos(i * Math.PI / 3) * 0.16, Math.sin(i * Math.PI / 3) * 0.16, 0.75, 1, 1, 1, Math.PI / 2, 0, 0), color: '#2a2a2e' })),
+    { geo: Cyl(0.24, 0.24, 0.12, 10), m: M(0, 0, 0.3, 1, 1, 1, Math.PI / 2, 0, 0), color: '#6f7883' },
+    { geo: Cyl(0.24, 0.24, 0.1, 10), m: M(0, 0, 1.25, 1, 1, 1, Math.PI / 2, 0, 0), color: '#6f7883' },
+  ]);
+  const tracerMesh = new THREE.InstancedMesh(Box(0.06, 0.06, 1.2), new THREE.MeshBasicMaterial({ color: '#ffe066' }), 60); tracerMesh.count = 0; tracerMesh.frustumCulled = false; scene.add(tracerMesh);
+  const tracers = [];
+  const muzzle = new THREE.Mesh(Sph(0.25, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff6b0' })); muzzle.visible = false; scene.add(muzzle);
+  function startGatling(id, site) {
+    const info = BUILDINGS[id], [x, z] = info.at, c = info.gatling;
+    const g = new THREE.Group(); g.position.set(x, 18, z); scene.add(g);
+    g.add(new THREE.Mesh(gatBaseGeo, vcMat));
+    const yaw = new THREE.Group(); yaw.position.y = 0.6; g.add(yaw);
+    const barrel = new THREE.Mesh(gatBarrelGeo, vcMat); barrel.position.set(0, 0.05, 0.1); yaw.add(barrel);
+    const G = { id, info, g, yaw, barrel, t: 0, x, z, c, landed: false, fireT: 0, spin: 0, face: 0 };
+    gatlings.push(G);
+    built[id] = { id, info, def: { ridge: 8 }, g, box: null, door: [x, z], smoke: null, done: false, squash: 0, site: site.id };
+    flyItem('cash', site.x, 0.6, site.z, x, c.y, z, 0.5, 4);
+  }
+  function updateGatlings(dt) {
+    for (const G of gatlings) {
+      G.t += dt;
+      if (!G.landed) {
+        const k = Math.min(1, G.t / 0.6);
+        G.g.position.y = lerp(18, G.c.y, bounceOut(k));
+        if (k >= 1) {
+          G.landed = true;
+          shake(0.4); SND.boom(); ring(G.x, G.z, 5, 0.5, '#ffe066');
+          burstGibs(G.x, G.c.y + 0.5, G.z, 24, '#ffd23a', 4, 6);
+          popText('🔫 ガトリング 設置!', G.x, G.z, '#ffe066', 22, G.c.y + 2);
+          const b = built[G.id]; b.done = true; updateBuildCount(); siteDoneCheck(b);
+        }
+        continue;
+      }
+      // いちばん近いゾンビを狙って、銃身を回しながら撃つ
+      let best = null, bd = G.c.range;
+      for (const zb of zs) { if (zb.dead || zb.appear < 0.6) continue; const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; } }
+      G.spin += dt * (best ? 40 : 3);
+      G.barrel.rotation.z = G.spin;
+      if (best) {
+        let want = Math.atan2(best.x - G.x, best.z - G.z), d = want - G.face; d = Math.atan2(Math.sin(d), Math.cos(d));
+        G.face += d * Math.min(1, dt * 14);
+        G.yaw.rotation.y = G.face;
+        G.fireT -= dt;
+        if (G.fireT <= 0 && Math.abs(d) < 0.4) {
+          G.fireT = G.c.every;
+          const mx = G.x + Math.sin(G.face) * 1.5, my = G.c.y + 0.65, mz = G.z + Math.cos(G.face) * 1.5;
+          if (tracers.length < 60) tracers.push({ sx: mx, sy: my, sz: mz, zb: best, t: 0, dur: 0.05 + bd * 0.008 });
+          muzzle.visible = true; muzzle.position.set(mx, my, mz); muzzle.scale.setScalar(0.7 + Math.random() * 0.8); G.flash = 0.04;
+          if (!fastForwarding && sfx.chop >= 1) { sfx.chop--; noise(0.05, 0.12, 2600); }
+        }
+      }
+      G.flash = (G.flash || 0) - dt; if (G.flash <= 0) muzzle.visible = false;
+    }
+    let n = 0;
+    for (let i = tracers.length - 1; i >= 0; i--) {
+      const tr = tracers[i]; tr.t += dt;
+      const e = Math.min(1, tr.t / tr.dur), zb = tr.zb;
+      if (e >= 1) { tracers.splice(i, 1); if (!zb.dead) hitZombie(zb, zb.x, zb.z); continue; }
+      const x = lerp(tr.sx, zb.x, e), y = lerp(tr.sy, 1.0, e), z = lerp(tr.sz, zb.z, e);
+      setInst(tracerMesh, n++, x, y, z, 1, 1, 1, Math.atan2(zb.x - tr.sx, zb.z - tr.sz), Math.atan2(tr.sy - 1, Math.hypot(zb.x - tr.sx, zb.z - tr.sz)));
+    }
+    tracerMesh.count = n; tracerMesh.instanceMatrix.needsUpdate = true;
   }
   // 見張り台: 近くのゾンビに矢を撃つ
   const arrowGeo = mergeGeometries([{ geo: Box(0.06, 0.06, 0.9), m: M(0, 0, 0), color: '#8a5a2e' }, { geo: Cone(0.08, 0.2, 5), m: M(0, 0, 0.5, 1, 1, 1, Math.PI / 2, 0, 0), color: '#dfe6ec' }, { geo: Box(0.02, 0.14, 0.18), m: M(0, 0, -0.38), color: '#ffffff' }]);
@@ -2366,6 +2573,7 @@
     axes: (a) => setAxes(a),
     storage: (a) => createSite({ ...a, need: 1e9, build: [] }),
     kilnline: (a) => startKilnLine(a),
+    power: (a) => startPower(a),
     upgrade: (a) => {
       const s = createSite({ id: a.id, icon: a.icon, at: a.at, res: a.res, need: Math.round(a.levels[0].cost / CASH_UNIT), build: [] });
       s.upgrade = a; s.level = 0;
@@ -2430,7 +2638,7 @@
     supplyT = 1;
     for (const id in sites) {
       const s = sites[id];
-      if (s.building || s.done || s.deposit || s.store || s.pickup || s.upgrade) continue;
+      if (s.building || s.done || s.deposit || s.store || s.pickup || s.upgrade || s.res === 'cash') continue;
       let have = s.paid + s.incoming + carried[s.res] + storeStock(s.res);
       for (const it of drops[s.res].items) if (it.st !== 'deliver') have++;
       for (const t of targets) if (!t.gone && t.drops[s.res] && (t.type !== 'bear')) have += t.drops[s.res];
@@ -2799,7 +3007,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
@@ -2844,12 +3052,13 @@
       return { gt, elapsed, carried: { ...carried }, scenes: SCN.log.map(l => ({ ...l })), active: SCN.active.map(s => s.id), buildings: Object.keys(built).filter(k => built[k].done),
         villagers: villagers.length, targets: targets.filter(t => !t.gone).map(t => t.type + ':' + t.tag), drops: drops.wood.items.length + drops.meat.items.length,
         sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : '')])),
-        unlocked: Object.keys(unlocked), over: gameOver, axesOff, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
+        unlocked: Object.keys(unlocked), over: gameOver, axesOff, lampsLit: lamps.filter(l => l.lit).length, gatling: gatlings.length, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
     },
     bot(on) { bot = on; },
     fastForward(sec, step = 1 / 30) { fastForwarding = true; try { for (let t = 0; t < sec; t += step) logic(step); } finally { fastForwarding = false; } return this.state; },
     teleport(x, z) { player.x = x; player.z = z; },
     god(on) { godMode = on; },
+    giveCash(n) { carried.cash += n; },
     kiln() { return kilnLines.map(L => ({ items: L.items.length, fuel: L.fuel, burnT: L.burnT, from: L.from.stock, to: L.to.stock, inc: L.to.incoming, cap: L.to.cap })); },
     weapon() { return { n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0 }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
