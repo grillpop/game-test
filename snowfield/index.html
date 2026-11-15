@@ -88,7 +88,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.22-s21';
+  const GAME_VERSION = '2026.11.22-s22';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -2585,7 +2585,7 @@
 
   // ---- 拠点拡大: 柵を大きく作り直す(ワンコを保護していないと…) ----
   const SPECIAL = {
-    expand: (s) => { if (dog && dog.st === 'saved') expandCamp(s); else startGiant(s); },
+    expand: (s) => { if (dog && dog.st === 'dead') startGiant(s); else expandCamp(s); }, // 巨大ゾンビ犬はワンコが食べられたときだけ
   };
   function expandCamp(s) {
     const old = fences[fences.length - 1];
