@@ -84,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.25-s28';
+  const GAME_VERSION = '2026.11.26-s29';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -205,14 +205,18 @@
         { do: 'site', id: 'water', icon: '💧', at: [12.0, 10.4], res: 'cash', need: 150, build: ['pump', 'cistern'], requires: ['expand'], delays: [0.2, 1.4],
           announce: '💧 川から水をくめるようになった!',
           onBuilt: [{ do: 'water' }, { do: 'toast', text: '💧 水くみ完成! 川の水が村の貯水槽にたまっていく' }] },
-        { do: 'site', id: 'lab', icon: '🧪', at: [6.6, 14.0], res: 'cash', need: 350, build: ['lab'], requires: ['expand'], camera: [24, -24],
+        { do: 'site', id: 'lab', icon: '🧪', at: [11.4, -9.0], res: 'cash', need: 350, build: ['lab'], requires: ['expand'], camera: [24, -24],
           onBuilt: [{ do: 'lab' }] },
+        // ゾンビ寄せタワー(拠点の外・左手前の空き地)。拠点の中のスイッチでオンにすると、ゾンビを集めて落とし穴へ
+        { do: 'site', id: 'pylon', icon: '📡', at: [-12.0, 9.6], res: 'cash', need: 250, build: ['pylon'], requires: ['expand'], camera: [-12, 22],
+          announce: '📡 ゾンビ寄せタワーを作れるようになった!',
+          onBuilt: [{ do: 'trap' }] },
         // 畑(水があると作れる)。作物が育つと食べ物がたまる
         { do: 'site', id: 'farm', icon: '🌱', at: [-7.6, 14.2], res: 'cash', need: 150, build: ['farm'], requires: ['water'],
           announce: '🌱 水がたまった! 畑を作れるようになった',
           onBuilt: [{ do: 'farm' }, { do: 'toast', text: '🌱 畑ができた! 水で作物が育つ' }] },
         // 研究所から拠点までの柵つき通路
-        { do: 'site', id: 'corridor', icon: '🚧', at: [10.9, -8.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
+        { do: 'site', id: 'corridor', icon: '🚧', at: [12.0, -4.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧟', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
@@ -746,6 +750,24 @@
     parts.push(B(2.2, 1.2, 1.6, 0, 5.6, 2.2, '#5a606a', 'deco'), { t: 'cyl', a: [1.0, 0.5, 0.8, 4], p: [0, 6.5, 2.2], r: [0, Math.PI / 4, 0], c: '#ffd23a', st: 'deco' });
     return { parts, size: [14.6, 6.0], ridge: 8.6 };
   }
+  // ゾンビ寄せタワー(送電の鉄塔のような形・てっぺんに赤いランプ)
+  function pylonDef() {
+    const parts = [], st = '#7d8792', H = 12;
+    parts.push(B(2.6, 0.3, 2.6, 0, 0.15, 0, '#8e959e', 'base'));
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const bx = sx * 1.1, bz = sz * 1.1, tx = sx * 0.28, tz = sz * 0.28, L = Math.hypot(H, bx - tx, bz - tz);
+      parts.push(C(0.09, 0.12, L, (bx + tx) / 2, H / 2, (bz + tz) / 2, st, 'pillar', { rx: Math.atan2(bz - tz, H) * -1, rz: Math.atan2(bx - tx, H), seg: 6 }));
+    }
+    for (const y of [2.2, 4.6, 7.0, 9.4]) {
+      const w = 2.2 - (y / H) * 1.64;
+      parts.push(B(w, 0.08, 0.08, 0, y, w / 2, st, 'wall'), B(w, 0.08, 0.08, 0, y, -w / 2, st, 'wall'), B(0.08, 0.08, w, w / 2, y, 0, st, 'wall'), B(0.08, 0.08, w, -w / 2, y, 0, st, 'wall'));
+      parts.push(B(w * 1.35, 0.06, 0.06, 0, y + 1.1, w / 2, st, 'wall', { rz: 0.75 }), B(w * 1.35, 0.06, 0.06, 0, y + 1.1, -w / 2, st, 'wall', { rz: -0.75 }));
+    }
+    parts.push(B(3.6, 0.14, 0.14, 0, 8.6, 0, st, 'roof'), B(2.6, 0.14, 0.14, 0, 10.6, 0, st, 'roof'));
+    for (const x of [-1.7, 1.7, -1.2, 1.2]) parts.push(C(0.07, 0.07, 0.4, x, x * x > 2 ? 8.35 : 10.35, 0, '#bfe9ff', 'deco', { seg: 6 }));
+    parts.push(C(0.12, 0.12, 1.0, 0, H + 0.5, 0, st, 'roof', { seg: 6 }), B(0.9, 0.12, 0.9, 0, H, 0, '#ffd23a', 'roof'));
+    return { parts, size: [2.6, 2.6], ridge: H + 1.5 };
+  }
   function towerDef() {
     const parts = [], wood = '#7a4d24', plank = '#a8774a';
     for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
@@ -785,6 +807,7 @@
     pump: { name: '水くみ', at: [19.0, 3.0], rot: 0, def: pumpDef, clear: 1.0 },
     cistern: { name: '村の貯水槽', at: [12.2, -1.2], rot: 0, def: cisternDef },
     farm: { name: '畑', at: [-7.6, 14.2], rot: 0, def: farmDef },
+    pylon: { name: 'ゾンビ寄せタワー', at: [-12, 24], rot: 0, def: pylonDef, clear: 4.8 },
     lab: { name: '研究所', at: [30, -31], rot: Math.PI, def: labDef, clear: 2.5 }, // 扉は南(拠点のほう)、裏庭は北
     // バキューマー: 地面に落ちている氷を every 秒に1個吸いこみ、コンベアで氷置き場へ
     vacuum: { name: 'バキューマー', at: [8.3, 3.9], rot: 0, def: vacuumDef, vacuum: { every: 0.07, range: 40, belt: 1.1 } },
@@ -1901,7 +1924,7 @@
     { geo: Box(0.26, 0.07, 0.05), m: M(0, 1.33, 0.27), color: '#2a3a20' },
     { geo: Box(0.52, 0.1, 0.5), m: M(0, 1.74, 0.02), color: '#f6fafd' },
   ]);
-  const ZMAX = 90;
+  const ZMAX = 160;
   const zombieMesh = new THREE.InstancedMesh(zombieGeo, vcMat, ZMAX);
   zombieMesh.count = 0; zombieMesh.frustumCulled = false;
   scene.add(zombieMesh);
@@ -1966,6 +1989,11 @@
         const hd = Math.hypot(hx, hz) || 1;
         if (hd < HUMAN.notice && hd < d + 6) { dx = hx; dz = hz; d = hd; onDog = true; if (hd < 0.75 && zb.appear > 0.5) humanBite(h, dt); }
       }
+      // ゾンビ寄せタワーがオンのあいだは、みんなタワーへ
+      if (trap && trap.st === 'lure' && zb.appear > 0) {
+        const a = zb.ph * 1.7, r = 2.0 + (zb.ph % 1) * 2.4, tx = trap.x + Math.cos(a) * r, tz = trap.z + Math.sin(a) * r;
+        dx = tx - zb.x; dz = tz - zb.z; d = Math.hypot(dx, dz) || 1; onDog = true;
+      }
       const lureTo = plants.length && !onDog ? plantTarget(zb) : null;
       if (lureTo) { dx = lureTo[0] - zb.x; dz = lureTo[1] - zb.z; d = Math.hypot(dx, dz) || 1; if (plantCapture(zb)) continue; }
       let vx = 0, vz = 0;
@@ -1982,7 +2010,7 @@
       zb.x = clamp(zb.x + vx * dt, WORLD.x1 + 0.5, WORLD.x2 - 0.5); zb.z = clamp(zb.z + vz * dt, WORLD.z1 + 0.5, WORLD.z2 - 0.5);
       for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && (f.doorOpen < 0.7 || !f.playerOpen)) segPush(zb, f.door, 0.55); }
       // 発電所の建物には入れない(吸い込み口からだけ)
-      for (const id of ['lab', 'pump', 'cistern']) { const b = built[id]; if (!b || !b.box) continue; const [x1, z1, x2, z2] = b.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, zb.z - z1, z2 - zb.z]; if (id === 'lab' && Math.abs(zb.x - b.info.at[0]) < 2.8) m[3] = 99; /* 扉の側(通路)へは押し出さない */ const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else if (k === 2) zb.z = z1; else zb.z = z2; } }
+      for (const id of ['lab', 'pump', 'cistern', 'pylon']) { const b = built[id]; if (!b || !b.box) continue; const [x1, z1, x2, z2] = b.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, zb.z - z1, z2 - zb.z]; if (id === 'lab' && Math.abs(zb.x - b.info.at[0]) < 2.8) m[3] = 99; /* 扉の側(通路)へは押し出さない */ const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else if (k === 2) zb.z = z1; else zb.z = z2; } }
       for (const w of extraWalls) segPush(zb, w, 0.55);
       if (built.plant && built.plant.done) { const [x1, z1, x2, z2] = built.plant.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 + 0.6 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, z2 - zb.z]; const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else zb.z = z2; } }
       zb.face = Math.atan2(dx, dz);
@@ -2694,6 +2722,8 @@
     BUILDINGS.fence2 = { name: '大きな柵', at: [cx, cz], fence: { H, gw: 1.7, spacing: 1.3 } };
     startFence('fence2', s);
     ZOMBIES.safe = 3; ZOMBIES.dist = [26, 40];
+    // 拠点が広がると、ゾンビも増える
+    ZOMBIES.max = 130; ZOMBIES.group = [5, 9]; ZOMBIES.interval = 1.8;
     zoomTarget = Math.max(zoomTarget, 1.85);
     camFocus(cx, cz, 4, 0.6);
     toast('🏗️ 拠点が広くなった!');
@@ -3065,6 +3095,126 @@
       setInst(farm.mesh, i++, c.x, 0.22, c.z, sc, sc, sc, c.x * 3);
     }
     farm.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---- ゾンビ寄せタワーと落とし穴 ----
+  // スイッチを入れる → ランプが光って音が鳴り、ゾンビがタワーに群がる → いっぱいになったらバーンと落とし穴 →
+  // 地面が上がってくると全部ゾンビの頭になっている → バキューマーが吸いこむ
+  const TRAP = { rIn: 1.5, rOut: 5.2, full: 30, minLure: 4, maxLure: 16, cool: 20 };
+  let trap = null;
+  function startTrap() {
+    const [x, z] = built.pylon.info.at;
+    const T = { x, z, st: 'idle', t: 0, cool: 0, fallen: [], heads: [] };
+    // 落とし穴: 黒い穴(開いたときだけ見える)・ふた(地面と同じ色)・黄色と黒の縁
+    T.hole = new THREE.Mesh(new THREE.RingGeometry(TRAP.rIn, TRAP.rOut, 40), new THREE.MeshBasicMaterial({ color: '#0d0f12' }));
+    T.hole.rotation.x = -Math.PI / 2; T.hole.position.set(x, 0.026, z); T.hole.visible = false; scene.add(T.hole);
+    const lidTex = canvasTexture(256, (g, n) => {
+      g.fillStyle = '#e9eef3'; g.fillRect(0, 0, n, n);
+      g.strokeStyle = 'rgba(120,130,140,.35)'; g.lineWidth = 3;
+      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; g.beginPath(); g.moveTo(n / 2, n / 2); g.lineTo(n / 2 + Math.cos(a) * n, n / 2 + Math.sin(a) * n); g.stroke(); }
+    });
+    T.lid = new THREE.Mesh(new THREE.RingGeometry(TRAP.rIn, TRAP.rOut, 40), new THREE.MeshLambertMaterial({ map: lidTex }));
+    T.lid.rotation.x = -Math.PI / 2; T.lid.position.set(x, 0.034, z); scene.add(T.lid);
+    const edgeTex = canvasTexture(128, (g, n) => { for (let i = 0; i < 16; i++) { g.fillStyle = i % 2 ? '#ffd23a' : '#2a2f3a'; g.fillRect(i * n / 16, 0, n / 16, n); } });
+    edgeTex.wrapS = THREE.RepeatWrapping; edgeTex.repeat.set(6, 1);
+    const edge = new THREE.Mesh(new THREE.RingGeometry(TRAP.rOut, TRAP.rOut + 0.35, 48), new THREE.MeshBasicMaterial({ map: edgeTex }));
+    edge.rotation.x = -Math.PI / 2; edge.position.set(x, 0.04, z); scene.add(edge);
+    // てっぺんの赤いランプと光
+    T.lamp = new THREE.Mesh(Sph(0.32, 10, 8), new THREE.MeshBasicMaterial({ color: '#7a1a1a' })); T.lamp.position.set(x, 13.15, z); scene.add(T.lamp);
+    T.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexL, color: '#ff4040', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); T.glow.position.copy(T.lamp.position); T.glow.scale.setScalar(0.01); scene.add(T.glow);
+    // 落ちていくゾンビ・上がってくる頭
+    T.fallMesh = new THREE.InstancedMesh(zombieGeo, vcMat, 120); T.fallMesh.count = 0; T.fallMesh.frustumCulled = false; scene.add(T.fallMesh);
+    T.headMesh = new THREE.InstancedMesh(iceGeo, iceMat, 120); T.headMesh.count = 0; T.headMesh.frustumCulled = false; scene.add(T.headMesh);
+    // 拠点の中のスイッチ(タワーを作ったエリアの場所)
+    const [px, pz] = [-12.0, 9.6];
+    T.cv = document.createElement('canvas'); T.cv.width = T.cv.height = 256;
+    T.tex = new THREE.CanvasTexture(T.cv); T.tex.colorSpace = THREE.SRGBColorSpace;
+    T.pad = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: T.tex, transparent: true, depthWrite: false }));
+    T.pad.rotation.x = -Math.PI / 2; T.pad.position.set(px, 0.09, pz); T.pad.renderOrder = 3; scene.add(T.pad);
+    T.px = px; T.pz = pz; T.padKey = '';
+    trap = T;
+    drawTrapPad();
+    toast('📡 タワー完成! 拠点の中のスイッチに乗ると、ゾンビを呼び寄せる');
+  }
+  function drawTrapPad() {
+    const T = trap, key = T.st + (T.st === 'idle' ? Math.ceil(T.cool) : '');
+    if (key === T.padKey) return;
+    T.padKey = key;
+    const g = T.cv.getContext('2d'), n = 256, ready = T.st === 'idle' && T.cool <= 0;
+    g.clearRect(0, 0, n, n);
+    g.fillStyle = ready ? 'rgba(255,70,70,0.32)' : 'rgba(80,80,90,0.3)'; g.beginPath(); g.arc(n / 2, n / 2, 118, 0, 7); g.fill();
+    g.lineWidth = 12; g.strokeStyle = ready ? '#ff5a5a' : '#8d97a3'; g.stroke();
+    g.save(); g.translate(n / 2, n / 2); g.rotate(-CAM_YAW); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '86px sans-serif'; g.fillStyle = '#ffffff'; g.fillText('📡', 0, -26);
+    const t = ready ? 'ON' : T.st === 'idle' ? '⏳' + Math.ceil(T.cool) : '…';
+    g.font = 'bold 56px sans-serif'; g.lineWidth = 9; g.strokeStyle = 'rgba(60,20,20,0.9)'; g.strokeText(t, 0, 56); g.fillStyle = '#ffffff'; g.fillText(t, 0, 56);
+    g.restore(); T.tex.needsUpdate = true;
+  }
+  function trapCount() { let n = 0; for (const zb of zs) { if (zb.dead) continue; const d = Math.hypot(zb.x - trap.x, zb.z - trap.z); if (d > TRAP.rIn && d < TRAP.rOut) n++; } return n; }
+  function updateTrap(dt) {
+    const T = trap; if (!T) return;
+    T.t += dt;
+    if (T.st === 'idle') {
+      T.cool = Math.max(0, T.cool - dt);
+      T.lamp.material.color.set('#7a1a1a'); T.glow.scale.setScalar(0.01);
+      if (T.cool <= 0 && Math.abs(player.x - T.px) < 1.3 && Math.abs(player.z - T.pz) < 1.3) {
+        T.st = 'lure'; T.t = 0; T.beep = 0;
+        toast('📡 タワー起動! ゾンビが集まってくる…');
+        camFocus(T.x, T.z, 2.5, 0.6); SND.done();
+      }
+    } else if (T.st === 'lure') {
+      // ランプが点滅して、サイレンが鳴る
+      const on = Math.sin(T.t * 12) > 0;
+      T.lamp.material.color.set(on ? '#ff3030' : '#7a1a1a'); T.glow.scale.setScalar(on ? 5 + Math.sin(T.t * 30) : 2);
+      T.beep -= dt;
+      if (T.beep <= 0) { T.beep = 0.45; if (!fastForwarding) { tone(on ? 880 : 660, 0.3, 'square', 0.035, 1.0); } }
+      const n = trapCount();
+      if (T.t > TRAP.minLure && (n >= TRAP.full || (T.t > TRAP.maxLure && n > 0))) dropTrap();
+      else if (T.t > TRAP.maxLure + 6) { T.st = 'idle'; T.cool = 5; }
+    } else if (T.st === 'drop') {
+      // 落ちていく(穴は黒く見える)
+      let n = 0;
+      for (const f of T.fallen) { const k = Math.min(1, T.t / 0.7); setInst(T.fallMesh, n++, f.x, -k * k * 3.2, f.z, 1, 1, 1, f.face + T.t * 3, k * 1.2, 0); }
+      T.fallMesh.count = n; T.fallMesh.instanceMatrix.needsUpdate = true;
+      if (T.t > 1.5) { T.st = 'rise'; T.t = 0; T.fallMesh.count = 0; T.lid.visible = true; if (!fastForwarding) noise(0.8, 0.12, 300); }
+    } else if (T.st === 'rise') {
+      // 地面が上がってくると、全部ゾンビの頭になっている
+      const k = Math.min(1, T.t / 1.0), e = 1 - Math.pow(1 - k, 3);
+      T.lid.position.y = 0.034 - (1 - e) * 1.5;
+      T.hole.material.opacity = 1;
+      let n = 0;
+      for (const h of T.heads) setInst(T.headMesh, n++, h.x, 0.22 - (1 - e) * 1.5, h.z, 1, 1, 1, h.ry);
+      T.headMesh.count = n; T.headMesh.instanceMatrix.needsUpdate = true;
+      if (k >= 1) {
+        T.hole.visible = false; T.lid.position.y = 0.034;
+        // 地面に転がる頭に変える(バキューマーが吸いこむ)
+        for (const h of T.heads) { const pool = drops.ice; if (pool.items.length < pool.max) pool.items.push({ kind: 'ice', tag: null, x: h.x, y: 0.13, z: h.z, vx: 0, vy: 0, vz: 0, st: 'ground', t: 0.5, start: 0, ry: h.ry, rx: 0, rz: 0, spin: 0 }); }
+        popText('🧟 ×' + T.heads.length + ' 頭ゲット!', T.x, T.z, '#b6ff8a', 24, 4);
+        burstGibs(T.x, 0.6, T.z, 30, '#86e06a', 6, 6); SND.done();
+        T.heads = []; T.headMesh.count = 0;
+        T.st = 'idle'; T.cool = TRAP.cool;
+      }
+    }
+    drawTrapPad();
+    T.pad.material.opacity = T.st === 'idle' && T.cool <= 0 ? 0.75 + Math.sin(gt * 5) * 0.2 : 0.6;
+  }
+  function dropTrap() {
+    const T = trap;
+    T.st = 'drop'; T.t = 0; T.fallen = []; T.heads = [];
+    for (const zb of zs) {
+      if (zb.dead) continue;
+      const d = Math.hypot(zb.x - T.x, zb.z - T.z);
+      if (d <= TRAP.rIn || d >= TRAP.rOut) continue;
+      zb.dead = true; zKills++;
+      T.fallen.push({ x: zb.x, z: zb.z, face: zb.face });
+      T.heads.push({ x: zb.x, z: zb.z, ry: Math.random() * 6 });
+    }
+    T.hole.visible = true; T.lid.visible = false;
+    shake(0.7); SND.boom(); ring(T.x, T.z, TRAP.rOut + 2, 0.5, '#ffd23a');
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; puff(T.x + Math.cos(a) * TRAP.rOut, 0.3, T.z + Math.sin(a) * TRAP.rOut, 1, '#ffffff', 1.2, 1, 1); }
+    popText('💥 バーン!', T.x, T.z, '#ffd23a', 30, 5);
+    camFocus(T.x, T.z, 3.2, 0.5);
+    toast('💥 落とし穴! ' + T.fallen.length + '体まとめて落ちた!');
   }
 
   // ---- 研究所: 裏庭に積んだゾンビの頭と炭を少しずつ中へ入れて、人間を作る ----
@@ -3583,10 +3733,10 @@
       for (const zb of zs) {
         if (zb.dead || zb.appear < 0.6 || (zb.gat || 0) > gt) continue;
         const m = Math.max(Math.abs(zb.x - F.x), Math.abs(zb.z - F.z));
-        if (m > FH + 1.7) continue;
+        if (m > FH + 1.1) continue; // 柵にさわっている(または中に入った)ゾンビだけ
         const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; }
       }
-      if (!best) { bd = G.c.range; for (const zb of zs) { if (zb.dead || zb.appear < 0.6 || (zb.gat || 0) > gt) continue; const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; } } }
+
       G.spin += dt * (best ? 40 : 3);
       G.barrel.rotation.z = G.spin;
       if (best) {
@@ -3814,6 +3964,7 @@
     water: () => startWater(),
     farm: () => startFarm(),
     lab: () => startLab(),
+    trap: () => startTrap(),
     stockpile: (a) => createSite({ id: 'stock', at: a.at, res: a.res, need: 1e9, build: [], deposit: a }),
   };
   function runActions(list) {
@@ -4265,7 +4416,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); });
     safe('dog', () => { updateDog(dt); updateGiant(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
@@ -4325,6 +4476,7 @@
     sitePos(id) { const st = sites[id]; return st ? [st.x, st.z] : null; },
     humans() { return humans.map(h => ({ st: h.st, x: h.x, z: h.z })); },
     zInBox(x1, z1, x2, z2) { return zs.filter(zb => !zb.dead && zb.x > x1 && zb.x < x2 && zb.z > z1 && zb.z < z2).length; },
+    trap() { return trap ? { st: trap.st, cool: +trap.cool.toFixed(1), inPit: trapCount() } : null; },
     village() { return { water: waterSys ? Math.round(waterSys.water) : null, food: farm ? farm.food : null, lab: labs[0] ? { heads: labs[0].nHeads, coal: labs[0].nCoal, made: labs[0].made } : null, humans: humans.map(h => h.st), corridor: extraWalls.length > 0 }; },
     killDog() { if (dog && dog.st !== 'dead') { dog.st = 'lost'; dog.hp = 0.001; dogBite(0.01); } return this.dog(); },
     rescueDog() { if (dog && dog.st === 'lost') { dog.x = player.x - 1; dog.z = player.z; } return this.dog(); },
