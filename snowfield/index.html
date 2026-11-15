@@ -68,9 +68,9 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.15-s4';
+  const GAME_VERSION = '2026.11.15-s5';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
-  const PLAYER_CFG = { speed: 7.5, accel: 16, radius: 0.4, reach: 1.35 };
+  const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
   const STACK = {                                             // 背中の積荷(段ごとに向きを変えて井桁に積む)
     wood: { per: 3, gap: 0.29, layerH: 0.27, max: 150 },
@@ -108,12 +108,16 @@
       ],
       goal: { type: 'gather', res: 'wood', count: 6 } },
     { id: 'scene_02', title: 'キャンプ場の立ち上げ', after: 'scene_01',
-      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut', 'campfire'], delays: [0.1, 2.3, 3.1] }],
+      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut'], delays: [0.1, 2.3] }],
       goal: { type: 'build', site: 'camp' },
       exit: [
         { do: 'toast', text: '🎉 キャンプ場ができた!' },
         { do: 'zoom', level: 1.4 },
       ] },
+    { id: 'scene_03', title: 'キャンプファイアー', after: 'scene_02', delay: 1.2,
+      enter: [{ do: 'site', id: 'bonfire', title: '🔥 キャンプファイアーをつくる', icon: '🔥', at: [3.9, 1.0], res: 'wood', need: 60, build: ['bonfire'] }],
+      goal: { type: 'build', site: 'bonfire' },
+      exit: [{ do: 'toast', text: '🔥 立派なキャンプファイアーができた!' }] },
   ];
 
   const STICK_RADIUS = 56;
@@ -495,6 +499,7 @@
     fence: { name: 'キャンプの柵', at: [0, 0], fence: { H: 8, gw: 1.7, spacing: 1.3 } }, // 四角い柵(半分の幅 H、入口は手前の辺のまん中、幅 2×gw)
     hut: { name: '小屋', at: [-4.2, -5.3], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
+    bonfire: { name: 'キャンプファイアー', at: [0.6, 0.8], bonfire: { stones: 14, r: 1.55, layers: 7, benches: 4, benchR: 3.2 } },
     storage: { name: '物資置き場', at: [-4.4, -1.6], rot: 0, def: storageDef },
     house1: { name: '民家', at: [-11, 2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#c0453a', chimney: [0.9, -0.7] }) },
     house2: { name: '民家', at: [-11, -2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#3a6fb0', wall: '#c4925e', chimney: [-0.9, -0.7] }) },
@@ -1085,6 +1090,12 @@
         scene.add(gm); s.ghosts.push(gm);
         continue;
       }
+      if (info.bonfire) {
+        const plan = bonfirePlan(info.bonfire, info.at[0], info.at[1]);
+        const gm = new THREE.Mesh(mergeGeometries([...plan.stones.map(q => ({ geo: Sph(0.32, 6, 4), m: M(q.x, 0.25, q.z) })), ...plan.logs.map(q => ({ geo: Box(1.7, 0.26, 0.26), m: M(q.x, q.y, q.z, 1, 1, 1, 0, q.ry, 0) }))]), ghostMat);
+        scene.add(gm); s.ghosts.push(gm);
+        continue;
+      }
       const def = info.def();
       const gm = new THREE.Mesh(mergeGeometries(def.parts.map(p => ({ geo: partGeo(p), m: M(...p.p, 1, 1, 1, ...p.r), color: '#ffffff' }))), ghostMat);
       gm.position.set(info.at[0], 0, info.at[1]); gm.rotation.y = info.rot;
@@ -1162,7 +1173,7 @@
     s.ghosts.forEach(g => { scene.remove(g); g.geometry.dispose(); });
     let cx = 0, cz = 0;
     const delays = s.build.map((id, i) => s.delays && s.delays[i] !== undefined ? s.delays[i] : 0.15 + i * 0.7);
-    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : construct(id, false, s)); });
+    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : construct(id, false, s)); });
     cx /= s.build.length; cz /= s.build.length;
     const fenced = s.build.some(id => BUILDINGS[id].fence);
     camFocus((cx + s.x) / 2, (cz + s.z) / 2, Math.max(...delays) + 1.6, fenced ? 0.35 : 0.18);
@@ -1408,6 +1419,127 @@
     zombieMesh.count = n;
     zombieMesh.instanceMatrix.needsUpdate = true;
     if (zombieMesh.instanceColor) zombieMesh.instanceColor.needsUpdate = true;
+  }
+
+  // ---- 立派なキャンプファイアー: 石が輪に並ぶ → 薪が飛んできて井桁の塔に積み上がる → 火の玉が飛んできて着火 → 炎の柱 ----
+  const bonfires = [];
+  const stoneGeo = mergeGeometries([{ geo: new THREE.DodecahedronGeometry(0.4), m: M(0, 0.22, 0, 1, 0.75, 1), color: '#8d97a3' }, { geo: Sph(0.3, 8, 4), m: M(0, 0.44, 0, 1, 0.35, 1), color: '#f6fafd' }]);
+  const bigLogGeo = mergeGeometries([
+    { geo: Cyl(0.15, 0.15, 1.7, 8), m: M(0, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#7a4d24' },
+    { geo: Cyl(0.13, 0.13, 0.02, 8), m: M(0.86, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#e6bd85' },
+    { geo: Cyl(0.13, 0.13, 0.02, 8), m: M(-0.86, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#e6bd85' },
+  ]);
+  const benchGeo = mergeGeometries([
+    { geo: Cyl(0.24, 0.24, 2.0, 8), m: M(0, 0.3, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#8a5a2e' },
+    { geo: Box(1.9, 0.06, 0.3), m: M(0, 0.55, 0), color: '#f6fafd' },
+    { geo: Box(0.2, 0.3, 0.4), m: M(-0.7, 0.1, 0), color: '#5a3a1e' },
+    { geo: Box(0.2, 0.3, 0.4), m: M(0.7, 0.1, 0), color: '#5a3a1e' },
+  ]);
+  const fireLight = new THREE.PointLight('#ffa040', 0, 16, 1.4); // 最初から置いておく(途中で光を足すと一瞬止まるため)
+  fireLight.position.set(0, -10, 0);
+  scene.add(fireLight);
+  const glowTex = canvasTexture(128, (g, n) => { const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); gr.addColorStop(0, 'rgba(255,170,60,.9)'); gr.addColorStop(0.5, 'rgba(255,120,30,.35)'); gr.addColorStop(1, 'rgba(255,90,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
+  function bonfirePlan(cfg, cx, cz) {
+    const stones = [], logs = [], benches = [];
+    for (let i = 0; i < cfg.stones; i++) { const a = i / cfg.stones * Math.PI * 2; stones.push({ x: cx + Math.cos(a) * cfg.r, z: cz + Math.sin(a) * cfg.r, ry: a }); }
+    for (let l = 0; l < cfg.layers; l++) for (const sd of [-1, 1]) {
+      const even = l % 2 === 0;
+      logs.push({ x: cx + (even ? 0 : sd * 0.55), z: cz + (even ? sd * 0.55 : 0), y: 0.2 + l * 0.27, ry: even ? 0 : Math.PI / 2 });
+    }
+    for (let k = 0; k < cfg.benches; k++) { const a = Math.PI / 4 + k * Math.PI * 2 / cfg.benches; benches.push({ x: cx + Math.cos(a) * cfg.benchR, z: cz + Math.sin(a) * cfg.benchR, ry: -a + Math.PI / 2 }); }
+    return { stones, logs, benches };
+  }
+  function startBonfire(id, site) {
+    const info = BUILDINGS[id], cfg = info.bonfire, cx = info.at[0], cz = info.at[1];
+    const plan = bonfirePlan(cfg, cx, cz);
+    const f = { x: cx, z: cz, t: 0, from: [site.x, site.z], lit: false, done: false, top: 0.2 + cfg.layers * 0.27 };
+    f.stones = plan.stones.map((q, i) => ({ ...q, at: 0.15 + i * 0.05, up: false }));
+    f.logs = plan.logs.map((q, i) => ({ ...q, at: 0.95 + i * 0.09, flew: false, up: false }));
+    f.benches = plan.benches.map((q, i) => ({ ...q, at: 3.1 + i * 0.12, up: false }));
+    f.ballAt = 0.95 + f.logs.length * 0.09 + 0.25; f.igniteAt = f.ballAt + 0.5; f.doneAt = f.igniteAt + 1.2;
+    f.stoneMesh = new THREE.InstancedMesh(stoneGeo, vcMat, f.stones.length);
+    f.logMesh = new THREE.InstancedMesh(bigLogGeo, vcMat, f.logs.length);
+    f.benchMesh = new THREE.InstancedMesh(benchGeo, vcMat, f.benches.length);
+    for (const m of [f.stoneMesh, f.logMesh, f.benchMesh]) { m.count = 0; m.frustumCulled = false; scene.add(m); }
+    f.flame = new THREE.Group();
+    [['#ff4a1a', 1.15, 3.6, 0.85], ['#ff8a22', 0.8, 2.9, 0.9], ['#ffd84a', 0.45, 2.0, 1]].forEach(([c, r, h, o]) => { const m = new THREE.Mesh(Cone(r, h, 9), new THREE.MeshBasicMaterial({ color: c, transparent: o < 1, opacity: o })); m.position.y = h / 2; f.flame.add(m); });
+    f.flame.position.set(cx, 0.35, cz); f.flame.scale.setScalar(0.001);
+    scene.add(f.flame);
+    f.glow = new THREE.Mesh(new THREE.CircleGeometry(5, 32), new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    f.glow.rotation.x = -Math.PI / 2; f.glow.position.set(cx, 0.05, cz); f.glow.scale.setScalar(0.001);
+    scene.add(f.glow);
+    f.ball = new THREE.Mesh(Sph(0.35, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffd84a' })); f.ball.visible = false; scene.add(f.ball);
+    bonfires.push(f);
+    built[id] = { id, info, def: { ridge: 4 }, g: f.flame, box: [cx - 1.75, cz - 1.75, cx + 1.75, cz + 1.75], door: [cx, cz + 2.6], smoke: null, done: false, squash: 0, site: site.id, bonfire: f };
+    pushOut(player, PLAYER_CFG.radius);
+    shake(0.2); ring(cx, cz, 4, 0.45, '#ffb030');
+  }
+  function siteDoneCheck(b) {
+    const s = b.site && sites[b.site];
+    if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); s.el.remove(); if (s.icon) scene.remove(s.icon); }
+  }
+  function updateBonfires(dt) {
+    for (const f of bonfires) {
+      f.t += dt;
+      let n = 0;
+      for (const q of f.stones) {
+        const k = (f.t - q.at) / 0.2;
+        const sc = k <= 0 ? 0.001 : Math.max(0.01, backOut(Math.min(1, k))) * 1.15;
+        setInst(f.stoneMesh, n++, q.x, 0, q.z, sc, sc, sc, q.ry);
+        if (!q.up && k >= 0.5) { q.up = true; puff(q.x, 0.2, q.z, 1, '#ffffff', 0.6, 0.6, 0.6); if (!fastForwarding) tone(300 + n * 25, 0.06, 'square', 0.035, 0.7); }
+      }
+      f.stoneMesh.count = n; f.stoneMesh.instanceMatrix.needsUpdate = true;
+      n = 0;
+      for (const q of f.logs) {
+        if (!q.flew && f.t >= q.at - 0.28) { q.flew = true; flyLog(f.from[0], 0.6, f.from[1], q.x, q.y, q.z, 0.28, 2.4); }
+        const k = (f.t - q.at) / 0.22;
+        if (k <= 0) { setInst(f.logMesh, n++, q.x, -5, q.z, 0.001, 0.001, 0.001); continue; }
+        const e = Math.min(1, k);
+        setInst(f.logMesh, n++, q.x, q.y + (1 - bounceOut(e)) * 0.7, q.z, 1, 1, 1, q.ry);
+        if (!q.up && k >= 0.5) { q.up = true; burstGibs(q.x, q.y, q.z, 3, '#e0aa62', 2, 2.5); SND.tok(); shake(0.03); }
+      }
+      f.logMesh.count = n; f.logMesh.instanceMatrix.needsUpdate = true;
+      // 火の玉が建築エリアから飛んできて、てっぺんに落ちる
+      if (f.t >= f.ballAt && f.t < f.igniteAt) {
+        const e = (f.t - f.ballAt) / (f.igniteAt - f.ballAt);
+        f.ball.visible = true;
+        f.ball.position.set(lerp(f.from[0], f.x, e), lerp(1, f.top + 0.3, e) + Math.sin(e * Math.PI) * 4, lerp(f.from[1], f.z, e));
+        f.ball.scale.setScalar(1 + Math.sin(gt * 30) * 0.15);
+        if (Math.random() < 0.6) burstGibs(f.ball.position.x, f.ball.position.y, f.ball.position.z, 1, '#ffb030', 0.6, 1);
+      }
+      if (!f.lit && f.t >= f.igniteAt) {
+        // ボッと着火!
+        f.lit = true; f.ball.visible = false;
+        shake(0.5); SND.boom(); SND.done(); if (!fastForwarding) noise(0.9, 0.2, 2500);
+        ring(f.x, f.z, 6, 0.6, '#ffb030'); ring(f.x, f.z, 3.5, 0.45, '#ffffff');
+        burstGibs(f.x, f.top, f.z, 40, '#ffb030', 5, 9); burstGibs(f.x, f.top, f.z, 20, '#ffe066', 4, 10);
+        for (let i = 0; i < 8; i++) smokePuff(f.x + (Math.random() - 0.5) * 2, f.top + 1, f.z + (Math.random() - 0.5) * 2);
+        popText('🔥 キャンプファイアー 完成!', f.x, f.z, '#ffe27a', 24, 5.5);
+      }
+      if (f.lit) {
+        const k = Math.min(1, (f.t - f.igniteAt) / 0.5), grow = backOut(k);
+        const fl = 1 + Math.sin(gt * 13) * 0.08 + Math.sin(gt * 5.3) * 0.06;
+        f.flame.scale.set(grow / fl, grow * fl, grow / fl);
+        f.flame.children.forEach((c, i) => { c.rotation.y = gt * (1 + i) * 0.7; c.scale.set(1 + Math.sin(gt * 9 + i) * 0.06, 1 + Math.sin(gt * 11 + i * 2) * 0.1, 1); });
+        f.glow.scale.setScalar(Math.max(0.001, grow * (1 + Math.sin(gt * 7) * 0.04)));
+        fireLight.position.set(f.x, 3, f.z); fireLight.intensity = grow * (14 + Math.sin(gt * 9) * 2.5);
+        if (Math.random() < dt * 14) burstGibs(f.x + (Math.random() - 0.5) * 0.8, f.top + 0.6, f.z + (Math.random() - 0.5) * 0.8, 1, Math.random() < 0.5 ? '#ffb030' : '#ffe066', 0.8, 5);
+        if (Math.random() < dt * 4) smokePuff(f.x, f.top + 3, f.z);
+      }
+      n = 0;
+      for (const q of f.benches) {
+        const k = (f.t - q.at) / 0.25;
+        const sc = k <= 0 ? 0.001 : Math.max(0.01, backOut(Math.min(1, k)));
+        setInst(f.benchMesh, n++, q.x, 0, q.z, sc, sc, sc, q.ry);
+        if (!q.up && k >= 0.5) { q.up = true; puff(q.x, 0.3, q.z, 2, '#ffffff', 0.7, 0.7, 0.8); SND.tok(); }
+      }
+      f.benchMesh.count = n; f.benchMesh.instanceMatrix.needsUpdate = true;
+      if (!f.done && f.t >= f.doneAt) {
+        f.done = true;
+        const b = built[Object.keys(built).find(k => built[k].bonfire === f)];
+        b.done = true; updateBuildCount(); siteDoneCheck(b);
+      }
+    }
   }
 
   // ---- 建物が組み上がる ----
@@ -1776,6 +1908,18 @@
     const g = guideTarget();
     if (!g) return { ix: 0, iz: 0 };
     let tx = g.x, tz = g.z;
+    // 柵の中と外を行き来するときは、扉を通る
+    for (const f of fences) {
+      if (!f.gateLanded) continue;
+      const inside = (x, z) => Math.abs(x - f.x) < f.H && Math.abs(z - f.z) < f.H;
+      const pin = inside(player.x, player.z), tin = inside(tx, tz);
+      if (pin === tin) continue;
+      const gx = f.x, gz = f.z + f.H;
+      if (Math.abs(player.x - gx) < 1.0 && Math.abs(player.z - gz) < 1.6) { tx = gx; tz = pin ? gz + 2.2 : gz - 2.2; }
+      else { tx = gx; tz = pin ? gz - 1.2 : gz + 1.2; }
+      const ddx = tx - player.x, ddz = tz - player.z, dd = Math.hypot(ddx, ddz) || 1;
+      return { ix: ddx / dd, iz: ddz / dd };
+    }
     const dx = tx - player.x, dz = tz - player.z, d = Math.hypot(dx, dz);
     const stop = g.kind === 'target' ? axeR * 0.8 : g.kind === 'site' ? 0.3 : g.kind === 'bear' ? 6 : 0.2;
     if (d < stop) return { ix: 0, iz: 0 };
@@ -2050,7 +2194,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
