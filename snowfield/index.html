@@ -25,7 +25,7 @@
   .pill.hide { display: none; }
   .pill.bump { animation: bump .18s ease-out; }
   @keyframes bump { 50% { transform: scale(1.15); } }
-  #toast { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 52px); text-align: center; pointer-events: none; color: #fff; font-size: 21px; font-weight: 900; text-shadow: 0 2px 0 #2a5a8a, 0 3px 10px rgba(0, 0, 0, .35); opacity: 0; transform: translateY(-8px); transition: opacity .25s, transform .25s; }
+  #toast { position: fixed; left: 0; right: 0; padding: 0 12px; top: calc(env(safe-area-inset-top) + 52px); text-align: center; pointer-events: none; color: #fff; font-size: clamp(15px, 4.6vw, 21px); font-weight: 900; text-shadow: 0 2px 0 #2a5a8a, 0 3px 10px rgba(0, 0, 0, .35); opacity: 0; transform: translateY(-8px); transition: opacity .25s, transform .25s; }
   #toast.show { opacity: 1; transform: none; }
   #combo { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 84px); text-align: center; pointer-events: none; color: #fff; font-size: 24px; font-weight: 900; text-shadow: 0 2px 0 #2f7a3a, 0 3px 10px rgba(0, 0, 0, .35); opacity: 0; transition: opacity .3s; }
   #combo.show { opacity: 1; }
@@ -70,7 +70,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.16-s7';
+  const GAME_VERSION = '2026.11.17-s8';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -128,7 +128,7 @@
       exit: [
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', title: '🧊 氷置き場', icon: '🧊', at: [5.2, -2.4], res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.5 }, delay: 0.3 },
-        { do: 'storage', id: 'cashpad', kind: 'pickup', title: '💰 お金置き場', icon: '💰', at: [5.2, 3.0], res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.37 }, delay: 0.5 },
+        { do: 'storage', id: 'cashpad', kind: 'pickup', title: '💰 お金置き場', icon: '💰', at: [0, -5.1], res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.37 }, delay: 0.5 },
         { do: 'toast', text: '🧊 凍ったゾンビを氷置き場へ! ヘリが売ってくれる 💰' },
       ] },
     { id: 'scene_05', title: '出荷でかせぐ', after: 'scene_04', goal: { type: 'none' } },
@@ -536,7 +536,7 @@
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
     // ヘリポート。yards = 氷置き場とお金置き場の台。氷1個 💰price、1回の出荷ボーナス 💰bonus、札束1つ 💰unit
-    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: [8.3, -2.4], cash: [8.3, 3.0] }, price: 5, bonus: 50, unit: 10, batch: 20, wait: 6 } },
+    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: [8.3, -2.4], cash: [0, -8.2] }, price: 5, bonus: 50, unit: 10, batch: 20, wait: 6 } },
     bonfire: { name: 'キャンプファイアー', at: [0, 0], bonfire: { stones: 14, r: 1.55, layers: 7, benches: 4, benchR: 3.2 } },
     storage: { name: '物資置き場', at: [-4.4, -1.6], rot: 0, def: storageDef },
     house1: { name: '民家', at: [-11, 2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#c0453a', chimney: [0.9, -0.7] }) },
@@ -1109,11 +1109,48 @@
     g.strokeStyle = '#5dff7a'; g.lineWidth = 12; g.lineJoin = 'round'; g.strokeRect(14, 14, n - 28, n - 28);
     g.strokeStyle = '#ffffff'; g.lineWidth = 4; g.strokeRect(14, 14, n - 28, n - 28);
   }
+  // 敷地の絵: 手前の角(画面の下)から奥へ明るい緑で塗られていく。まん中にアイコン、その下に「🪵 28」(あと何個)
+  function padInfo(s) {
+    if (s.store) return { k: s.stock / s.cap, text: RES_ICON[s.res] + ' ' + s.stock + (s.stock >= s.cap ? ' MAX' : '') };
+    if (s.pickup) return { k: Math.min(1, s.stock / 40), text: '💰 ' + (s.stock * CASH_UNIT).toLocaleString() };
+    if (s.deposit) return { k: 0, text: RES_ICON[s.res] + ' ' + s.paid.toLocaleString() };
+    const left = Math.max(0, s.need - s.paid);
+    return { k: s.paid / s.need, text: left > 0 ? RES_ICON[s.res] + ' ' + left : '✔' };
+  }
+  function drawPadFace(s) {
+    const info = padInfo(s), key = Math.round(info.k * 60) + '|' + info.text;
+    if (key === s.padKey) return;
+    s.padKey = key;
+    const g = s.cv.getContext('2d'), n = 256, m = 14;
+    g.clearRect(0, 0, n, n);
+    g.fillStyle = 'rgba(80,220,100,0.22)'; g.fillRect(m, m, n - m * 2, n - m * 2);
+    // 塗り: 絵の右下(地面の +x+z の角 = 画面の手前)から左上へ
+    if (info.k > 0) {
+      g.save(); g.beginPath(); g.rect(m, m, n - m * 2, n - m * 2); g.clip();
+      const t = (n - m * 2) * 2 * Math.min(1, info.k), x0 = n - m, y0 = n - m;
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x0 - t, y0); g.lineTo(x0, y0 - t); g.closePath();
+      g.fillStyle = 'rgba(110,255,120,0.75)'; g.fill();
+      g.restore();
+    }
+    g.strokeStyle = '#5dff7a'; g.lineWidth = 12; g.lineJoin = 'round'; g.strokeRect(m, m, n - m * 2, n - m * 2);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 4; g.strokeRect(m, m, n - m * 2, n - m * 2);
+    // 文字は画面に対してまっすぐ読める向き(カメラが45度なので、絵の中では斜めに書く)
+    g.save(); g.translate(n / 2, n / 2); g.rotate(-CAM_YAW);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (s.iconCh) { g.globalAlpha = 1; g.fillStyle = '#ffffff'; g.font = '88px sans-serif'; g.fillText(s.iconCh, 0, -26); }
+    g.font = 'bold 58px sans-serif'; g.lineWidth = 9; g.strokeStyle = 'rgba(20,60,30,0.85)'; g.fillStyle = '#ffffff';
+    g.strokeText(info.text, 0, s.iconCh ? 54 : 0); g.fillText(info.text, 0, s.iconCh ? 54 : 0);
+    g.restore();
+    s.tex.needsUpdate = true;
+  }
   function createSite(a) {
     const s = { id: a.id, x: a.at[0], z: a.at[1], r: 1.55, res: a.res, need: a.need, paid: 0, incoming: 0, build: a.build, building: false, done: false, gap: DELIVER.gap, dT: 0, bump: 0, appear: 0, ghosts: [], deposit: a.deposit || null };
     if (s.deposit) { s.pile = new THREE.InstancedMesh(a.res === 'meat' ? meatGeo : woodGeo, vcMat, s.deposit.piles.length * s.deposit.layers * 3); s.pile.count = 0; s.pile.frustumCulled = false; scene.add(s.pile); }
-    s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: padTexture(a.icon || ''), transparent: true, depthWrite: false }));
-    if (a.icon) s.icon = iconSprite(a.icon);
+    // 敷地そのものに、進み具合(色の塗り)・アイコン・必要な数を描く
+    s.cv = document.createElement('canvas'); s.cv.width = s.cv.height = 256;
+    s.tex = new THREE.CanvasTexture(s.cv); s.tex.colorSpace = THREE.SRGBColorSpace;
+    s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
+    s.iconCh = a.icon || ''; s.padKey = '';
     s.title = a.title || ''; s.delays = a.delays || null;
     if (a.grid) {
       // 置き場: 横の台の上に、決まった並びで積み上がる
@@ -1124,13 +1161,9 @@
       s.pileMesh.count = 0; s.pileMesh.frustumCulled = false; scene.add(s.pileMesh);
       if (a.kind === 'pickup') s.pickup = true; else s.store = true;
     }
-    s.pad.rotation.x = -Math.PI / 2; s.pad.position.set(s.x, 0.05, s.z);
+    s.pad.rotation.x = -Math.PI / 2; s.pad.position.set(s.x, 0.08, s.z); s.pad.renderOrder = 3; // キャンプファイアーの光より上に描く
     scene.add(s.pad);
-    s.el = document.createElement('div'); s.el.className = 'site-label';
-    s.el.innerHTML = '<div class="t"></div><b></b><div class="bar"><i></i></div>';
-    document.body.appendChild(s.el);
-    s.elT = s.el.querySelector('.t'); s.elB = s.el.querySelector('b'); s.elBar = s.el.querySelector('.bar'); s.elFill = s.el.querySelector('.bar i');
-    s.elT.textContent = s.title; if (!s.title) s.elT.style.display = 'none';
+    drawPadFace(s);
     // これから建つ建物の青い設計図
     for (const id of a.build) {
       const info = BUILDINGS[id];
@@ -1230,17 +1263,12 @@
       const sc = backOut(s.appear) * (1 + s.bump * 0.06) * (s.building ? Math.max(0.01, 1 - (gt - s.buildAt) * 3) : 1);
       s.pad.scale.set(sc, sc, 1);
       s.pad.material.opacity = 0.75 + Math.sin(gt * 5) * 0.2;
-      if (s.icon) {
-        s.icon.position.set(s.x, 2.6 + Math.sin(gt * 3) * 0.18, s.z);
-        const k = s.building ? Math.max(0, 1 - (gt - s.buildAt) * 3) : backOut(s.appear) * (1 + s.bump * 0.15);
-        s.icon.scale.set(1.5 * k + 0.001, 1.5 * k + 0.001, 1); s.icon.visible = k > 0.01;
-      }
+      drawPadFace(s);
       if (s.building && gt - s.buildAt > 0.35) s.pad.visible = false;
     }
   }
   function startBuilding(s) {
     s.building = true; s.buildAt = gt;
-    s.el.style.display = 'none';
     s.ghosts.forEach(g => { scene.remove(g); g.geometry.dispose(); });
     let cx = 0, cz = 0;
     const delays = s.build.map((id, i) => s.delays && s.delays[i] !== undefined ? s.delays[i] : 0.15 + i * 0.7);
@@ -1409,7 +1437,7 @@
         b.done = true;
         updateBuildCount();
         const s = b.site && sites[b.site];
-        if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); s.el.remove(); if (s.icon) scene.remove(s.icon); }
+        if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); }
       }
     }
   }
@@ -1538,7 +1566,7 @@
     f.flame.position.set(cx, 0.35, cz); f.flame.scale.setScalar(0.001);
     scene.add(f.flame);
     f.glow = new THREE.Mesh(new THREE.CircleGeometry(5, 32), new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-    f.glow.rotation.x = -Math.PI / 2; f.glow.position.set(cx, 0.05, cz); f.glow.scale.setScalar(0.001);
+    f.glow.rotation.x = -Math.PI / 2; f.glow.position.set(cx, 0.05, cz); f.glow.renderOrder = 1; f.glow.scale.setScalar(0.001);
     scene.add(f.glow);
     f.ball = new THREE.Mesh(Sph(0.35, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffd84a' })); f.ball.visible = false; scene.add(f.ball);
     bonfires.push(f);
@@ -1548,7 +1576,7 @@
   }
   function siteDoneCheck(b) {
     const s = b.site && sites[b.site];
-    if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); s.el.remove(); if (s.icon) scene.remove(s.icon); }
+    if (s && s.build.every(id => built[id] && built[id].done)) { s.done = true; scene.remove(s.pad); }
   }
   function updateBonfires(dt) {
     for (const f of bonfires) {
@@ -1740,7 +1768,7 @@
       } else if (h.state === 'idle') {
         hp.set(h.home[0], h.home[1], h.home[2]); h.heli.rotation.x = 0;
         if (ice && cash && h.st > 1 && (ice.stock >= h.cfg.batch || (ice.stock > 0 && gt - ice.lastIn > h.cfg.wait))) {
-          h.state = 'go'; h.st = 0; h.loaded = 0; h.netN = 0; h.from = [hp.x, hp.y, hp.z];
+          h.state = 'go'; h.st = 0; h.loaded = 0; h.netN = 0; h.bundles = undefined; h.from = [hp.x, hp.y, hp.z];
           popText('🚁 回収に来た!', h.x, h.z, '#ffffff', 16, 3.5);
         }
       } else if (h.state === 'go') {
@@ -1761,38 +1789,31 @@
         if (Math.random() < dt * 10) downwash(h);
         if ((ice.stock === 0 || h.loaded >= 60) && h.loadT <= 0.3 && h.st > 0.5) { h.state = 'away'; h.st = 0; h.from = [hp.x, hp.y, hp.z]; SND.done(); }
       } else if (h.state === 'away') {
-        heliFly(h, h.from, [h.from[0] + 14, 20, h.from[2] - 30], 1.6, h.st / 1.6);
-        if (h.st >= 2.4) { h.state = 'back'; h.st = 0; h.netN = 0; h.from = [hp.x, hp.y, hp.z]; }
-      } else if (h.state === 'back') {
-        heliFly(h, h.from, above(cash.gx, cash.gz), 1.4, h.st / 1.4);
-        if (h.st >= 1.4) {
-          h.state = 'pay'; h.st = 0; h.payT = 0;
+        // 氷を受け取ったら、飛び去りながらお金置き場へ札束を投げ込む
+        heliFly(h, h.from, [h.from[0] + 14, 20, h.from[2] - 30], 1.8, h.st / 1.8);
+        if (h.bundles === undefined) {
           const value = h.loaded * h.cfg.price + h.cfg.bonus;
-          h.bundles = Math.ceil(value / h.cfg.unit);
-          popText('🚁 売れた! 💰+' + value, cash.gx, cash.gz, '#ffe27a', 24, 7);
+          h.bundles = Math.ceil(value / h.cfg.unit); h.payT = 0.15;
+          popText('🚁 売れた! 💰+' + value, cash.gx, cash.gz, '#ffe27a', 24, 4);
           SND.done(); shake(0.15);
         }
-      } else if (h.state === 'pay') {
-        // お金置き場に札束を1つずつ落とす
-        hp.set(cash.gx, 6.2 + Math.sin(gt * 3) * 0.1, cash.gz);
         h.payT -= dt;
         while (h.payT <= 0 && h.bundles > 0) {
-          h.payT += 0.05;
+          h.payT += 0.045;
           h.bundles--;
           cash.incoming++;
           const q = gridPos(cash, Math.min(cash.cap - 1, cash.stock + cash.incoming - 1));
-          flyItem('cash', hp.x, 4.8, hp.z, q[0], q[1], q[2], 0.35, 0.3, () => {
-            cash.incoming--; cash.stock++; drawPile(cash); cash.bump = 1;
+          flyItem('cash', hp.x, hp.y - 0.6, hp.z, q[0], q[1], q[2], 0.55 + Math.random() * 0.2, 3.5, () => {
+            cash.incoming--; cash.stock = Math.min(cash.cap, cash.stock + 1); drawPile(cash); cash.bump = 1;
             if (!fastForwarding && sfx.give >= 1) { sfx.give--; tone(1180 + (cash.stock % 20) * 30, 0.05, 'sine', 0.045, 1.3); tone(1580, 0.05, 'sine', 0.03, 1.2, 0.04); }
-            if (Math.random() < 0.3) burstGibs(q[0], q[1] + 0.2, q[2], 2, '#ffd23a', 1.5, 3);
-          }, 4);
+            if (Math.random() < 0.35) burstGibs(q[0], q[1] + 0.2, q[2], 2, '#ffd23a', 1.5, 3);
+          }, 9);
         }
-        if (Math.random() < dt * 10) downwash(h);
-        if (h.bundles <= 0 && h.st > 0.6) { h.state = 'home'; h.st = 0; h.from = [hp.x, hp.y, hp.z]; }
+        if (h.st >= 3.2 && h.bundles <= 0) { h.state = 'home'; h.st = 0; h.netN = 0; h.bundles = undefined; h.from = [hp.x, hp.y, hp.z]; }
       } else if (h.state === 'home') {
-        heliFly(h, h.from, h.home, 1.2, h.st / 1.2);
-        if (h.st > 0.8) downwash(h);
-        if (h.st >= 1.2) { h.state = 'idle'; h.st = 0; h.heli.rotation.y = 0; }
+        heliFly(h, h.from, h.home, 1.8, h.st / 1.8);
+        if (h.st > 1.3) downwash(h);
+        if (h.st >= 1.8) { h.state = 'idle'; h.st = 0; h.heli.rotation.y = 0; }
       }
       // 網にぶらさがった氷
       const nn = ['load', 'away'].includes(h.state) ? (h.netN || 0) : 0;
@@ -1890,7 +1911,7 @@
     }
     const s = b.site && sites[b.site];
     if (s && s.build.every(id => built[id] && built[id].done)) {
-      s.done = true; scene.remove(s.pad); s.el.remove(); if (s.icon) scene.remove(s.icon);
+      s.done = true; scene.remove(s.pad);
     }
   }
   function updateBuildings(dt) {
@@ -2297,19 +2318,6 @@
       const s = project(p.x, p.y + (1.1 - p.t) * 1.4, p.z);
       p.el.style.left = s.sx + 'px'; p.el.style.top = s.sy + 'px'; p.el.style.opacity = Math.min(1, p.t * 3);
       if (p.t <= 0) p.el.style.display = 'none';
-    }
-    for (const id in sites) {
-      const s = sites[id];
-      if (s.done || s.building) continue;
-      const sp = project(s.x, s.icon ? 3.6 : 2.0, s.z);
-      s.el.style.display = sp.behind ? 'none' : 'block';
-      s.el.style.left = sp.sx + 'px'; s.el.style.top = sp.sy + 'px';
-      if (s.deposit) { s.elB.textContent = '📦 倉庫 ' + RES_ICON[s.res] + ' ' + s.paid.toLocaleString(); s.elBar.style.display = 'none'; continue; }
-      if (s.store) { s.elB.textContent = RES_ICON[s.res] + ' ' + s.stock + (s.stock + s.incoming >= s.cap ? ' 満杯!' : ''); s.elFill.style.width = (s.stock / s.cap * 100) + '%'; continue; }
-      if (s.pickup) { s.elB.textContent = '💰 ' + (s.stock * CASH_UNIT).toLocaleString(); s.elBar.style.display = 'none'; continue; }
-      s.elB.textContent = RES_ICON[s.res] + ' ' + s.paid + ' / ' + s.need;
-      s.elFill.style.width = (s.paid / s.need * 100) + '%';
-      s.el.classList.toggle('full', s.paid + s.incoming >= s.need);
     }
     if (fellT > 0) { fellT -= dt; if (fellT <= 0) $('combo').classList.remove('show'); }
     if (DEBUG) {
