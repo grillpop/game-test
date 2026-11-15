@@ -86,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.20-s16';
+  const GAME_VERSION = '2026.11.21-s17';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -183,7 +183,7 @@
           onBuilt: [{ do: 'toast', text: '🔫 ガトリング設置! 柵に来たゾンビをなぎ倒す' }] },
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧊', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
-        { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💰', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 14, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
+        { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💵', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 30, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
         { do: 'toast', text: '🧊 凍ったゾンビを氷置き場へ! ヘリが売ってくれる 💰' },
         { do: 'toast', text: '💰 お金で建てるエリアは、どれから建ててもOK!', delay: 4 },
       ] },
@@ -596,7 +596,7 @@
   // 置き場(木の床)の場所。床に乗ると置ける/受け取れる。緑の枠はアップデート専用
   const YARD_AT = { wood: [-6.5, -3.4], ice: [8.3, -2.4], cash: [0, -8.2], coal: [-6.8, 5.0] };
   // 炭焼き窯: 薪 per 本で炭1個。炭は1個 💰price(ヘリが買う)
-  const KILN = { per: 3, every: 0.45, belt: 1.0, burn: 0.5, price: 15 };
+  const KILN = { per: 3, every: 0.45, belt: 1.0, burn: 0.5, price: 45 };
   const YARD_SIZE = 3.6;
   // 炭焼き窯: 石の土台 → 石のかまど(まるい) → 丸屋根 → えんとつ・燃える口
   function kilnDef() {
@@ -685,7 +685,7 @@
     // ゾンビ発電所: 回し車の中をゾンビが走って発電。every 秒ごとに札束 bundles 個がお金置き場へ
     // ゾンビ発電所: every 秒ごとに、働いているゾンビ1体につき 💰perWorker。満員で入ったゾンビは 💰bonus
     plant: { name: 'ゾンビ発電所', at: [0, -18.6], rot: 0, def: plantDef, clear: 2.5,
-      plant: { every: 3, perWorker: 2, bonus: 5, lure: 0.7, intake: [9.9, 0], pylon: [7.6, 7.4, -13.7] } },
+      plant: { every: 3, perWorker: 5, bonus: 15, lure: 0.7, intake: [9.9, 0], pylon: [7.6, 7.4, -13.7] } },
     // ガトリング: 見張り台の屋根の上に積む(電気で動く)
     gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.08, y: 7.55 } },
     // バキューマー: 地面に落ちている氷を every 秒に1個吸いこみ、コンベアで氷置き場へ
@@ -693,7 +693,7 @@
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
     // ヘリポート。yards = 氷置き場とお金置き場の台。氷1個 💰price、1回の出荷ボーナス 💰bonus、札束1つ 💰unit
-    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: YARD_AT.ice, cash: YARD_AT.cash }, price: 5, bonus: 50, unit: 10, batch: 12, wait: 10, maxIce: 12 } }, // maxIce = 1回に運ぶ氷の最大
+    helipad: { name: '出荷ヘリポート', at: [6.6, -7.6], helipad: { w: 5.2, d: 4.2, yards: { ice: YARD_AT.ice, cash: YARD_AT.cash }, price: 25, bonus: 100, unit: 10, batch: 10, wait: 6, maxIce: 24 } }, // maxIce = 1回に運ぶ氷の最大
     bonfire: { name: 'キャンプファイアー', at: [0, 0], bonfire: { stones: 14, r: 1.55, layers: 7, benches: 4, benchR: 3.2 } },
     storage: { name: '物資置き場', at: [-4.4, -1.6], rot: 0, def: storageDef },
     house1: { name: '民家', at: [-11, 2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#c0453a', chimney: [0.9, -0.7] }) },
@@ -1402,8 +1402,7 @@
   // 敷地の絵: 手前の角(画面の下)から奥へ明るい緑で塗られていく。まん中にアイコン、その下に「🪵 28」(あと何個)
   function padInfo(s) {
     if (s.upgrade || (s.res === 'cash' && !s.pickup)) { const left = Math.max(0, s.need - s.paid); return { k: s.paid / s.need, text: '💰' + (left * CASH_UNIT).toLocaleString() }; }
-    if (s.store) return { k: s.stock / s.cap, text: RES_ICON[s.res] + ' ' + s.stock + (s.stock >= s.cap ? ' MAX' : '') };
-    if (s.pickup) return { k: Math.min(1, s.stock / 40), text: '💰 ' + (s.stock * CASH_UNIT).toLocaleString() };
+    if (s.store || s.pickup) return { k: 0, text: '' };
     if (s.deposit) return { k: 0, text: RES_ICON[s.res] + ' ' + s.paid.toLocaleString() };
     const left = Math.max(0, s.need - s.paid);
     return { k: s.paid / s.need, text: left > 0 ? RES_ICON[s.res] + ' ' + left : '✔' };
@@ -1413,16 +1412,14 @@
     if (key === s.padKey) return;
     s.padKey = key;
     if (s.grid) {
-      // 木の床の手前の角: アイコンと数だけ(枠や塗りはなし)
+      // 置き場の床のまん中: 大きなアイコンだけ(数は出さない。初めての人にも何の置き場かわかるように)
       const g = s.cv.getContext('2d'), n = 256;
       g.clearRect(0, 0, n, n);
       g.save(); g.translate(n / 2, n / 2); g.rotate(-CAM_YAW);
-      g.fillStyle = 'rgba(255,255,255,0.28)'; g.beginPath(); g.arc(0, 0, 112, 0, 7); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.55)'; g.beginPath(); g.arc(0, 0, 118, 0, 7); g.fill();
+      g.lineWidth = 8; g.strokeStyle = s.pickup ? 'rgba(60,170,70,0.9)' : 'rgba(255,255,255,0.95)'; g.stroke();
       g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalAlpha = 1; g.fillStyle = '#ffffff';
-      g.font = '104px sans-serif'; g.fillText(s.iconCh, 0, -22);
-      const t = s.pickup ? (s.stock * CASH_UNIT).toLocaleString() : s.stock >= s.cap ? 'MAX' : String(s.stock);
-      g.font = 'bold 56px sans-serif'; g.lineWidth = 9; g.strokeStyle = 'rgba(60,35,15,0.9)';
-      g.strokeText(t, 0, 66); g.fillText(t, 0, 66);
+      g.font = '150px sans-serif'; g.fillText(s.iconCh, 0, 8);
       g.restore();
       s.tex.needsUpdate = true;
       return;
@@ -1469,8 +1466,8 @@
       s.cap = a.grid.cols * a.grid.rows * a.grid.layers;
       const geo = { ice: iceGeo, cash: cashGeo, wood: woodGeo, coal: coalGeo }[a.res];
       s.pileMesh = new THREE.InstancedMesh(geo, a.res === 'ice' ? iceMat : vcMat, s.cap);
-      s.decal = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.0), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
-      s.decal.rotation.x = -Math.PI / 2; s.decal.position.set(yard[0] + 0.85, 0.33, yard[1] + 0.85); s.decal.renderOrder = 3;
+      s.decal = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
+      s.decal.rotation.x = -Math.PI / 2; s.decal.position.set(yard[0], 0.33, yard[1]); s.decal.renderOrder = 3;
       scene.add(s.decal);
       s.pileMesh.count = 0; s.pileMesh.frustumCulled = false; scene.add(s.pileMesh);
       if (a.kind === 'pickup') s.pickup = true; else s.store = true;
@@ -2080,7 +2077,15 @@
   const YARD_COL = { wood: '#c98a4a', ice: '#7fc7ea', cash: '#5fbf5a', coal: '#3a3a3a' };
   function makeYardMesh(key) {
     const Y = YARD_SIZE, h = Y / 2 - 0.05, col = YARD_COL[key] || '#ffffff';
-    const g = new THREE.Mesh(mergeGeometries([
+    // お金置き場は受け取り場: コンクリートの床(目地・黄色い縁石)
+    const g = new THREE.Mesh(mergeGeometries(key === 'cash' ? [
+      { geo: Box(Y + 0.2, 0.22, Y + 0.2), m: M(0, 0.11, 0), color: '#7d848c' },
+      { geo: Box(Y, 0.08, Y), m: M(0, 0.26, 0), color: '#c4cad1' },
+      ...[-1, 0, 1].map(k => ({ geo: Box(Y, 0.02, 0.05), m: M(0, 0.305, k * Y / 4), color: '#a3aab2' })),
+      ...[-1, 0, 1].map(k => ({ geo: Box(0.05, 0.02, Y), m: M(k * Y / 4, 0.305, 0), color: '#a3aab2' })),
+      ...[[0, -h, Y, 0.16], [0, h, Y, 0.16], [-h, 0, 0.16, Y], [h, 0, 0.16, Y]].map(([x, z, w, d]) => ({ geo: Box(w, 0.14, d), m: M(x, 0.34, z), color: '#ffd23a' })),
+      ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({ geo: Box(0.22, 0.16, 0.22), m: M(lx * h, 0.42, lz * h), color: '#2f343c' })),
+    ] : [
       { geo: Box(Y, 0.24, Y), m: M(0, 0.12, 0), color: '#8a5a2e' },
       ...[0, 1, 2, 3, 4, 5].map(i => ({ geo: Box(Y, 0.06, Y / 6 - 0.06), m: M(0, 0.27, -Y / 2 + (i + 0.5) * Y / 6), color: i % 2 ? '#a8774a' : '#b5834f' })),
       ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([lx, lz]) => ({ geo: Box(0.16, 0.7, 0.16), m: M(lx * h, 0.35, lz * h), color: '#5a3a1e' })),
