@@ -86,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.19-s12';
+  const GAME_VERSION = '2026.11.19-s13';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -174,10 +174,10 @@
       ] },
     { id: 'scene_07', title: 'ゾンビ発電所', after: 'scene_06', delay: 1.0,
       // お金で建てる(大金)。完成すると定期的にお金が入り、拠点に電気が通る
-      enter: [{ do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'] }],
+      enter: [{ do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'], camera: [3, -16] }],
       goal: { type: 'build', site: 'plant' },
       exit: [
-        { do: 'power', from: 'plant', lamps: [[-9.6, -9.6], [-9.6, -0.6], [-9.6, 9.6], [-2.6, 9.6], [2.6, 9.6], [9.6, 5.0], [10.0, -5.6], [3.2, -10.2]] },
+        { do: 'power', from: 'plant', lamps: [[3.2, -10.2], [10.0, -5.6], [9.6, 5.0], [2.6, 9.6], [-2.6, 9.6], [-9.6, 9.6], [-9.6, -0.6], [-9.6, -9.6]] },
         { do: 'toast', text: '⚡ ゾンビ発電所が動き出した! 拠点に電気が通った' },
       ] },
     { id: 'scene_08', title: 'ガトリング', after: 'scene_07', delay: 2.5,
@@ -610,19 +610,36 @@
     parts.push(B(0.7, 0.08, 0.9, 0, 0.42, 1.6, '#4a4f58', 'deco', { rx: 0.35 }));
     return { parts, size: [2.8, 2.6], smoke: [0.5, 3.4, -0.4], ridge: 3 };
   }
-  // ゾンビ発電所(土台・発電機・電柱・回し車の支え。回し車と走るゾンビは完成後に動く物として足す)
+  // ゾンビ発電所: キャンプの裏(奥)に建つ大きな施設。前(キャンプ側)は開いていて、中にランニングマシンが2列×6台。
+  // 右(東)の壁のまん中に吸い込み口(カメラから見える側)。屋根の奥から冷却塔が2本、右手前に大きな電柱
+  const PLANT_SLOTS = [];
+  for (const lz of [1.3, -1.3]) for (let i = 0; i < 6; i++) PLANT_SLOTS.push([-6.25 + i * 2.5, lz]);
   function plantDef() {
-    const parts = [], metal = '#6f7883', dark = '#4a4f58';
-    parts.push(B(3.4, 0.3, 3.0, 0, 0.15, 0, '#7a828c', 'base'));
-    parts.push(B(3.2, 0.08, 0.12, 0, 0.34, 1.45, '#ffd23a', 'base'), B(3.2, 0.08, 0.12, 0, 0.34, -1.45, '#ffd23a', 'base'));
-    for (const z of [-0.75, 0.75]) parts.push(B(0.16, 2.6, 0.16, -0.7, 1.6, z, metal, 'pillar'));
-    parts.push(B(0.16, 0.16, 1.66, -0.7, 2.9, 0, metal, 'pillar'));
-    parts.push(B(1.1, 1.3, 1.4, 1.0, 0.95, 0, '#3f7d5a', 'wall'), B(1.16, 0.14, 1.46, 1.0, 1.66, 0, dark, 'wall'));
-    parts.push(B(0.06, 0.5, 0.5, 1.56, 1.05, 0, '#ffd23a', 'deco'), B(0.07, 0.24, 0.12, 1.58, 1.15, 0.05, '#2a2a2a', 'deco'));
-    parts.push(C(0.3, 0.3, 0.5, 1.0, 1.9, 0.35, metal, 'roof'), C(0.3, 0.3, 0.5, 1.0, 1.9, -0.35, metal, 'roof'));
-    parts.push(C(0.08, 0.1, 3.4, 1.3, 1.7, -1.2, '#5a3a1e', 'pillar'), B(1.0, 0.1, 0.1, 1.3, 3.3, -1.2, '#5a3a1e', 'roof'));
-    parts.push(S(0.1, 0.85, 3.4, -1.2, '#bfe9ff', 'deco'), S(0.1, 1.75, 3.4, -1.2, '#bfe9ff', 'deco'));
-    return { parts, size: [3.4, 3.0], ridge: 3.4 };
+    const parts = [], steel = '#6f7883', dark = '#4a4f58', conc = '#9aa2ab';
+    parts.push(B(17, 0.4, 10, 0, 0.2, 0, conc, 'base'));
+    parts.push(B(17, 0.06, 0.4, 0, 0.42, 4.8, '#ffd23a', 'base'), B(17, 0.06, 0.4, 0, 0.42, -4.8, '#ffd23a', 'base'));
+    for (const x of [-7.8, -3.9, 0, 3.9, 7.8]) for (const z of [4.3, -4.3]) parts.push(B(0.4, 4.6, 0.4, x, 2.7, z, steel, 'pillar'));
+    // 奥の壁・横の壁(右の壁のまん中は吸い込み口)
+    parts.push(B(16, 4.4, 0.3, 0, 2.6, -4.5, '#8d97a3', 'wall'), B(0.3, 4.4, 8.8, -8.0, 2.6, 0, '#8d97a3', 'wall'));
+    parts.push(B(0.3, 4.4, 3.2, 8.0, 2.6, -2.8, '#8d97a3', 'wall'), B(0.3, 4.4, 3.2, 8.0, 2.6, 2.8, '#8d97a3', 'wall'), B(0.3, 1.6, 2.4, 8.0, 4.0, 0, '#8d97a3', 'wall'));
+    parts.push(B(16.4, 0.5, 0.5, 0, 4.85, 4.3, '#ffd23a', 'wall'));
+    // 大屋根(雪つき)
+    parts.push(B(17.2, 0.4, 10, 0, 5.3, 0, '#3f6f5a', 'roof'), B(16.8, 0.16, 9.6, 0, 5.58, 0, '#f6fafd', 'roof'));
+    parts.push(B(1.6, 0.8, 1.6, 0, 5.9, -1.5, dark, 'roof'), B(1.7, 0.12, 1.7, 0, 6.34, -1.5, '#f6fafd', 'roof'));
+    // 冷却塔(屋根の奥からつき出る)
+    for (const x of [-5.2, 5.2]) {
+      parts.push(C(1.5, 2.0, 10, x, 5, -2.6, '#c3cad2', 'pillar', { seg: 14 }));
+      parts.push(C(1.55, 1.55, 0.6, x, 8.6, -2.6, '#c0453a', 'pillar', { seg: 14 }), C(1.6, 1.6, 0.2, x, 10.05, -2.6, '#f6fafd', 'roof', { seg: 14 }));
+    }
+    // 吸い込み口(右): 漏斗の壁とゲート
+    parts.push(B(3.4, 2.6, 0.3, 9.5, 1.5, -1.9, '#c0453a', 'deco', { ry: -0.5 }), B(3.4, 2.6, 0.3, 9.5, 1.5, 1.9, '#c0453a', 'deco', { ry: 0.5 }));
+    parts.push(B(0.5, 0.5, 2.6, 8.25, 3.1, 0, '#ffd23a', 'deco'));
+    // ランニングマシンの横の発電機(ひとつずつ)
+    for (const [sx, sz] of PLANT_SLOTS) parts.push(B(0.5, 0.9, 0.7, sx + 0.95, 0.85, sz, '#3f7d5a', 'deco'), B(0.08, 0.3, 0.3, sx + 1.21, 1.0, sz, '#ffd23a', 'deco'));
+    // 大きな電柱(右手前)
+    parts.push(C(0.18, 0.26, 7, 7.6, 3.9, 4.9, '#5a3a1e', 'pillar'), B(2.4, 0.16, 0.16, 7.6, 7.0, 4.9, '#5a3a1e', 'roof'));
+    for (const x of [6.6, 8.6]) parts.push(S(0.14, x, 7.15, 4.9, '#bfe9ff', 'deco'));
+    return { parts, size: [17, 10], ridge: 6.4, smoke: null };
   }
   function towerDef() {
     const parts = [], wood = '#7a4d24', plank = '#a8774a';
@@ -653,7 +670,9 @@
     kiln: { name: '炭焼き窯', at: [-6.8, 1.4], rot: 0, def: kilnDef },
     tower: { name: '見張り台', at: [8.3, 8.3], rot: Math.PI / 4, def: towerDef, shoot: { range: 13, every: 0.28, y: 5.2 } },
     // ゾンビ発電所: 回し車の中をゾンビが走って発電。every 秒ごとに札束 bundles 個がお金置き場へ
-    plant: { name: 'ゾンビ発電所', at: [-3.4, -8.6], rot: 0, def: plantDef, plant: { every: 5, bundles: 3 } },
+    // ゾンビ発電所: every 秒ごとに、働いているゾンビ1体につき 💰perWorker。満員で入ったゾンビは 💰bonus
+    plant: { name: 'ゾンビ発電所', at: [0, -18.6], rot: 0, def: plantDef, clear: 2.5,
+      plant: { every: 3, perWorker: 2, bonus: 5, lure: 0.7, intake: [9.9, 0], pylon: [7.6, 7.4, -13.7] } },
     // ガトリング: 見張り台の屋根の上に積む(電気で動く)
     gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.09, y: 7.55 } },
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
@@ -1301,7 +1320,7 @@
     s.tex = new THREE.CanvasTexture(s.cv); s.tex.colorSpace = THREE.SRGBColorSpace;
     s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
     s.iconCh = a.icon || ''; s.padKey = '';
-    s.title = a.title || ''; s.delays = a.delays || null;
+    s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null;
     if (a.grid) {
       // 置き場: 横の台の上に、決まった並びで積み上がる
       // 山は床の奥側、手前の角に置き場のアイコンと数を描く
@@ -1457,7 +1476,8 @@
     s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : BUILDINGS[id].helipad ? startHelipad(id, s) : BUILDINGS[id].yard ? startYard(id, s) : BUILDINGS[id].gatling ? startGatling(id, s) : construct(id, false, s)); });
     cx /= s.build.length; cz /= s.build.length;
     const fenced = s.build.some(id => BUILDINGS[id].fence);
-    camFocus((cx + s.x) / 2, (cz + s.z) / 2, Math.max(...delays) + 1.6, fenced ? 0.35 : 0.18);
+    if (s.camera) camFocus(s.camera[0], s.camera[1], Math.max(...delays) + 4.5, 0.55);
+    else camFocus((cx + s.x) / 2, (cz + s.z) / 2, Math.max(...delays) + 1.6, fenced ? 0.35 : 0.18);
     ring(s.x, s.z, 3.5, 0.4, '#5dff7a');
     SND.done();
   }
@@ -1686,9 +1706,11 @@
     for (const zb of zs) {
       zb.appear = Math.min(1, zb.appear + dt * 2);
       zb.hit = Math.max(0, zb.hit - dt);
-      const dx = player.x - zb.x, dz = player.z - zb.z, d = Math.hypot(dx, dz) || 1;
+      let dx = player.x - zb.x, dz = player.z - zb.z, d = Math.hypot(dx, dz) || 1;
+      const lureTo = plants.length ? plantTarget(zb) : null;
+      if (lureTo) { dx = lureTo[0] - zb.x; dz = lureTo[1] - zb.z; d = Math.hypot(dx, dz) || 1; if (plantCapture(zb)) continue; }
       let vx = 0, vz = 0;
-      if (zb.appear > 0 && d > 0.95) { vx = dx / d * zb.speed; vz = dz / d * zb.speed; }
+      if (zb.appear > 0 && (d > 0.95 || lureTo)) { vx = dx / d * zb.speed; vz = dz / d * zb.speed; }
       if (zb.kx) { vx += zb.kx; vz += zb.kz; zb.kx *= 0.85; zb.kz *= 0.85; if (Math.abs(zb.kx) + Math.abs(zb.kz) < 0.2) zb.kx = zb.kz = 0; }
       // 群れでおしくらまんじゅう
       for (const o of zs) {
@@ -1700,6 +1722,8 @@
       }
       zb.x = clamp(zb.x + vx * dt, WORLD.x1 + 0.5, WORLD.x2 - 0.5); zb.z = clamp(zb.z + vz * dt, WORLD.z1 + 0.5, WORLD.z2 - 0.5);
       for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && f.doorOpen < 0.7) segPush(zb, f.door, 0.55); }
+      // 発電所の建物には入れない(吸い込み口からだけ)
+      if (built.plant && built.plant.done) { const [x1, z1, x2, z2] = built.plant.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 + 0.6 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, z2 - zb.z]; const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else zb.z = z2; } }
       zb.face = Math.atan2(dx, dz);
       if (!godMode && !gameOver && zb.appear > 0.5 && d < 0.95 && insideCamp(player.x, player.z) && insideCamp(zb.x, zb.z)) showGameOver();
       if (zb.appear <= 0) { setInst(zombieMesh, n, zb.x, -5, zb.z, 0.001, 0.001, 0.001); zombieMesh.setColorAt(n++, zb.tint); continue; }
@@ -2132,6 +2156,18 @@
   // ---- 建物が組み上がる ----
   const STAGE_AT = { base: 0, pillar: 0.2, wall: 0.42, roof: 0.78, deco: 1.05 };
   const PART_DUR = 0.3;
+  // 大きな建物の場所: 木は外向きにどんどん倒れて薪になり、ゾンビは吹き飛ぶ。カメラが寄る
+  function clearArea(box, m, at) {
+    const [x1, z1, x2, z2] = box;
+    const inBox = (x, z) => x > x1 - m && x < x2 + m && z > z1 - m && z < z2 + m;
+    let k = 0;
+    for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && inBox(t.x, t.z)) {
+      const dx = t.x - at[0], dz = t.z - at[1], d = Math.hypot(dx, dz) || 1;
+      later(0.05 + (k++ % 40) * 0.025, () => { if (!t.dead && !t.gone) { burstGibs(t.x, 1.2, t.z, 6, '#e0aa62', 3, 3); fellTree(t, dx / d, dz / d); } });
+    }
+    for (const zb of zs) if (!zb.dead && inBox(zb.x, zb.z)) later(0.1 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
+    shake(0.5); SND.boom(); ring(at[0], at[1], 12, 0.7, '#ffe066');
+  }
   function construct(id, instant, site) {
     const info = BUILDINGS[id], def = info.def();
     const g = new THREE.Group();
@@ -2143,6 +2179,7 @@
     const b = { id, info, def, g, box: [info.at[0] - hw, info.at[1] - hd, info.at[0] + hw, info.at[1] + hd], door: toWorld(0, def.size[1] / 2 + 0.7), smoke: def.smoke ? toWorld(def.smoke[0], def.smoke[2]).concat(def.smoke[1]) : null,
       smokeOn: id === 'hut', smokeT: 0, done: false, squash: 0, site: site ? site.id : null };
     if (def.fire) b.fireAt = toWorld(def.fire[0], def.fire[2]);
+    if (info.clear && !instant) clearArea(b.box, info.clear, info.at);
     built[id] = b;
     pushOut(player, PLAYER_CFG.radius);
     if (instant) { finishBuilding(b, true); return b; }
@@ -2218,44 +2255,117 @@
       s.done = true; scene.remove(s.pad);
     }
   }
-  // ---- ゾンビ発電所: 回し車の中でゾンビが走り続け、定期的にお金をお金置き場へ飛ばす ----
+  // ---- ゾンビ発電所: 吸い込み口に寄ってきたゾンビは、空いているランニングマシンまで歩かされて、ずっと走らされる ----
   const plants = [];
-  const wheelGeo = mergeGeometries([
-    { geo: new THREE.TorusGeometry(1.25, 0.09, 6, 28), m: M(0, 0, 0, 1, 1, 1, 0, Math.PI / 2, 0), color: '#c0453a' },
-    { geo: new THREE.TorusGeometry(1.25, 0.09, 6, 28), m: M(0.55, 0, 0, 1, 1, 1, 0, Math.PI / 2, 0), color: '#c0453a' },
-    ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => ({ geo: Box(0.6, 0.08, 0.08), m: M(0.27, Math.cos(i * Math.PI / 4) * 1.25, Math.sin(i * Math.PI / 4) * 1.25), color: '#d8dde4' })),
-    ...[0, 1, 2, 3].map(i => ({ geo: Box(0.05, 2.5, 0.05), m: M(0, 0, 0, 1, 1, 1, i * Math.PI / 4, 0, 0), color: '#8d97a3' })),
-    { geo: Cyl(0.12, 0.12, 0.7, 8), m: M(0.27, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#4a4f58' },
+  const beltTexP = canvasTexture(64, (g, n) => { g.fillStyle = '#2f343c'; g.fillRect(0, 0, n, n); g.fillStyle = '#4a515c'; for (let i = 0; i < 4; i++) g.fillRect(i * 16, 0, 6, n); });
+  beltTexP.wrapS = beltTexP.wrapT = THREE.RepeatWrapping;
+  const treadGeo = mergeGeometries([
+    { geo: Box(1.9, 0.18, 0.9), m: M(0, 0.12, 0), color: '#5a606a' },
+    { geo: Box(0.12, 1.1, 0.12), m: M(0.85, 0.65, 0.38), color: '#8d97a3' }, { geo: Box(0.12, 1.1, 0.12), m: M(0.85, 0.65, -0.38), color: '#8d97a3' },
+    { geo: Box(0.14, 0.12, 0.9), m: M(0.85, 1.2, 0), color: '#ffd23a' },
   ]);
   function startPlant(b) {
-    const [x, z] = b.info.at;
-    const g = new THREE.Group(); g.position.set(x - 0.7, 1.65, z); scene.add(g);
-    const wheel = new THREE.Mesh(wheelGeo, vcMat); wheel.position.x = -0.27; g.add(wheel);
-    const runner = new THREE.Mesh(zombieGeo, vcMat); runner.scale.setScalar(0.75); runner.position.set(0, -1.2, 0); runner.rotation.y = Math.PI / 2; g.add(runner);
-    plants.push({ b, g, wheel, runner, t: 0, payT: b.info.plant.every, x, z });
-    ring(x, z, 4, 0.5, '#ffe066'); burstGibs(x + 1, 2, z, 20, '#ffe066', 4, 6);
+    const c = b.info.plant, [ox, oz] = b.info.at;
+    const P = { b, c, x: ox, z: oz, t: 0, payT: c.every, acc: 0, workers: [], slots: PLANT_SLOTS.map(([sx, sz]) => ({ x: ox + sx, z: oz + sz, w: null })) };
+    // ランニングマシン(台・手すり)と、流れるベルト
+    P.tread = new THREE.InstancedMesh(treadGeo, vcMat, P.slots.length);
+    P.belt = new THREE.InstancedMesh(Box(1.7, 0.04, 0.8), new THREE.MeshLambertMaterial({ map: beltTexP }), P.slots.length);
+    P.slots.forEach((sl, i) => { setInst(P.tread, i, sl.x, 0.4, sl.z, 1, 1, 1); setInst(P.belt, i, sl.x - 0.05, 0.63, sl.z, 1, 1, 1); });
+    P.workerMesh = new THREE.InstancedMesh(zombieGeo, vcMat, P.slots.length + 8); P.workerMesh.count = 0; P.workerMesh.frustumCulled = false;
+    for (const m of [P.tread, P.belt, P.workerMesh]) { m.frustumCulled = false; scene.add(m); }
+    // 看板「⚡ ZOMBIE POWER」(屋根の前)
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
+    const g = cv.getContext('2d'); g.fillStyle = '#2a2f3a'; g.fillRect(0, 0, 512, 128); g.strokeStyle = '#ffd23a'; g.lineWidth = 10; g.strokeRect(5, 5, 502, 118);
+    g.fillStyle = '#ffe066'; g.font = 'bold 72px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('⚡ ZOMBIE POWER', 256, 68);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    P.sign = new THREE.Mesh(new THREE.PlaneGeometry(7, 1.75), new THREE.MeshBasicMaterial({ map: tex })); P.sign.position.set(ox, 6.7, oz + 3.6); scene.add(P.sign);
+    // 吸い込み口のサイレン(回る赤と黄色のライト)
+    P.siren = new THREE.Group(); P.siren.position.set(ox + c.intake[0] - 1.4, 3.7, oz + c.intake[1]); scene.add(P.siren);
+    for (const [col, a] of [['#ff3a3a', 0], ['#ffd23a', Math.PI]]) { const m = new THREE.Mesh(Sph(0.28, 8, 6), new THREE.MeshBasicMaterial({ color: col })); m.position.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5); P.siren.add(m); }
+    P.lureGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexL, color: '#ff6a4a', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); P.lureGlow.position.set(ox + c.intake[0] - 1.4, 3.7, oz + c.intake[1]); scene.add(P.lureGlow);
+    plants.push(P);
+    // 冷却塔から蒸気
+    P.steam = [[ox - 5.2, oz - 2.6], [ox + 5.2, oz - 2.6]];
+    ring(ox, oz, 12, 0.6, '#ffe066'); burstGibs(ox, 6, oz, 40, '#ffe066', 6, 8);
+    popText('⚡ ゾンビ発電所 完成! ゾンビが勝手に働きに来る', ox, oz + 4, '#ffe066', 22, 8);
+  }
+  // 吸い込み口でつかまえる(ゾンビの更新から呼ばれる)
+  function plantCapture(zb) {
+    const P = plants[0]; if (!P) return false;
+    const ix = P.x + P.c.intake[0], iz = P.z + P.c.intake[1];
+    if (Math.hypot(zb.x - ix, zb.z - iz) > 1.4) return false;
+    zb.dead = true;
+    const slot = P.slots.find(sl => !sl.w);
+    if (slot) {
+      const w = { x: zb.x, z: zb.z, sx: zb.x, sz: zb.z, slot, t: 0, walk: 2.2, tint: zb.tint, ph: Math.random() * 6 };
+      slot.w = w; P.workers.push(w);
+      popText('⚡ 確保!', ix, iz, '#ffe066', 15, 3);
+    } else {
+      // 満員: 火花になってボーナス
+      P.acc += P.c.bonus;
+      burstGibs(ix, 1.5, iz + 1.5, 10, '#ffe066', 3, 5);
+    }
+    if (!fastForwarding) tone(320, 0.12, 'square', 0.04, 1.8);
+    return true;
+  }
+  // 発電所に向かうゾンビの目的地(なければ null)
+  function plantTarget(zb) {
+    const P = plants[0]; if (!P) return null;
+    if (zb.lure === undefined) zb.lure = zb.z < P.z + 6 && Math.random() < P.c.lure;
+    if (!zb.lure) return null;
+    const ix = P.x + P.c.intake[0], iz = P.z + P.c.intake[1], [x1, z1, x2, z2] = P.b.box;
+    // 建物をぐるっと回って、右の吸い込み口へ
+    if (zb.x > x2 - 0.3) return [ix, iz];
+    if (zb.z > z2 + 0.3) return [x2 + 2.2, zb.z];
+    if (zb.z < z1 - 1.5) return [x2 + 2.5, z1 - 2.5];
+    return [zb.x, z1 - 2.6];
   }
   function updatePlants(dt) {
     for (const P of plants) {
       P.t += dt;
-      P.wheel.rotation.x -= dt * 4.2;
-      P.runner.position.y = -1.2 + Math.abs(Math.sin(P.t * 12)) * 0.12;
-      P.runner.rotation.z = Math.sin(P.t * 12) * 0.12;
-      if (Math.random() < dt * 6) burstGibs(P.x + 1.0, 2.2, P.z, 2, Math.random() < 0.5 ? '#ffe066' : '#bfe9ff', 2, 3);
+      P.siren.rotation.y += dt * 6;
+      P.lureGlow.scale.setScalar(3 + Math.sin(P.t * 8) * 0.8);
+      beltTexP.offset.x += dt * 2.2;
+      if (Math.random() < dt * 3) for (const [sx, sz] of P.steam) smokePuff(sx, 10.3, sz);
+      let n = 0, working = 0;
+      for (const w of P.workers) {
+        w.t += dt;
+        let x, z, y = 0.65, face = Math.PI / 2;
+        if (w.t < w.walk) {
+          // 中へ歩かされる(吸い込み口 → 通路 → 自分のマシン)
+          const k = w.t / w.walk, mid = [w.slot.x, P.z];
+          x = k < 0.5 ? lerp(w.sx, mid[0], k * 2) : lerp(mid[0], w.slot.x, (k - 0.5) * 2);
+          z = k < 0.5 ? lerp(w.sz, mid[1], k * 2) : lerp(mid[1], w.slot.z, (k - 0.5) * 2);
+          y = 0.42; face = Math.atan2(w.slot.x - x, w.slot.z - z);
+        } else {
+          working++;
+          x = w.slot.x; z = w.slot.z; y = 0.65 + Math.abs(Math.sin(P.t * 13 + w.ph)) * 0.12;
+          if (Math.random() < dt * 1.5) burstGibs(x + 1.2, 1.4, z, 2, Math.random() < 0.5 ? '#ffe066' : '#bfe9ff', 1.5, 2.5);
+        }
+        setInst(P.workerMesh, n, x, y, z, 1, 1, 1, face, 0, w.t >= w.walk ? Math.sin(P.t * 13 + w.ph) * 0.15 : 0);
+        P.workerMesh.setColorAt(n++, w.tint);
+      }
+      P.workerMesh.count = n; P.workerMesh.instanceMatrix.needsUpdate = true;
+      if (P.workerMesh.instanceColor) P.workerMesh.instanceColor.needsUpdate = true;
+      // 定期的に、働いている数に応じてお金がお金置き場へ飛んでいく
       P.payT -= dt;
       const cash = sites.cashpad;
-      if (P.payT <= 0 && cash) {
-        P.payT = P.b.info.plant.every;
-        const n = P.b.info.plant.bundles;
-        popText('⚡ 💰+' + n * CASH_UNIT, P.x, P.z, '#ffe066', 18, 3.8);
-        if (!fastForwarding) { noise(0.15, 0.08, 4000); tone(880, 0.1, 'square', 0.03, 1.5); }
-        for (let i = 0; i < n; i++) {
-          cash.incoming++;
-          const q = gridPos(cash, Math.min(cash.cap - 1, cash.stock + cash.incoming - 1));
-          later(i * 0.12, () => flyItem('cash', P.x + 1.0, 2.4, P.z, q[0], q[1], q[2], 0.55, 2.5, () => {
-            cash.incoming--; cash.stock = Math.min(cash.cap, cash.stock + 1); drawPile(cash); cash.bump = 1;
-            if (!fastForwarding && sfx.give >= 1) { sfx.give--; tone(1180 + (cash.stock % 20) * 30, 0.05, 'sine', 0.045, 1.3); }
-          }, 8));
+      if (P.payT <= 0) {
+        P.payT = P.c.every;
+        P.acc += working * P.c.perWorker;
+        const nb = Math.floor(P.acc / CASH_UNIT);
+        if (nb > 0 && cash) {
+          P.acc -= nb * CASH_UNIT;
+          popText('⚡ 💰+' + nb * CASH_UNIT + '(' + working + '体)', P.x, P.z + 4, '#ffe066', 18, 7);
+          if (!fastForwarding) { noise(0.15, 0.08, 4000); tone(880, 0.1, 'square', 0.03, 1.5); }
+          for (let i = 0; i < nb; i++) {
+            cash.incoming++;
+            const q = gridPos(cash, Math.min(cash.cap - 1, cash.stock + cash.incoming - 1));
+            later(i * 0.1, () => flyItem('cash', P.x, 6, P.z + 3.5, q[0], q[1], q[2], 0.7, 4, () => {
+              cash.incoming--; cash.stock = Math.min(cash.cap, cash.stock + 1); drawPile(cash); cash.bump = 1;
+              if (!fastForwarding && sfx.give >= 1) { sfx.give--; tone(1180 + (cash.stock % 20) * 30, 0.05, 'sine', 0.045, 1.3); }
+            }, 8));
+          }
         }
       }
     }
@@ -2273,7 +2383,7 @@
   const cables = [];
   function startPower(a) {
     const pb = built[a.from]; if (!pb) return;
-    const [px, pz] = pb.info.at, top = [px + 1.3, 3.3, pz - 1.2];
+    const top = pb.info.plant && pb.info.plant.pylon ? pb.info.plant.pylon : [pb.info.at[0], 3.3, pb.info.at[1]];
     lightsTarget = 1;
     let prev = V(...top), at = 0.3;
     a.lamps.forEach(([x, z], i) => {
@@ -3052,7 +3162,7 @@
       return { gt, elapsed, carried: { ...carried }, scenes: SCN.log.map(l => ({ ...l })), active: SCN.active.map(s => s.id), buildings: Object.keys(built).filter(k => built[k].done),
         villagers: villagers.length, targets: targets.filter(t => !t.gone).map(t => t.type + ':' + t.tag), drops: drops.wood.items.length + drops.meat.items.length,
         sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : '')])),
-        unlocked: Object.keys(unlocked), over: gameOver, axesOff, lampsLit: lamps.filter(l => l.lit).length, gatling: gatlings.length, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
+        unlocked: Object.keys(unlocked), over: gameOver, axesOff, workers: plants[0] ? plants[0].workers.length : 0, lampsLit: lamps.filter(l => l.lit).length, gatling: gatlings.length, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
     },
     bot(on) { bot = on; },
     fastForward(sec, step = 1 / 30) { fastForwarding = true; try { for (let t = 0; t < sec; t += step) logic(step); } finally { fastForwarding = false; } return this.state; },
