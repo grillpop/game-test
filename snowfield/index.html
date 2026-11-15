@@ -50,6 +50,8 @@
   <div id="hud">
     <div id="wood-pill" class="pill">🪵 <span id="wood">0</span></div>
     <div id="meat-pill" class="pill hide">🍖 <span id="meat">0</span></div>
+    <div id="ice-pill" class="pill hide">🧊 <span id="ice">0</span></div>
+    <div id="money-pill" class="pill hide" style="color:#ffe27a">💰 <span id="money">0</span></div>
     <div id="bld-pill" class="pill">🏠 <span id="bld">0</span></div>
     <div id="pop-pill" class="pill hide">👥 <span id="pop">0</span></div>
     <div id="kill-pill" class="pill hide">🧟 <span id="kills">0</span></div>
@@ -68,13 +70,14 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.15-s5';
+  const GAME_VERSION = '2026.11.16-s6';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
   const STACK = {                                             // 背中の積荷(段ごとに向きを変えて井桁に積む)
     wood: { per: 3, gap: 0.29, layerH: 0.27, max: 150 },
     meat: { per: 2, gap: 0.36, layerH: 0.31, max: 100 },
+    ice: { per: 2, gap: 0.5, layerH: 0.48, max: 90 },   // 凍ったゾンビ(氷ブロック)
   };
   const DELIVER = { gap: 0.07, minGap: 0.016, speedUp: 0.92, flight: 0.3 }; // 納品: 最初の間隔・最短・だんだん速く・飛ぶ時間
   const WORLD = { x1: -30, x2: 30, z1: -30, z2: 30 };
@@ -83,9 +86,9 @@
   const TREE_FALL = 0.28;
   const CAM_YAW = Math.PI / 4;                                 // カメラは斜め45度から(四角いキャンプがひし形に見える)
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
-  const ZOMBIES = { on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [20, 26] };                                      // 木が倒れきるまでの秒数
+  const ZOMBIES = { drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [20, 26] };                                      // 木が倒れきるまでの秒数
   const ZOOM_BASE = 14;
-  const RES_ICON = { wood: '🪵', meat: '🍖' };
+  const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊' };
 
   // エリア(rect = x1, z1, x2, z2)。開くまで中に入れない。edges = 雪の吹きだまりの柵を置く線
   const AREAS = {}; // 今はエリアの区切りなし(森の中の空き地から始まる)
@@ -118,6 +121,15 @@
       enter: [{ do: 'site', id: 'bonfire', title: '🔥 キャンプファイアーをつくる', icon: '🔥', at: [3.9, 1.0], res: 'wood', need: 60, build: ['bonfire'] }],
       goal: { type: 'build', site: 'bonfire' },
       exit: [{ do: 'toast', text: '🔥 立派なキャンプファイアーができた!' }] },
+    { id: 'scene_04', title: '出荷ヘリポート', after: 'scene_03', delay: 1.2,
+      enter: [{ do: 'site', id: 'heli', title: '🚁 出荷ヘリポートをつくる', icon: '🚁', at: [5.0, -0.3], res: 'wood', need: 50, build: ['helipad'] }],
+      goal: { type: 'build', site: 'heli' },
+      exit: [
+        // 凍ったゾンビ(🧊)を運ぶと、1個 💰5。木箱が20個でいっぱいになると、ヘリが運んでいってボーナス 💰50
+        { do: 'sellpad', id: 'ship', title: '🧊 出荷(1個 💰5)', icon: '🧊', at: [5.0, -0.3], res: 'ice', price: 5, batch: 20, bonus: 50, helipad: 'helipad', delay: 0.4 },
+        { do: 'toast', text: '🧊 凍ったゾンビを運んで出荷しよう! 💰' },
+      ] },
+    { id: 'scene_05', title: '出荷でかせぐ', after: 'scene_04', goal: { type: 'none' } },
   ];
 
   const STICK_RADIUS = 56;
@@ -416,10 +428,23 @@
     { geo: Sph(0.07, 6, 5), m: M(-0.4, 0, 0.05), color: '#f5efe4' },
     { geo: Sph(0.07, 6, 5), m: M(-0.4, 0, -0.05), color: '#f5efe4' },
   ]);
-  const drops = { wood: makePool(woodGeo, vcMat, 700), meat: makePool(meatGeo, vcMat, 140) };
+  // 凍ったゾンビ: 水色の氷のブロックに、ゾンビの顔が閉じこめられている
+  const iceGeo = mergeGeometries([
+    { geo: Box(0.5, 0.46, 0.5), m: M(0, 0, 0), color: '#bfe9ff' },
+    { geo: Box(0.3, 0.3, 0.02), m: M(0, 0.01, 0.256), color: '#86c46e' },
+    { geo: Box(0.07, 0.07, 0.02), m: M(-0.07, 0.06, 0.268), color: '#ff3a3a' },
+    { geo: Box(0.07, 0.07, 0.02), m: M(0.07, 0.06, 0.268), color: '#ff3a3a' },
+    { geo: Box(0.16, 0.04, 0.02), m: M(0, -0.07, 0.268), color: '#2a3a20' },
+    { geo: Box(0.52, 0.06, 0.52), m: M(0, 0.23, 0), color: '#ffffff' },
+    { geo: Box(0.06, 0.48, 0.06), m: M(0.23, 0, 0.23), color: '#e8f8ff' },
+    { geo: Box(0.06, 0.48, 0.06), m: M(-0.23, 0, 0.23), color: '#e8f8ff' },
+  ]);
+  const iceMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#1a3a50' });
+  const drops = { wood: makePool(woodGeo, vcMat, 700), meat: makePool(meatGeo, vcMat, 140), ice: makePool(iceGeo, iceMat, 320) };
   const stackMesh = {
     wood: new THREE.InstancedMesh(woodGeo, vcMat, STACK.wood.max),
     meat: new THREE.InstancedMesh(meatGeo, vcMat, STACK.meat.max),
+    ice: new THREE.InstancedMesh(iceGeo, iceMat, STACK.ice.max),
   };
   for (const k in stackMesh) { stackMesh[k].count = 0; stackMesh[k].frustumCulled = false; scene.add(stackMesh[k]); }
 
@@ -499,6 +524,7 @@
     fence: { name: 'キャンプの柵', at: [0, 0], fence: { H: 8, gw: 1.7, spacing: 1.3 } }, // 四角い柵(半分の幅 H、入口は手前の辺のまん中、幅 2×gw)
     hut: { name: '小屋', at: [-4.2, -5.3], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
     campfire: { name: '焚き火', at: [0.6, 0.8], rot: 0, def: campfireDef },
+    helipad: { name: '出荷ヘリポート', at: [4.6, -4.5], helipad: { w: 5.2, d: 4.2 } },
     bonfire: { name: 'キャンプファイアー', at: [0.6, 0.8], bonfire: { stones: 14, r: 1.55, layers: 7, benches: 4, benchR: 3.2 } },
     storage: { name: '物資置き場', at: [-4.4, -1.6], rot: 0, def: storageDef },
     house1: { name: '民家', at: [-11, 2.6], rot: Math.PI / 2, def: () => gabled({ W: 3.2, D: 3.0, H: 2.1, roof: '#c0453a', chimney: [0.9, -0.7] }) },
@@ -525,8 +551,8 @@
   //  ゲームの状態
   // ================================================================
   let gt = 0, elapsed = 0, started = false, fastForwarding = false;
-  const carried = { wood: 0, meat: 0 };
-  const gathered = { wood: 0, meat: 0 };   // これまでに拾った数(シーンの目標用)
+  const carried = { wood: 0, meat: 0, ice: 0 };
+  const gathered = { wood: 0, meat: 0, ice: 0 };   // これまでに拾った数(シーンの目標用)
   const dropsLeft = {};        // tag ごとの、まだ拾っていない資材の数
   const targets = [];          // 木・狼・熊
   const sites = {};            // 建築エリア
@@ -535,6 +561,7 @@
   const unlocked = {};
   const villagers = [];
   const timers = [];
+  let money = 0, moneyGain = 0, moneyGainT = 0;
   let freeplay = false, lightsOn = 0, lightsTarget = 0, dusk = 0, duskTarget = 0;
   function later(sec, fn) { timers.push({ at: gt + sec, fn }); }
   function lockedAt(x, z, pad = 0) {
@@ -912,9 +939,9 @@
   //  資材: 飛び散る → 地面に落ちる → 1個ずつ吸い寄せられて背中に積まれる
   // ================================================================
   let nextMagnet = 0, streak = 0, streakT = 0, gainN = 0, gainKind = 'wood', gainT = 0;
-  const stackPop = { wood: 0, meat: 0 };
+  const stackPop = { wood: 0, meat: 0, ice: 0 };
   const lean = { x: 0, z: 0 };
-  const stackCol = { wood: 0, meat: 0 };
+  const stackCol = { wood: 0, meat: 0, ice: 0 };
   const slot = { x: 0, y: 0, z: 0, ry: 0 };
   function slotPos(kind, idx, out) {
     const cfg = STACK[kind];
@@ -1017,7 +1044,9 @@
   function updateStacks(dt) {
     lean.x += (-player.vx * 0.06 - lean.x) * Math.min(1, dt * 5);
     lean.z += (-player.vz * 0.06 - lean.z) * Math.min(1, dt * 5);
-    stackCol.meat += ((carried.wood > 0 ? 0.78 : 0) - stackCol.meat) * Math.min(1, dt * 8);
+    // 背中の列: 薪 → 肉 → 氷の順に後ろへ並ぶ(空の列はつめる)
+    let col = 0;
+    for (const k of ['wood', 'meat', 'ice']) { stackCol[k] += (col - stackCol[k]) * Math.min(1, dt * 8); if (carried[k] > 0) col += k === 'wood' ? 0.8 : 0.72; }
     for (const kind in stackMesh) {
       const m = stackMesh[kind], n = Math.min(carried[kind], STACK[kind].max);
       stackPop[kind] = Math.max(0, stackPop[kind] - dt * 7);
@@ -1073,6 +1102,7 @@
     s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: padTexture(a.icon || ''), transparent: true, depthWrite: false }));
     if (a.icon) s.icon = iconSprite(a.icon);
     s.title = a.title || ''; s.delays = a.delays || null;
+    if (a.sell) { s.sell = a.sell; s.crate = 0; s.heli = built[a.sell.helipad] && built[a.sell.helipad].heli; }
     s.pad.rotation.x = -Math.PI / 2; s.pad.position.set(s.x, 0.05, s.z);
     scene.add(s.pad);
     s.el = document.createElement('div'); s.el.className = 'site-label';
@@ -1087,6 +1117,12 @@
         // 柵の設計図: 杭の並びを青く見せる
         const plan = fencePlan(info.fence, info.at[0], info.at[1]);
         const gm = new THREE.Mesh(mergeGeometries(plan.pts.map(([x, z]) => ({ geo: Cyl(0.12, 0.12, 1.3, 6), m: M(x, 0.65, z) }))), ghostMat);
+        scene.add(gm); s.ghosts.push(gm);
+        continue;
+      }
+      if (info.helipad) {
+        const c = info.helipad;
+        const gm = new THREE.Mesh(mergeGeometries([{ geo: Box(c.w, 0.3, c.d), m: M(info.at[0], 0.15, info.at[1]) }, { geo: Sph(0.9, 8, 6), m: M(info.at[0] - 0.6, 1.1, info.at[1], 1, 0.85, 1.6) }]), ghostMat);
         scene.add(gm); s.ghosts.push(gm);
         continue;
       }
@@ -1125,6 +1161,7 @@
       s.pile.instanceMatrix.needsUpdate = true;
     }
     s.bump = 1;
+    if (s.sell) { sellOne(s); return; }
     SND.give(s.paid);
     if (s.paid % 3 === 0) puff(s.x + (Math.random() - 0.5) * 1.2, 0.3, s.z + (Math.random() - 0.5) * 1.2, 1, '#ffffff', 0.5, 1, 0.5);
   }
@@ -1146,9 +1183,10 @@
             if (pool.items.length < pool.max) {
               const it = { kind: s.res, st: 'deliver', site: s.id, t: 0, dur: DELIVER.flight, sx: slot.x, sy: slot.y, sz: slot.z, x: slot.x, y: slot.y, z: slot.z, tx: s.x + (Math.random() - 0.5) * 1.6, tz: s.z + (Math.random() - 0.5) * 1.6, ty: 0.35, ry: slot.ry, rx: 0 };
               if (s.deposit) { const ps = pilePos(s, s.paid + s.incoming); if (ps) { it.tx = ps[0]; it.ty = ps[1]; it.tz = ps[2]; it.dur = DELIVER.flight * 1.4; } }
+              if (s.sell && s.heli) { const c = s.heli.crateAt; it.tx = c[0] + (Math.random() - 0.5) * 0.4; it.tz = c[1] + (Math.random() - 0.5) * 0.4; it.ty = 1.2; it.dur = DELIVER.flight * 1.5; }
               pool.items.push(it);
               s.incoming++;
-            } else s.paid++;
+            } else { s.incoming++; landOnSite(s.id); }
             s.dT += s.gap;
             s.gap = Math.max(DELIVER.minGap, s.gap * DELIVER.speedUp);
             bumpPill(s.res);
@@ -1173,7 +1211,7 @@
     s.ghosts.forEach(g => { scene.remove(g); g.geometry.dispose(); });
     let cx = 0, cz = 0;
     const delays = s.build.map((id, i) => s.delays && s.delays[i] !== undefined ? s.delays[i] : 0.15 + i * 0.7);
-    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : construct(id, false, s)); });
+    s.build.forEach((id, i) => { cx += BUILDINGS[id].at[0]; cz += BUILDINGS[id].at[1]; later(delays[i], () => BUILDINGS[id].fence ? startFence(id, s) : BUILDINGS[id].bonfire ? startBonfire(id, s) : BUILDINGS[id].helipad ? startHelipad(id, s) : construct(id, false, s)); });
     cx /= s.build.length; cz /= s.build.length;
     const fenced = s.build.some(id => BUILDINGS[id].fence);
     camFocus((cx + s.x) / 2, (cz + s.z) / 2, Math.max(...delays) + 1.6, fenced ? 0.35 : 0.18);
@@ -1381,6 +1419,7 @@
     if (zb.hp > 0) { SND.hit(); return; }
     // ポンッと弾けて倒れる
     zb.dead = true; zKills++;
+    for (const k in ZOMBIES.drop) for (let i = 0; i < ZOMBIES.drop[k]; i++) spawnDrop(k, zb.x, 0.8, zb.z, 'zombie', i, ZOMBIES.drop[k]);
     burstGibs(zb.x, 1.0, zb.z, 10, '#86e06a', 5, 5);
     burstGibs(zb.x, 1.2, zb.z, 4, '#f6fafd', 3, 4);
     puff(zb.x, 0.6, zb.z, 2, '#d8f5c8', 0.8, 0.9, 1);
@@ -1539,6 +1578,161 @@
         const b = built[Object.keys(built).find(k => built[k].bonfire === f)];
         b.done = true; updateBuildCount(); siteDoneCheck(b);
       }
+    }
+  }
+
+  // ---- 出荷ヘリポート: 木の台がせり上がる → Hマーク・ライト → 木箱 → ヘリが空から降りてくる ----
+  const helis = [];
+  const heliBodyGeo = mergeGeometries([
+    { geo: Sph(0.9, 14, 10), m: M(0, 1.15, 0.1, 1, 0.85, 1.55), color: '#e8452f' },
+    { geo: Sph(0.62, 12, 8), m: M(0, 1.38, 0.95, 1, 0.78, 0.8), color: '#9fd8ff' },
+    { geo: Box(1.86, 0.12, 0.5), m: M(0, 1.05, 0.1), color: '#ffffff' },
+    { geo: Cyl(0.12, 0.26, 2.4, 8), m: M(0, 1.35, -2.0, 1, 1, 1, Math.PI / 2, 0, 0), color: '#e8452f' },
+    { geo: Box(0.08, 0.8, 0.5), m: M(0, 1.7, -3.1), color: '#c23a28' },
+    { geo: Box(0.1, 0.1, 2.4), m: M(0.72, 0.18, 0.1), color: '#444b55' },
+    { geo: Box(0.1, 0.1, 2.4), m: M(-0.72, 0.18, 0.1), color: '#444b55' },
+    ...[[0.6, 0.6], [-0.6, 0.6], [0.6, -0.4], [-0.6, -0.4]].map(([x, z]) => ({ geo: Box(0.07, 0.55, 0.07), m: M(x, 0.45, z), color: '#444b55' })),
+    { geo: Cyl(0.1, 0.12, 0.35, 8), m: M(0, 2.05, 0.1), color: '#444b55' },
+    { geo: Box(1.2, 0.5, 0.06), m: M(0, 1.0, 0.1, 1, 1, 1, 0, Math.PI / 2, 0), color: '#ffffff' },
+  ]);
+  const rotorGeo = mergeGeometries([
+    { geo: Box(4.6, 0.05, 0.26), m: M(0, 0, 0), color: '#2f343c' },
+    { geo: Box(0.26, 0.05, 4.6), m: M(0, 0, 0), color: '#2f343c' },
+    { geo: Cyl(0.18, 0.18, 0.12, 8), m: M(0, 0.03, 0), color: '#e8452f' },
+  ]);
+  const crateGeo = mergeGeometries([
+    { geo: Box(1.4, 0.12, 1.4), m: M(0, 0.06, 0), color: '#8a5a2e' },
+    { geo: Box(1.4, 0.8, 0.1), m: M(0, 0.46, 0.65), color: '#b07a3c' },
+    { geo: Box(1.4, 0.8, 0.1), m: M(0, 0.46, -0.65), color: '#b07a3c' },
+    { geo: Box(0.1, 0.8, 1.4), m: M(0.65, 0.46, 0), color: '#a06d36' },
+    { geo: Box(0.1, 0.8, 1.4), m: M(-0.65, 0.46, 0), color: '#a06d36' },
+    { geo: Box(1.5, 0.08, 0.14), m: M(0, 0.86, 0.66), color: '#5a3a1e' },
+    { geo: Box(1.5, 0.08, 0.14), m: M(0, 0.86, -0.66), color: '#5a3a1e' },
+  ]);
+  function startHelipad(id, site) {
+    const info = BUILDINGS[id], c = info.helipad, cx = info.at[0], cz = info.at[1];
+    const h = { x: cx, z: cz, t: 0, w: c.w, d: c.d, state: 'build', st: 0, lamps: [], done: false, from: [site.x, site.z] };
+    h.pad = new THREE.Group();
+    const planks = [];
+    for (let i = 0; i < 7; i++) planks.push({ geo: Box(c.w, 0.28, c.d / 7 - 0.04), m: M(0, 0.14, -c.d / 2 + (i + 0.5) * c.d / 7), color: i % 2 ? '#9a6b3c' : '#a8774a' });
+    planks.push({ geo: Box(c.w + 0.2, 0.08, 0.2), m: M(0, 0.3, c.d / 2), color: '#f6fafd' });
+    h.pad.add(new THREE.Mesh(mergeGeometries(planks), vcMat));
+    const mark = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, map: canvasTexture(256, (g, n) => {
+      g.strokeStyle = '#ffffff'; g.lineWidth = 16; g.beginPath(); g.arc(n / 2, n / 2, n / 2 - 14, 0, 7); g.stroke();
+      g.fillStyle = '#ffd23a'; g.font = 'bold 170px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('H', n / 2, n / 2 + 10);
+    }) }));
+    mark.rotation.x = -Math.PI / 2; mark.position.set(-0.6, 0.29, 0); h.pad.add(mark);
+    h.pad.position.set(cx, 0, cz); h.pad.scale.set(0.01, 0.01, 0.01);
+    scene.add(h.pad);
+    for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const lamp = new THREE.Mesh(Sph(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: '#7dff6a' }));
+      lamp.position.set(cx + lx * (c.w / 2 - 0.2), 0.42, cz + lz * (c.d / 2 - 0.2)); lamp.scale.setScalar(0.01);
+      scene.add(lamp); h.lamps.push(lamp);
+    }
+    h.crateAt = [cx + 1.6, cz + 0.6];
+    h.crate = new THREE.Mesh(crateGeo, vcMat); h.crate.position.set(h.crateAt[0], 0.28, h.crateAt[1]); h.crate.scale.setScalar(0.01); scene.add(h.crate);
+    h.iceIn = new THREE.InstancedMesh(iceGeo, iceMat, 24); h.iceIn.count = 0; h.iceIn.frustumCulled = false; scene.add(h.iceIn);
+    h.heli = new THREE.Group();
+    h.body = new THREE.Mesh(heliBodyGeo, vcMat); h.heli.add(h.body);
+    h.rotor = new THREE.Mesh(rotorGeo, vcMat); h.rotor.position.y = 2.25; h.heli.add(h.rotor);
+    h.tail = new THREE.Mesh(Box(0.05, 0.9, 0.12), new THREE.MeshLambertMaterial({ color: '#2f343c' })); h.tail.position.set(0.1, 1.7, -3.1); h.heli.add(h.tail);
+    h.home = [cx - 0.6, 0.3, cz];
+    h.heli.position.set(h.home[0], 16, h.home[2]); h.heli.visible = false;
+    scene.add(h.heli);
+    h.rope = new THREE.Mesh(Cyl(0.03, 0.03, 1, 5), new THREE.MeshBasicMaterial({ color: '#3a3f48' })); h.rope.visible = false; scene.add(h.rope);
+    h.carry = new THREE.Mesh(crateGeo, vcMat); h.carry.visible = false; scene.add(h.carry);
+    h.carryIce = new THREE.InstancedMesh(iceGeo, iceMat, 24); h.carryIce.count = 0; h.carryIce.frustumCulled = false; scene.add(h.carryIce);
+    helis.push(h);
+    built[id] = { id, info, def: { ridge: 3 }, g: h.pad, box: [cx - c.w / 2, cz - c.d / 2, cx + c.w / 2, cz + c.d / 2], door: [cx, cz + c.d / 2 + 1], smoke: null, done: false, squash: 0, site: site.id, heli: h };
+    pushOut(player, PLAYER_CFG.radius);
+    shake(0.2); ring(cx, cz, 4, 0.45, '#ffffff');
+  }
+  function iceSlot(i) { const layer = Math.floor(i / 4), k = i % 4; return [(k % 2 - 0.5) * 0.52, 0.38 + layer * 0.48, (Math.floor(k / 2) - 0.5) * 0.52]; }
+  function drawCrateIce(mesh, n, x, y, z) {
+    for (let i = 0; i < n; i++) { const [ox, oy, oz] = iceSlot(i); setInst(mesh, i, x + ox, y + oy, z + oz, 1, 1, 1, (i % 3) * 0.2); }
+    mesh.count = n; mesh.instanceMatrix.needsUpdate = true;
+  }
+  // 氷ブロックが1個木箱に入った
+  function sellOne(s) {
+    money += s.sell.price; moneyGain += s.sell.price; moneyGainT = 0.45;
+    s.crate++;
+    const h = s.heli;
+    if (h) {
+      drawCrateIce(h.iceIn, Math.min(24, s.crate), h.crateAt[0], 0.28, h.crateAt[1]);
+      burstGibs(h.crateAt[0], 1.3, h.crateAt[1], 2, '#ffd23a', 2, 4);
+      burstGibs(h.crateAt[0], 1.3, h.crateAt[1], 1, '#bfe9ff', 2, 3);
+    }
+    if (!fastForwarding && sfx.give >= 1) { sfx.give--; tone(1180 + Math.min(s.crate, 20) * 30, 0.05, 'sine', 0.045, 1.3); tone(1580 + Math.min(s.crate, 20) * 30, 0.06, 'sine', 0.03, 1.2, 0.04); }
+    bumpPill('money');
+    if (s.crate >= s.sell.batch && h && h.state === 'idle') shipCrate(s, h);
+  }
+  // 木箱がいっぱい → ヘリが吊って飛んでいく。ボーナス。すぐに新しい木箱が落ちてくる
+  function shipCrate(s, h) {
+    const n = s.crate;
+    s.crate = 0;
+    h.state = 'up'; h.st = 0;
+    h.carry.visible = true; h.carryN = Math.min(24, n);
+    h.crate.scale.setScalar(0.01); h.iceIn.count = 0;
+    money += s.sell.bonus;
+    popText('🚁 出荷! ボーナス 💰+' + s.sell.bonus, h.x, h.z, '#ffe27a', 24, 5);
+    burstGibs(h.crateAt[0], 1.5, h.crateAt[1], 30, '#ffd23a', 5, 8);
+    SND.done(); shake(0.2); bumpPill('money');
+  }
+  function updateHelis(dt) {
+    for (const h of helis) {
+      h.t += dt; h.st += dt;
+      const c = Math.min(1, h.t / 0.35), padS = Math.max(0.01, backOut(c));
+      if (h.state === 'build') {
+        h.pad.scale.set(padS, Math.max(0.01, c), padS);
+        h.lamps.forEach((l, i) => { const k = (h.t - 0.4 - i * 0.08) / 0.2; l.scale.setScalar(k <= 0 ? 0.01 : Math.max(0.01, backOut(Math.min(1, k)))); });
+        const ck = (h.t - 0.75) / 0.25; h.crate.scale.setScalar(ck <= 0 ? 0.01 : Math.max(0.01, backOut(Math.min(1, ck))));
+        if (h.t >= 0.95) {
+          // ヘリが降りてくる
+          h.heli.visible = true;
+          const k = Math.min(1, (h.t - 0.95) / 1.1), e = 1 - Math.pow(1 - k, 3);
+          h.heli.position.y = lerp(16, h.home[1], e);
+          if (Math.random() < dt * 20 * k) { const a = Math.random() * Math.PI * 2; puff(h.home[0] + Math.cos(a) * 2, 0.3, h.home[2] + Math.sin(a) * 2, 1, '#ffffff', 0.9, 0.4, 3); }
+          if (k >= 1) {
+            h.state = 'idle';
+            shake(0.25); SND.boom(); SND.done();
+            ring(h.x, h.z, 5, 0.5, '#ffffff');
+            popText('🚁 ヘリポート 完成!', h.x, h.z, '#fff6b0', 22, 4.5);
+            const b = built[Object.keys(built).find(k => built[k].heli === h)];
+            b.done = true; updateBuildCount(); siteDoneCheck(b);
+          }
+        }
+      } else if (h.state === 'up') {
+        // 木箱を吊って上がっていく → 奥へ飛んでいく
+        const k = h.st;
+        h.heli.position.set(h.home[0] - Math.max(0, k - 0.8) * 9, h.home[1] + Math.min(14, k * k * 6), h.home[2] - Math.max(0, k - 0.8) * 9);
+        h.heli.rotation.x = -Math.min(0.35, Math.max(0, k - 0.6) * 0.5);
+        if (k < 0.4 && Math.random() < dt * 25) { const a = Math.random() * Math.PI * 2; puff(h.home[0] + Math.cos(a) * 2, 0.3, h.home[2] + Math.sin(a) * 2, 1, '#ffffff', 0.9, 0.4, 3); }
+        if (k > 0.6 && h.crate.scale.x < 0.5) { h.crate.scale.setScalar(1); puff(h.crateAt[0], 0.5, h.crateAt[1], 4, '#ffffff', 0.8, 0.8, 1); SND.tok(); } // 新しい木箱
+        if (k > 3.2) { h.state = 'down'; h.st = 0; h.carry.visible = false; h.carryIce.count = 0; h.rope.visible = false; }
+      } else if (h.state === 'down') {
+        const k = Math.min(1, h.st / 1.6), e = 1 - Math.pow(1 - k, 3);
+        h.heli.position.set(lerp(h.home[0] + 10, h.home[0], e), lerp(14, h.home[1], e), lerp(h.home[2] - 10, h.home[2], e));
+        h.heli.rotation.x = 0.2 * (1 - k);
+        if (k > 0.7 && Math.random() < dt * 20) { const a = Math.random() * Math.PI * 2; puff(h.home[0] + Math.cos(a) * 2, 0.3, h.home[2] + Math.sin(a) * 2, 1, '#ffffff', 0.9, 0.4, 3); }
+        if (k >= 1) {
+          h.state = 'idle'; h.heli.rotation.x = 0;
+          const s = sites.ship;
+          if (s && s.crate >= s.sell.batch) shipCrate(s, h);
+        }
+      }
+      if (h.state === 'up' && h.carry.visible) {
+        const hp = h.heli.position, cy = hp.y - 1.6;
+        h.carry.position.set(hp.x + 0.4, Math.max(0.28, cy - 0.9), hp.z);
+        h.rope.visible = h.st > 0.15;
+        h.rope.position.set(hp.x + 0.4, (hp.y + 0.6 + h.carry.position.y + 0.9) / 2, hp.z);
+        h.rope.scale.y = Math.max(0.01, hp.y + 0.6 - h.carry.position.y - 0.9);
+        drawCrateIce(h.carryIce, h.carryN, h.carry.position.x, h.carry.position.y, h.carry.position.z);
+      }
+      const fast = h.state !== 'idle' || h.t < 2.2;
+      h.rotor.rotation.y += dt * (fast ? 30 : 9);
+      h.tail.rotation.x += dt * (fast ? 40 : 12);
+      h.body.position.y = h.state === 'idle' ? Math.sin(gt * 20) * 0.01 : 0;
+      h.lamps.forEach((l, i) => l.material.color.set(Math.sin(gt * 4 + i * 1.5) > 0 ? '#7dff6a' : '#2f7a2a'));
     }
   }
 
@@ -1783,6 +1977,7 @@
     dusk: (a) => { duskTarget = a.k; },
     freeplay: () => { freeplay = true; },
     axes: (a) => setAxes(a),
+    sellpad: (a) => createSite({ id: a.id, title: a.title, icon: a.icon, at: a.at, res: a.res, need: 1e9, build: [], sell: { price: a.price, batch: a.batch, bonus: a.bonus, helipad: a.helipad } }),
     zombies: (a) => { for (const k in a) if (k in ZOMBIES) ZOMBIES[k] = a[k]; if (a.first) spawnZombies(a.first, 17); zSpawnT = ZOMBIES.interval; },
     scatter: (a) => scatter(a),
     stockpile: (a) => createSite({ id: 'stock', at: a.at, res: a.res, need: 1e9, build: [], deposit: a }),
@@ -1842,7 +2037,7 @@
     supplyT = 1;
     for (const id in sites) {
       const s = sites[id];
-      if (s.building || s.done || s.deposit) continue;
+      if (s.building || s.done || s.deposit || s.sell) continue;
       let have = s.paid + s.incoming + carried[s.res];
       for (const it of drops[s.res].items) if (it.st !== 'deliver') have++;
       for (const t of targets) if (!t.gone && t.drops[s.res] && (t.type !== 'bear')) have += t.drops[s.res];
@@ -1905,7 +2100,7 @@
   // 自動テスト用: 案内の行き先へ向かう(木や狼の手前で止まる)
   const botMem = { x: 0, z: 0, t: 0, side: 0 };
   function botInput() {
-    const g = guideTarget();
+    let g = guideTarget();
     if (!g) return { ix: 0, iz: 0 };
     let tx = g.x, tz = g.z;
     // 柵の中と外を行き来するときは、扉を通る
@@ -1916,17 +2111,24 @@
       if (pin === tin) continue;
       const gx = f.x, gz = f.z + f.H;
       if (Math.abs(player.x - gx) < 1.0 && Math.abs(player.z - gz) < 1.6) { tx = gx; tz = pin ? gz + 2.2 : gz - 2.2; }
-      else { tx = gx; tz = pin ? gz - 1.2 : gz + 1.2; }
-      const ddx = tx - player.x, ddz = tz - player.z, dd = Math.hypot(ddx, ddz) || 1;
-      return { ix: ddx / dd, iz: ddz / dd };
+      else if (pin) { tx = gx; tz = gz - 1.2; }
+      else {
+        // 外から: 入口のある辺(手前)の外側にいなければ、まず角を回りこむ
+        const rx = player.x - f.x, rz = player.z - f.z, sx = rx >= 0 ? 1 : -1, M2 = f.H + 1.7;
+        if (rz > f.H + 0.6) { tx = gx; tz = gz + 1.2; }
+        else if (Math.abs(rx) > f.H + 0.4) { tx = f.x + sx * M2; tz = f.z + M2; }
+        else { tx = f.x + sx * M2; tz = f.z - M2; }
+      }
+      g = { kind: 'door' };
+      break;
     }
-    const dx = tx - player.x, dz = tz - player.z, d = Math.hypot(dx, dz);
-    const stop = g.kind === 'target' ? axeR * 0.8 : g.kind === 'site' ? 0.3 : g.kind === 'bear' ? 6 : 0.2;
+    const dx = tx - player.x, dz = tz - player.z, d = Math.hypot(dx, dz) || 1;
+    const stop = g.kind === 'target' ? axeR * 0.8 : g.kind === 'site' ? 0.3 : g.kind === 'bear' ? 6 : g.kind === 'door' ? 0 : 0.2;
     if (d < stop) return { ix: 0, iz: 0 };
     // 建物に詰まったら、しばらく横へよける
     botMem.t += 1 / 30;
-    if (botMem.t > 0.5) { if (Math.hypot(player.x - botMem.x, player.z - botMem.z) < 0.3) botMem.side = 0.8; botMem.x = player.x; botMem.z = player.z; botMem.t = 0; }
-    if (botMem.side > 0) { botMem.side -= 1 / 30; return { ix: -dz / d * 0.9 + dx / d * 0.1, iz: dx / d * 0.9 + dz / d * 0.1 }; }
+    if (botMem.t > 0.5) { if (Math.hypot(player.x - botMem.x, player.z - botMem.z) < 0.3) { botMem.side = 0.8; botMem.sign = -(botMem.sign || 1); } botMem.x = player.x; botMem.z = player.z; botMem.t = 0; }
+    if (botMem.side > 0) { botMem.side -= 1 / 30; const k = botMem.sign || 1; return { ix: -dz / d * 0.9 * k + dx / d * 0.1, iz: dx / d * 0.9 * k + dz / d * 0.1 }; }
     return { ix: dx / d, iz: dz / d };
   }
 
@@ -2008,12 +2210,16 @@
   for (let i = 0; i < 10; i++) { const el = document.createElement('div'); el.className = 'pop'; document.body.appendChild(el); popEls.push({ el, t: 0 }); }
   let popI = 0;
   function popText(text, x, z, color = '#fff', size = 18, y = 3) { const p = popEls[popI++ % popEls.length]; p.el.textContent = text; p.el.style.color = color; p.el.style.fontSize = size + 'px'; p.t = 1.1; p.x = x; p.z = z; p.y = y; p.el.style.display = 'block'; }
-  const PILL = { wood: 'wood-pill', meat: 'meat-pill', bld: 'bld-pill', pop: 'pop-pill', kills: 'kill-pill' };
+  const PILL = { ice: 'ice-pill', money: 'money-pill', wood: 'wood-pill', meat: 'meat-pill', bld: 'bld-pill', pop: 'pop-pill', kills: 'kill-pill' };
   function bumpPill(k) { const el = $(PILL[k]); if (!el) return; el.classList.remove('hide'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
-  const shownRes = { wood: -1, meat: -1 };
+  const shownRes = { wood: -1, meat: -1, ice: -1 };
+  let shownMoney = -1;
   function updateHud(dt) {
-    for (const k of ['wood', 'meat']) if (shownRes[k] !== carried[k]) { shownRes[k] = carried[k]; $(k).textContent = carried[k]; }
+    for (const k of ['wood', 'meat', 'ice']) if (shownRes[k] !== carried[k]) { shownRes[k] = carried[k]; $(k).textContent = carried[k]; }
     if (carried.meat > 0) $('meat-pill').classList.remove('hide');
+    if (carried.ice > 0) $('ice-pill').classList.remove('hide');
+    if (shownMoney !== Math.floor(money)) { shownMoney = Math.floor(money); $('money').textContent = shownMoney.toLocaleString(); if (money > 0) $('money-pill').classList.remove('hide'); }
+    if (moneyGainT > 0) { moneyGainT -= dt; if (moneyGainT <= 0 && moneyGain > 0) { const s = sites.ship; if (s) popText('+💰' + moneyGain, s.x, s.z, '#ffe27a', 18 + Math.min(10, moneyGain / 20), 2.6); moneyGain = 0; } }
     $('pop').textContent = villagers.length;
     if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
     for (const p of popEls) {
@@ -2030,6 +2236,7 @@
       s.el.style.display = sp.behind ? 'none' : 'block';
       s.el.style.left = sp.sx + 'px'; s.el.style.top = sp.sy + 'px';
       if (s.deposit) { s.elB.textContent = '📦 倉庫 ' + RES_ICON[s.res] + ' ' + s.paid.toLocaleString(); s.elBar.style.display = 'none'; continue; }
+      if (s.sell) { s.elB.textContent = '📦 ' + s.crate + ' / ' + s.sell.batch; s.elFill.style.width = (s.crate / s.sell.batch * 100) + '%'; continue; }
       s.elB.textContent = RES_ICON[s.res] + ' ' + s.paid + ' / ' + s.need;
       s.elFill.style.width = (s.paid / s.need * 100) + '%';
       s.el.classList.toggle('full', s.paid + s.incoming >= s.need);
@@ -2042,7 +2249,7 @@
   }
   // 次の行き先: 運べる資材があれば建築エリア → いちばん近い木・狼・落ちている資材 → 熊
   function guideTarget() {
-    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.building && !s.done && carried[s.res] > 0 && s.paid + s.incoming < s.need) return { kind: 'site', x: s.x, z: s.z, site: s }; }
+    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.sell && !s.building && !s.done && carried[s.res] > 0 && s.paid + s.incoming < s.need) return { kind: 'site', x: s.x, z: s.z, site: s }; }
     // 今のシーンで倒すもの(狼など)があれば、そちらを先に
     const focus = SCN.active.filter(sc => sc.goal && sc.goal.type === 'clear').map(sc => sc.goal.tag);
     let fb = null, fd = 1e9;
@@ -2053,7 +2260,7 @@
       if (d < fd) { fd = d; fb = { kind: 'drop', x: it.x, z: it.z }; }
     }
     if (fb) return fb;
-    for (const id in sites) { const s = sites[id]; if (s.deposit && carried[s.res] > 44) return { kind: 'site', x: s.x, z: s.z, site: s }; }
+    for (const id in sites) { const s = sites[id]; if ((s.deposit && carried[s.res] > 44) || (s.sell && carried[s.res] >= 12)) return { kind: 'site', x: s.x, z: s.z, site: s }; }
     let best = null, bd = 1e9;
     for (const t of targets) {
       if (!targetable(t)) continue;
@@ -2194,7 +2401,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
@@ -2239,7 +2446,7 @@
       return { gt, elapsed, carried: { ...carried }, scenes: SCN.log.map(l => ({ ...l })), active: SCN.active.map(s => s.id), buildings: Object.keys(built).filter(k => built[k].done),
         villagers: villagers.length, targets: targets.filter(t => !t.gone).map(t => t.type + ':' + t.tag), drops: drops.wood.items.length + drops.meat.items.length,
         sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : '')])),
-        unlocked: Object.keys(unlocked), zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
+        unlocked: Object.keys(unlocked), money, crate: sites.ship ? sites.ship.crate : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
     },
     bot(on) { bot = on; },
     fastForward(sec, step = 1 / 30) { fastForwarding = true; try { for (let t = 0; t < sec; t += step) logic(step); } finally { fastForwarding = false; } return this.state; },
