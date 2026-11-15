@@ -49,6 +49,7 @@
   #over .sub { font-size: 13px; color: #555; margin: 6px 0 14px; }
   #over .row { display: flex; justify-content: space-between; gap: 18px; font-size: 16px; font-weight: 700; color: #333; margin: 4px 0; }
   #over button { margin-top: 16px; padding: 12px 28px; border: 0; border-radius: 999px; background: #3fb34f; color: #fff; font-size: 18px; font-weight: 900; }
+  #dog-label { position: fixed; left: 0; top: 0; display: none; pointer-events: none; transform: translate(-50%, -100%); padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #c0453a; font-size: 13px; font-weight: 900; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
   #error { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 60px); padding: 8px 10px; border-radius: 10px; background: rgba(180, 30, 30, .92); color: #fff; font-size: 12px; white-space: pre-wrap; display: none; pointer-events: none; }
 </style>
 </head>
@@ -71,6 +72,7 @@
   <div id="version"></div>
   <div id="debug"></div>
   <div id="error"></div>
+  <div id="dog-label">🐶 たすけて!</div>
   <div id="over"><div class="card">
     <div class="big">🧟 やられた…</div>
     <div class="sub">キャンプに入りこんだゾンビにつかまった</div>
@@ -86,7 +88,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.21-s17';
+  const GAME_VERSION = '2026.11.21-s18';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -113,11 +115,10 @@
   ];
   // ロケットランチャー: range 以内のゾンビ(いなければ木)へ every 秒ごとに発射。爆発の半径 blast
   const ROCKET = { range: 12, treeRange: 8, every: 0.2, blast: 2.6, speed: 26 };
-  const ZOMBIE_SAFE = 6; // 拠点の柵からこれ以上離れた所にだけゾンビが出る
   const CAM_YAW = Math.PI / 4;                                 // カメラは斜め45度から(四角いキャンプがひし形に見える)
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
-  const ZOMBIES = { drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
-  const ZOOM_BASE = 14;
+  const ZOMBIES = { safe: 6, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
+  const ZOOM_BASE = 12; // カメラの距離(オーナーの希望で 14 から寄せた)
   const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊', cash: '💵', coal: '⚫' };
 
   // エリア(rect = x1, z1, x2, z2)。開くまで中に入れない。edges = 雪の吹きだまりの柵を置く線
@@ -133,7 +134,10 @@
     { id: 'scene_01', title: '森の空き地で伐採', after: null,
       enter: [
         // 森いっぱいに木を置く(まん中の空き地はあける)。見える木は全部切れる
-        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25, avoid: [[-13.8, -13.8, 13.8, 13.8]], avoidCircles: [[0, 0, 15.6]] },
+        { do: 'scatter', what: 'tree', tag: 'wild', hits: 2, drops: { wood: 8 }, spacing: 2.25, avoid: [[-13.8, -13.8, 13.8, 13.8]], avoidCircles: [[0, 0, 15.6], [13, -17, 1.5]] },
+        // おまけ: 森の奥でワンコがふるえている。ゾンビから守って、キャンプで保護すると…
+        { do: 'dog', at: [13, -17], delay: 4 },
+        { do: 'toast', text: '🐶 森の奥でワンコが鳴いている…! ゾンビから守ってあげて', delay: 5.5 },
         { do: 'zombies', on: true, first: 9, delay: 0.5 },
         { do: 'toast', text: '🧟 森の奥からゾンビが…! 急いでキャンプを作ろう!', delay: 1.2 },
         { do: 'axes', n: 2, radius: 1.6, speed: 1.6, quiet: true },
@@ -173,7 +177,7 @@
           ] },
         { do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'], camera: [3, -16], delay: 2.2,
           onBuilt: [
-            { do: 'power', from: 'plant', lamps: [[3.2, -10.2], [10.0, -5.6], [9.6, 5.0], [2.6, 9.6], [-2.6, 9.6], [-9.6, 9.6], [-9.6, -0.6], [-9.6, -9.6]] },
+            { do: 'power', from: 'plant', lamps: [[3.2, -10.2], [10.0, -5.6], [9.6, 5.0], [2.6, 9.6], [-2.6, 9.6], [-6.4, 9.6], [-9.6, 4.6], [-9.6, -9.6]] },
             { do: 'toast', text: '⚡ ゾンビ発電所が動き出した! 拠点に電気が通った' },
           ] },
         { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 2.4 },
@@ -181,6 +185,13 @@
         { do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 80, build: ['gatling'], requires: ['plant', 'tower'],
           announce: '🔫 電気が来た! 見張り台にガトリングを積めるようになった',
           onBuilt: [{ do: 'toast', text: '🔫 ガトリング設置! 柵に来たゾンビをなぎ倒す' }] },
+        // 電動木こりマシン(発電所ができてから)。勝手に森へ行って木を切り、木材置き場まで運ぶ
+        { do: 'site', id: 'lumber', icon: '🤖', at: [-8.3, 8.3], res: 'cash', need: 200, build: ['lumber'], requires: ['plant'],
+          announce: '🤖 電気で動く「木こりマシン」を作れるようになった!',
+          onBuilt: [{ do: 'toast', text: '🤖 木こりマシン出動! 木を切って木材置き場へ運ぶ' }] },
+        // 拠点拡大(木こりマシンとバキューマーで全自動になってから)。大金
+        { do: 'site', id: 'expand', icon: '🏗️', at: [3.2, 5.4], res: 'cash', need: 600, build: [], special: 'expand', requires: ['lumber', 'vacuum'],
+          announce: '🏗️ 全自動になった! 拠点を広げられる(💰6,000)' },
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧊', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
         { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💵', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 30, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
@@ -654,6 +665,16 @@
     parts.push(S(0.14, -0.6, 1.4, 0.77, '#5dff7a', 'deco'), S(0.14, -0.2, 1.4, 0.77, '#ff6a4a', 'deco'), B(0.8, 0.4, 0.04, 0.45, 1.1, 0.77, '#2a2f3a', 'deco'));
     return { parts, size: [2.4, 2.0], ridge: 3.4 };
   }
+  // 木こりマシンの車庫(コンクリートの床・充電スタンド・黄色と黒の屋根)
+  function garageDef() {
+    const parts = [];
+    parts.push(B(2.8, 0.2, 2.8, 0, 0.1, 0, '#9aa2ab', 'base'));
+    for (const [x, z] of [[-1.25, -1.25], [1.25, -1.25], [-1.25, 1.25], [1.25, 1.25]]) parts.push(B(0.2, 2.6, 0.2, x, 1.4, z, '#5a606a', 'pillar'));
+    parts.push(B(2.8, 2.0, 0.15, 0, 1.2, -1.3, '#8d97a3', 'wall'));
+    parts.push(B(3.0, 0.25, 3.0, 0, 2.8, 0, '#ffd23a', 'roof'), B(3.02, 0.1, 3.02, 0, 2.66, 0, '#2a2f3a', 'roof'), B(2.8, 0.1, 2.8, 0, 2.98, 0, '#f6fafd', 'roof'));
+    parts.push(B(0.35, 1.2, 0.3, -1.0, 0.8, -1.0, '#3f7d5a', 'deco'), S(0.12, -1.0, 1.25, -0.82, '#7dff6a', 'deco'));
+    return { parts, size: [2.8, 2.8], ridge: 3.2 };
+  }
   function towerDef() {
     const parts = [], wood = '#7a4d24', plank = '#a8774a';
     for (const [x, z] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) {
@@ -688,6 +709,8 @@
       plant: { every: 3, perWorker: 5, bonus: 15, lure: 0.7, intake: [9.9, 0], pylon: [7.6, 7.4, -13.7] } },
     // ガトリング: 見張り台の屋根の上に積む(電気で動く)
     gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.08, y: 7.55 } },
+    // 電動木こりマシンの車庫。マシンは森へ行って木を切り、積んで、木材置き場へ運ぶ
+    lumber: { name: '木こりマシン', at: [-8.3, 8.3], rot: 0, def: garageDef, lumber: { speed: 6.5, cap: 36, saw: 0.2, collectR: 6 } },
     // バキューマー: 地面に落ちている氷を every 秒に1個吸いこみ、コンベアで氷置き場へ
     vacuum: { name: 'バキューマー', at: [8.3, 3.9], rot: 0, def: vacuumDef, vacuum: { every: 0.07, range: 40, belt: 1.1 } },
     hut: { name: '小屋', at: [-6.5, -7.6], rot: 0, def: () => gabled({ W: 2.6, D: 2.2, H: 1.7, roof: '#8a4a3a', chimney: [0.7, -0.5] }) },
@@ -1455,7 +1478,7 @@
     s.tex = new THREE.CanvasTexture(s.cv); s.tex.colorSpace = THREE.SRGBColorSpace;
     s.pad = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
     s.iconCh = a.icon || ''; s.padKey = '';
-    s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null; s.onBuilt = a.onBuilt || null;
+    s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null; s.onBuilt = a.onBuilt || null; s.special = a.special || null;
     if (a.grid) {
       // 置き場: 横の台の上に、決まった並びで積み上がる
       // 山は床の奥側、手前の角に置き場のアイコンと数を描く
@@ -1582,6 +1605,7 @@
           }
         } else { s.gap = DELIVER.gap; s.dT = 0; }
         if (s.upgrade) { if (s.paid >= s.need && s.incoming === 0) applyUpgrade(s); }
+        else if (s.special) { if (s.paid >= s.need && s.incoming === 0) { s.done = true; scene.remove(s.pad); safe('special', () => SPECIAL[s.special](s)); } }
         else if (s.paid >= s.need) startBuilding(s);
       }
       const sc = backOut(s.appear) * (1 + s.bump * 0.06) * (s.building ? Math.max(0.01, 1 - (gt - s.buildAt) * 3) : 1);
@@ -1719,7 +1743,7 @@
     // 扉: キャラクターが近づくと自動で開き、離れると閉じる
     for (const f of fences) {
       if (!f.gateLanded) continue;
-      const gx = f.x, gz = f.z + f.H, near = Math.hypot(player.x - gx, player.z - gz) < 3.4;
+      const gx = f.x, gz = f.z + f.H, near = Math.hypot(player.x - gx, player.z - gz) < 3.4 || lumbers.some(L => Math.hypot(L.x - gx, L.z - gz) < 3.4) || (dog && dog.st === 'follow' && Math.hypot(dog.x - gx, dog.z - gz) < 2.6);
       const was = f.doorOpen > 0.5;
       f.doorOpen += ((near ? 1 : 0) - f.doorOpen) * Math.min(1, dt * 7);
       if ((f.doorOpen > 0.5) !== was) { if (!fastForwarding) { noise(0.18, 0.06, 900); tone(near ? 240 : 180, 0.16, 'triangle', 0.04, near ? 1.4 : 0.7); } }
@@ -1805,17 +1829,17 @@
   const Z_TINTS = ['#ffffff', '#e8ffe0', '#ffe8e0', '#e0ecff', '#fff6d8'].map(c => new THREE.Color(c));
   // ゾンビは拠点の中心から離れた森の中(奥側)に出る。拠点の柵から ZOMBIE_SAFE 以内には出ない
   function spawnZombies(n, dist) {
-    const H = BUILDINGS.fence.fence.H, [ox, oz] = BUILDINGS.fence.at;
+    const C = campInfo(), H = C.H, ox = C.x, oz = C.z;
     let cx = 0, cz = 0;
     for (let k = 0; k < 12; k++) {
       const a = ZOMBIES.from + (Math.random() - 0.5) * ZOMBIES.spread;
       const d = dist || lerp(ZOMBIES.dist[0], ZOMBIES.dist[1], Math.random());
       cx = clamp(ox + Math.cos(a) * d, WORLD.x1 + 2, WORLD.x2 - 2); cz = clamp(oz + Math.sin(a) * d, WORLD.z1 + 2, WORLD.z2 - 2);
-      if (Math.max(Math.abs(cx - ox), Math.abs(cz - oz)) > H + ZOMBIE_SAFE + 2.5) break;
+      if (Math.max(Math.abs(cx - ox), Math.abs(cz - oz)) > H + ZOMBIES.safe + 2.5) break;
     }
     for (let i = 0; i < n && zs.length < ZOMBIES.max; i++) {
       const x = cx + (Math.random() - 0.5) * 5, z = cz + (Math.random() - 0.5) * 5;
-      if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIE_SAFE) continue;
+      if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIES.safe) continue;
       zs.push({ x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
   }
@@ -1842,10 +1866,17 @@
       zb.appear = Math.min(1, zb.appear + dt * 2);
       zb.hit = Math.max(0, zb.hit - dt);
       let dx = player.x - zb.x, dz = player.z - zb.z, d = Math.hypot(dx, dz) || 1;
-      const lureTo = plants.length ? plantTarget(zb) : null;
+      const pd = d;
+      // ワンコが近くにいれば、ワンコを襲いに行く
+      let onDog = false;
+      if (dog && (dog.st === 'lost' || dog.st === 'follow')) {
+        const ddx = dog.x - zb.x, ddz = dog.z - zb.z, dd = Math.hypot(ddx, ddz) || 1;
+        if (dd < 6.5 && dd < d) { dx = ddx; dz = ddz; d = dd; onDog = true; if (dd < 0.75 && zb.appear > 0.5) dogBite(dt); }
+      }
+      const lureTo = plants.length && !onDog ? plantTarget(zb) : null;
       if (lureTo) { dx = lureTo[0] - zb.x; dz = lureTo[1] - zb.z; d = Math.hypot(dx, dz) || 1; if (plantCapture(zb)) continue; }
       let vx = 0, vz = 0;
-      if (zb.appear > 0 && (d > 0.95 || lureTo)) { vx = dx / d * zb.speed; vz = dz / d * zb.speed; }
+      if (zb.appear > 0 && (d > (onDog ? 0.55 : 0.95) || lureTo)) { vx = dx / d * zb.speed; vz = dz / d * zb.speed; }
       if (zb.kx) { vx += zb.kx; vz += zb.kz; zb.kx *= 0.85; zb.kz *= 0.85; if (Math.abs(zb.kx) + Math.abs(zb.kz) < 0.2) zb.kx = zb.kz = 0; }
       // 群れでおしくらまんじゅう
       for (const o of zs) {
@@ -1860,7 +1891,7 @@
       // 発電所の建物には入れない(吸い込み口からだけ)
       if (built.plant && built.plant.done) { const [x1, z1, x2, z2] = built.plant.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 + 0.6 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, z2 - zb.z]; const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else zb.z = z2; } }
       zb.face = Math.atan2(dx, dz);
-      if (!godMode && !gameOver && zb.appear > 0.5 && d < 0.95 && insideCamp(player.x, player.z) && insideCamp(zb.x, zb.z)) showGameOver();
+      if (!godMode && !gameOver && !giant && zb.appear > 0.5 && pd < 0.95 && insideCamp(player.x, player.z) && insideCamp(zb.x, zb.z)) showGameOver();
       if (zb.appear <= 0) { setInst(zombieMesh, n, zb.x, -5, zb.z, 0.001, 0.001, 0.001); zombieMesh.setColorAt(n++, zb.tint); continue; }
       const s = Math.max(0.01, backOut(zb.appear)) * (zb.hit > 0 ? 1.15 : 1);
       const w = Math.sin(gt * 8 + zb.ph);
@@ -2408,8 +2439,378 @@
     }
     if (!instant && b.info.plant) startPlant(b);
     if (!instant && b.info.vacuum) startVacuum(b);
+    if (!instant && b.info.lumber) startLumber(b);
     siteDoneCheck(b);
   }
+  // ---- 電動木こりマシン: 車庫から森へ行き、木を切って、薪を背中に積み、木材置き場へ運ぶ ----
+  const lumbers = [];
+  function startLumber(b) {
+    const c = b.info.lumber, [gx, gz] = b.info.at;
+    const g = new THREE.Group(); scene.add(g);
+    g.add(new THREE.Mesh(mergeGeometries([
+      { geo: Box(1.3, 0.35, 1.7), m: M(0, 0.35, 0), color: '#2f343c' },
+      { geo: Box(0.3, 0.42, 1.8), m: M(-0.68, 0.3, 0), color: '#1f2228' }, { geo: Box(0.3, 0.42, 1.8), m: M(0.68, 0.3, 0), color: '#1f2228' },
+      { geo: Box(1.2, 0.55, 1.0), m: M(0, 0.8, 0.3), color: '#ffd23a' },
+      { geo: Box(0.9, 0.45, 0.6), m: M(0, 1.3, 0.45), color: '#ffd23a' },
+      { geo: Box(0.7, 0.25, 0.05), m: M(0, 1.35, 0.76), color: '#5dc8ff' },
+      { geo: Box(1.2, 0.1, 0.9), m: M(0, 0.62, -0.5), color: '#5a606a' },
+      { geo: Box(0.08, 0.9, 0.08), m: M(-0.55, 1.05, -0.9), color: '#5a606a' }, { geo: Box(0.08, 0.9, 0.08), m: M(0.55, 1.05, -0.9), color: '#5a606a' },
+      { geo: Box(0.12, 0.12, 0.8), m: M(0.45, 0.9, 1.1), color: '#5a606a' },
+      { geo: Cyl(0.05, 0.05, 0.5, 6), m: M(-0.4, 1.75, 0.3), color: '#2a2f3a' }, { geo: Sph(0.1, 6, 5), m: M(-0.4, 2.02, 0.3), color: '#ff6a4a' },
+    ]), vcMat));
+    const blade = new THREE.Mesh(mergeGeometries([
+      { geo: Cyl(0.5, 0.5, 0.05, 16), m: M(0, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#dfe6ec' },
+      ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => ({ geo: Box(0.06, 0.14, 0.14), m: M(0, Math.cos(i * Math.PI / 4) * 0.52, Math.sin(i * Math.PI / 4) * 0.52, 1, 1, 1, i * Math.PI / 4, 0, 0), color: '#ffffff' })),
+      { geo: Cyl(0.12, 0.12, 0.1, 8), m: M(0, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#c0453a' },
+    ]), vcMat);
+    blade.position.set(0.45, 0.95, 1.55); g.add(blade);
+    const stack = new THREE.InstancedMesh(woodGeo, vcMat, c.cap); stack.count = 0; stack.frustumCulled = false; scene.add(stack);
+    const L = { b, c, g, blade, stack, x: gx, z: gz, home: [gx, gz], face: 0, st: 'idle', t: 0, load: 0, flying: 0, tree: null, sawT: 0, mem: { x: gx, z: gz, t: 0, side: 0, sign: 1 }, total: 0 };
+    g.position.set(gx, 0, gz);
+    lumbers.push(L);
+    popText('🤖 木こりマシン 出動!', gx, gz, '#ffe066', 20, 3.5);
+  }
+  function lumberMove(L, tx, tz, dt, stop) {
+    const [wx, wz] = routeTo(L, tx, tz);
+    const dx = wx - L.x, dz = wz - L.z, d = Math.hypot(dx, dz);
+    if (d < stop && wx === tx && wz === tz) return true;
+    let vx = dx / (d || 1), vz = dz / (d || 1);
+    // 詰まったら横へよける
+    L.mem.t += dt;
+    if (L.mem.t > 0.6) { if (Math.hypot(L.x - L.mem.x, L.z - L.mem.z) < 0.25) { L.mem.side = 0.7; L.mem.sign = -L.mem.sign; } L.mem.x = L.x; L.mem.z = L.z; L.mem.t = 0; }
+    if (L.mem.side > 0) { L.mem.side -= dt; const k = L.mem.sign; const ox = vx; vx = -vz * 0.9 * k + vx * 0.2; vz = ox * 0.9 * k + vz * 0.2; }
+    const sp = L.c.speed * Math.min(1, 0.4 + d * 0.5);
+    L.x += vx * sp * dt; L.z += vz * sp * dt;
+    for (const f of fences) { for (const w of f.walls) segPush(L, w, 0.8); if (f.gateLanded && f.doorOpen < 0.7) segPush(L, f.door, 0.8); }
+    L.x = clamp(L.x, WORLD.x1 + 1, WORLD.x2 - 1); L.z = clamp(L.z, WORLD.z1 + 1, WORLD.z2 - 1);
+    const want = Math.atan2(vx, vz); let df = want - L.face; df = Math.atan2(Math.sin(df), Math.cos(df)); L.face += df * Math.min(1, dt * 8);
+    return false;
+  }
+  function lumberTree(L) {
+    let best = null, bd = 1e9;
+    for (const t of targets) {
+      if (t.type !== 'tree' || !targetable(t) || insideCamp(t.x, t.z, 1) || (t.claimed && t.claimed !== L)) continue;
+      if (built.plant && built.plant.box) { const [x1, z1, x2, z2] = built.plant.box; if (t.x > x1 - 1 && t.x < x2 + 1 && t.z > z1 - 1 && t.z < z2 + 1) continue; }
+      const d = Math.hypot(t.x - L.x, t.z - L.z);
+      if (d < bd) { bd = d; best = t; }
+    }
+    if (best) best.claimed = L;
+    return best;
+  }
+  function lumberHit(L, t) {
+    t.hp--; t.flash = 0.08; t.wob = 1;
+    const dx = t.x - L.x, dz = t.z - L.z, d = Math.hypot(dx, dz) || 1;
+    t.axX = dz / d; t.axZ = -dx / d;
+    burstGibs(lerp(t.x, L.x, 0.4), 0.9, lerp(t.z, L.z, 0.4), 8, '#e0aa62', 4, 4);
+    if (!fastForwarding && sfx.chop >= 1) { sfx.chop--; noise(0.08, 0.12, 3200); tone(620, 0.08, 'sawtooth', 0.025, 1.2); }
+    if (t.hp <= 0) fellTree(t, dx / d, dz / d);
+  }
+  function updateLumbers(dt) {
+    const wood = sites.woodpad;
+    for (const L of lumbers) {
+      L.t += dt;
+      const room = L.load + L.flying < L.c.cap;
+      if (L.st === 'idle') {
+        if (L.t > 1) { L.tree = lumberTree(L); if (L.tree) { L.st = 'go'; L.t = 0; } else L.t = 0; }
+        lumberMove(L, L.home[0], L.home[1], dt, 0.3);
+      } else if (L.st === 'go') {
+        const t = L.tree;
+        if (!t || !targetable(t)) { L.tree = lumberTree(L); if (!L.tree) L.st = L.load ? 'return' : 'idle'; continue; }
+        if (lumberMove(L, t.x, t.z, dt, 1.5)) { L.st = 'saw'; L.sawT = 0; }
+      } else if (L.st === 'saw') {
+        const t = L.tree;
+        L.face = Math.atan2(t.x - L.x, t.z - L.z);
+        L.sawT -= dt;
+        if (L.sawT <= 0 && !t.dead) { L.sawT = L.c.saw; lumberHit(L, t); }
+        if (t.dead || t.gone) { L.st = 'gather'; L.t = 0; L.idleT = 0; }
+      } else if (L.st === 'gather') {
+        // 倒した木から散らばった薪を、背中のラックへ吸い寄せる
+        let any = false;
+        for (const it of drops.wood.items) {
+          if (!room || L.load + L.flying >= L.c.cap) break;
+          if ((it.st !== 'ground' && it.st !== 'burst') || Math.hypot(it.x - L.x, it.z - L.z) > L.c.collectR) continue;
+          any = true;
+          if (it.st !== 'ground') continue;
+          if (it.tag && dropsLeft[it.tag] > 0) dropsLeft[it.tag]--;
+          const top = 1.0 + Math.floor((L.load + L.flying) / 3) * 0.27;
+          L.flying++;
+          it.st = 'fx'; it.t = 0; it.sx = it.x; it.sy = it.y; it.sz = it.z; it.tx = L.x - Math.sin(L.face) * 0.5; it.ty = top; it.tz = L.z - Math.cos(L.face) * 0.5;
+          it.dur = 0.3 + Math.random() * 0.15; it.arc = 1.2; it.spin = 10;
+          it.cb = () => { L.flying--; L.load++; L.total++; if (!fastForwarding && sfx.pick >= 1) { sfx.pick--; tone(520 + L.load * 15, 0.04, 'triangle', 0.035, 1.3); } };
+        }
+        L.idleT = any ? 0 : L.idleT + dt;
+        if ((L.idleT > 0.6 && L.t > 1.2) || L.t > 6 || !room) {
+          if (L.flying > 0) continue;
+          if (L.load >= L.c.cap * 0.75) L.st = 'return';
+          else { L.tree = lumberTree(L); L.st = L.tree ? 'go' : (L.load ? 'return' : 'idle'); }
+        }
+      } else if (L.st === 'return') {
+        if (!wood) { L.st = 'idle'; continue; }
+        if (lumberMove(L, wood.fx, wood.fz + 1.2, dt, 1.0)) { L.st = 'unload'; L.unT = 0; }
+      } else if (L.st === 'unload') {
+        L.face = Math.atan2(wood.fx - L.x, wood.fz - L.z);
+        L.unT -= dt;
+        while (L.unT <= 0 && L.load > 0 && wood.stock + wood.incoming < wood.cap) {
+          L.unT += 0.05; L.load--;
+          wood.incoming++;
+          const q = gridPos(wood, Math.min(wood.cap - 1, wood.stock + wood.incoming - 1));
+          flyItem('wood', L.x, 1.0 + Math.floor(L.load / 3) * 0.27, L.z, q[0], q[1], q[2], 0.35, 1.4, () => { wood.incoming--; wood.stock = Math.min(wood.cap, wood.stock + 1); drawPile(wood); if (!fastForwarding && sfx.give >= 1) { sfx.give--; tone(400 + (wood.stock % 30) * 10, 0.04, 'triangle', 0.04, 1.2); } });
+        }
+        if (L.load === 0) { L.tree = lumberTree(L); L.st = L.tree ? 'go' : 'idle'; L.t = 0; }
+      }
+      // 見た目: 車体・回るのこぎり・背中の薪
+      const moving = L.st === 'go' || L.st === 'return' || L.st === 'idle';
+      L.g.position.set(L.x, moving ? Math.abs(Math.sin(gt * 18)) * 0.03 : 0, L.z);
+      L.g.rotation.y = L.face;
+      L.blade.rotation.x -= dt * (L.st === 'saw' ? 40 : 6);
+      if (L.st === 'saw' && Math.random() < dt * 20) burstGibs(L.x + Math.sin(L.face) * 1.6, 0.9, L.z + Math.cos(L.face) * 1.6, 1, '#ffe066', 2, 2);
+      const sn = Math.sin(L.face), cs = Math.cos(L.face);
+      for (let i = 0; i < L.load; i++) {
+        const layer = Math.floor(i / 3), k = i % 3 - 1;
+        const lx = layer % 2 ? 0 : k * 0.3, lz = -0.5 + (layer % 2 ? k * 0.3 : 0);
+        setInst(L.stack, i, L.x + lx * cs + lz * sn, 0.82 + layer * 0.27, L.z - lx * sn + lz * cs, 1, 1, 1, L.face + (layer % 2 ? Math.PI / 2 : 0));
+      }
+      L.stack.count = L.load; L.stack.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  // ---- 拠点拡大: 柵を大きく作り直す(ワンコを保護していないと…) ----
+  const SPECIAL = {
+    expand: (s) => { if (dog && dog.st === 'saved') expandCamp(s); else startGiant(s); },
+  };
+  function expandCamp(s) {
+    const old = fences[fences.length - 1];
+    const cx = 0, cz = 3, H = 14;
+    // 古い柵は弾け飛ぶ
+    if (old) {
+      fences.splice(fences.indexOf(old), 1);
+      old.posts.forEach((q, i) => { if (i % 3 === 0) burstGibs(q.x, 1, q.z, 3, '#a8774a', 4, 5); });
+      for (const m of [old.postMesh, old.railMesh, old.gateG, old.ground]) scene.remove(m);
+    }
+    clearArea([cx - H, cz - H, cx + H, cz + H], 1.2, [cx, cz]);
+    BUILDINGS.fence2 = { name: '大きな柵', at: [cx, cz], fence: { H, gw: 1.7, spacing: 1.3 } };
+    startFence('fence2', s);
+    ZOMBIES.safe = 3; ZOMBIES.dist = [26, 40];
+    zoomTarget = Math.max(zoomTarget, 1.85);
+    camFocus(cx, cz, 4, 0.6);
+    toast('🏗️ 拠点が広くなった!');
+    if (dog) { dog.joy = 2; popText('🐶 ワンワン!', dog.x, dog.z, '#ffe27a', 18, 2); }
+  }
+
+  // ---- ワンコ: 森の奥でふるえている。近づくとついてくる → 拠点の中に入ると保護 ----
+  let dog = null;
+  const dogGeo = mergeGeometries([
+    { geo: Box(0.36, 0.3, 0.62), m: M(0, 0.42, 0), color: '#f2d3a0' },
+    { geo: Box(0.37, 0.12, 0.3), m: M(0, 0.53, -0.08), color: '#c98a4a' },
+    { geo: Box(0.34, 0.32, 0.32), m: M(0, 0.68, 0.38), color: '#f2d3a0' },
+    { geo: Box(0.2, 0.14, 0.18), m: M(0, 0.6, 0.6), color: '#ffffff' },
+    { geo: Box(0.08, 0.07, 0.05), m: M(0, 0.65, 0.7), color: '#2a2a2a' },
+    { geo: Box(0.06, 0.06, 0.03), m: M(0.09, 0.74, 0.55), color: '#2a2a2a' }, { geo: Box(0.06, 0.06, 0.03), m: M(-0.09, 0.74, 0.55), color: '#2a2a2a' },
+    { geo: Box(0.1, 0.2, 0.08), m: M(0.17, 0.78, 0.32, 1, 1, 1, 0, 0, -0.5), color: '#c98a4a' }, { geo: Box(0.1, 0.2, 0.08), m: M(-0.17, 0.78, 0.32, 1, 1, 1, 0, 0, 0.5), color: '#c98a4a' },
+    ...[[0.12, 0.2], [-0.12, 0.2], [0.12, -0.2], [-0.12, -0.2]].map(([x, z]) => ({ geo: Box(0.09, 0.3, 0.09), m: M(x, 0.15, z), color: '#e8c48e' })),
+    { geo: Box(0.36, 0.06, 0.1), m: M(0, 0.62, 0.25), color: '#e0453a' },
+  ]);
+  const dogTailGeo = mergeGeometries([{ geo: Box(0.06, 0.06, 0.26), m: M(0, 0, -0.13), color: '#c98a4a' }]);
+  function spawnDog(a) {
+    const g = new THREE.Group(); g.add(new THREE.Mesh(dogGeo, vcMat));
+    const tail = new THREE.Mesh(dogTailGeo, vcMat); tail.position.set(0, 0.55, -0.3); tail.rotation.x = -0.7; g.add(tail);
+    scene.add(g);
+    dog = { g, tail, x: a.at[0], z: a.at[1], face: 0, st: 'lost', hp: 4, t: 0, barkT: 1, bitT: 0, wander: null, wanderT: 0, joy: 0, sp: 0 };
+    g.position.set(dog.x, 0, dog.z);
+    puff(dog.x, 0.3, dog.z, 4, '#ffffff', 0.8, 0.6, 0.8);
+  }
+  function dogBite(dt) {
+    if (!dog || dog.st === 'dead' || dog.st === 'saved') return;
+    dog.hp -= dt; dog.bitT = 0.15;
+    if (dog.yelpT === undefined || gt - dog.yelpT > 0.6) { dog.yelpT = gt; popText('キャン!', dog.x, dog.z, '#ff8080', 15, 1.4); if (!fastForwarding) tone(1300, 0.08, 'sine', 0.05, 1.6); }
+    if (dog.hp <= 0) {
+      dog.st = 'dead';
+      burstGibs(dog.x, 0.5, dog.z, 16, '#f2d3a0', 4, 5); puff(dog.x, 0.4, dog.z, 4, '#d8f5c8', 0.9, 0.8, 1);
+      scene.remove(dog.g);
+      toast('🐶 ワンコが…ゾンビに…');
+      if (!fastForwarding) tone(420, 0.6, 'sine', 0.06, 0.5);
+    }
+  }
+  function dogMoveTo(tx, tz, speed, dt) {
+    const [wx, wz] = routeTo(dog, tx, tz);
+    const dx = wx - dog.x, dz = wz - dog.z, d = Math.hypot(dx, dz);
+    const sp = Math.min(speed, d * 4);
+    dog.sp = sp;
+    if (d > 0.05) { dog.x += dx / d * sp * dt; dog.z += dz / d * sp * dt; let df = Math.atan2(dx, dz) - dog.face; df = Math.atan2(Math.sin(df), Math.cos(df)); dog.face += df * Math.min(1, dt * 10); }
+    pushOut(dog, 0.3, true);
+  }
+  function updateDog(dt) {
+    const label = $('dog-label');
+    if (!dog || dog.st === 'dead') { label.style.display = 'none'; return; }
+    dog.t += dt; dog.bitT = Math.max(0, dog.bitT - dt); dog.joy = Math.max(0, dog.joy - dt);
+    const pdist = Math.hypot(player.x - dog.x, player.z - dog.z);
+    if (dog.st === 'lost') {
+      dog.sp = 0;
+      // ときどき鳴く
+      dog.barkT -= dt;
+      if (dog.barkT <= 0) { dog.barkT = 2.2 + Math.random() * 1.5; if (!fastForwarding && pdist < 22) { tone(760, 0.07, 'square', 0.03, 1.4); tone(820, 0.07, 'square', 0.03, 1.4, 0.12); } }
+      dog.face = Math.atan2(player.x - dog.x, player.z - dog.z);
+      if (pdist < 2.4) {
+        dog.st = 'follow'; dog.joy = 1.2;
+        popText('🐶 ワン!', dog.x, dog.z, '#ffe27a', 18, 2);
+        toast('🐶 ワンコがついてきた! キャンプの中で保護しよう');
+        if (!fastForwarding) { tone(900, 0.08, 'square', 0.04, 1.3); tone(1000, 0.08, 'square', 0.04, 1.3, 0.13); }
+      }
+    } else if (dog.st === 'follow') {
+      const bx = player.x - Math.sin(player.face) * 1.3, bz = player.z - Math.cos(player.face) * 1.3;
+      if (Math.hypot(bx - dog.x, bz - dog.z) > 0.4) dogMoveTo(bx, bz, 11, dt); else dog.sp = 0;
+      if (Math.hypot(player.x - dog.x, player.z - dog.z) > 14) { dog.x = bx; dog.z = bz; }
+      if (insideCamp(dog.x, dog.z, -0.4)) {
+        dog.st = 'saved'; dog.joy = 2.5;
+        toast('🐶 ワンコを保護した!');
+        popText('💕', dog.x, dog.z, '#ff8ab0', 26, 1.8); burstGibs(dog.x, 1, dog.z, 14, '#ff8ab0', 3, 5);
+        SND.done();
+      }
+    } else if (dog.st === 'saved') {
+      // 拠点の中をのんびり歩く。近くにいると、ついてくる
+      const C = campInfo();
+      if (insideCamp(player.x, player.z) && pdist < 7 && pdist > 1.6) dogMoveTo(player.x - Math.sin(player.face) * 1.3, player.z - Math.cos(player.face) * 1.3, 7, dt);
+      else {
+        dog.wanderT -= dt;
+        if (!dog.wander || dog.wanderT <= 0) { dog.wanderT = 3 + Math.random() * 3; dog.wander = [C.x + (Math.random() - 0.5) * (C.H - 3) * 2, C.z + (Math.random() - 0.5) * (C.H - 3) * 2]; }
+        if (Math.hypot(dog.wander[0] - dog.x, dog.wander[1] - dog.z) > 0.4) dogMoveTo(dog.wander[0], dog.wander[1], 2.2, dt); else dog.sp = 0;
+      }
+    }
+    // 見た目
+    const hop = dog.joy > 0 ? Math.abs(Math.sin(dog.t * 12)) * 0.35 : dog.sp > 0.3 ? Math.abs(Math.sin(dog.t * 16)) * 0.08 : 0;
+    dog.g.position.set(dog.x + (dog.st === 'lost' ? Math.sin(dog.t * 40) * 0.02 : 0), hop, dog.z);
+    dog.g.rotation.y = dog.face;
+    dog.tail.rotation.y = Math.sin(dog.t * (dog.st === 'lost' ? 4 : 18)) * (dog.st === 'lost' ? 0.2 : 0.7);
+    dog.tail.rotation.x = dog.st === 'lost' ? 0.3 : -0.7;
+    dog.g.scale.setScalar(dog.bitT > 0 ? 1.15 : 1);
+    // 「たすけて!」の札(はぐれているあいだだけ)
+    if (dog.st === 'lost' && started) {
+      const pos = project(dog.x, 1.4, dog.z);
+      if (!pos.behind && pos.sx > 0 && pos.sx < innerWidth && pos.sy > 0 && pos.sy < innerHeight) {
+        label.style.display = 'block';
+        label.style.left = pos.sx + 'px'; label.style.top = pos.sy + 'px';
+        label.textContent = dog.hp < 4 ? '🐶 たすけて!! ❤️' + '■'.repeat(Math.max(1, Math.ceil(dog.hp))) : '🐶 たすけて!';
+      } else label.style.display = 'none';
+    } else label.style.display = 'none';
+  }
+
+  // ---- 巨大ゾンビ犬: ワンコを保護しないまま拠点を広げようとすると、森から現れて拠点を破壊する ----
+  let giant = null;
+  function startGiant(s) {
+    const g = new THREE.Group(); g.visible = false; scene.add(g);
+    const fur = '#8aa070', dark = '#5f7a52';
+    g.add(new THREE.Mesh(mergeGeometries([
+      { geo: Box(3.2, 2.6, 6), m: M(0, 4.4, 0), color: fur },
+      { geo: Box(3.25, 1.0, 2.4), m: M(0, 5.3, -1.2), color: dark },
+      { geo: Box(2.6, 0.6, 5), m: M(0, 3.1, 0), color: '#b9c9a2' },
+      { geo: Box(0.12, 1.6, 0.12), m: M(1.65, 4.4, 1.0), color: '#3a2a1a' }, { geo: Box(0.12, 0.12, 1.2), m: M(1.65, 4.6, 1.0), color: '#3a2a1a' },
+      { geo: Box(2.8, 2.6, 2.8), m: M(0, 5.9, 3.9), color: fur },
+      { geo: Box(1.7, 1.2, 1.5), m: M(0, 5.2, 5.8), color: '#b9c9a2' },
+      { geo: Box(0.7, 0.45, 0.3), m: M(0, 5.75, 6.6), color: '#1f1f1f' },
+      ...[-0.5, -0.17, 0.17, 0.5].map(x => ({ geo: Cone(0.12, 0.4, 4), m: M(x, 4.55, 6.45, 1, 1, 1, Math.PI, 0, 0), color: '#ffffff' })),
+      { geo: Box(1.6, 0.2, 1.3), m: M(0, 4.55, 5.8), color: '#7a1a1a' },
+      { geo: Box(0.8, 1.4, 0.4), m: M(1.1, 7.6, 3.5, 1, 1, 1, 0, 0, -0.4), color: dark }, { geo: Box(0.8, 1.4, 0.4), m: M(-1.1, 7.6, 3.5, 1, 1, 1, 0, 0, 0.4), color: dark },
+      { geo: Box(0.5, 0.5, 2.6), m: M(0, 5.6, -3.9, 1, 1, 1, -0.6, 0, 0), color: dark },
+      { geo: Box(2.85, 0.35, 0.6), m: M(0, 5.0, 2.6), color: '#e0453a' },
+    ]), vcMat));
+    for (const x of [0.65, -0.65]) { const e = new THREE.Mesh(Box(0.5, 0.45, 0.1), new THREE.MeshBasicMaterial({ color: '#ff2a2a' })); e.position.set(x, 6.4, 5.31); g.add(e); }
+    const legs = [];
+    for (const [x, z] of [[1.1, 2.0], [-1.1, 2.0], [1.1, -2.0], [-1.1, -2.0]]) {
+      const lg = new THREE.Group(); lg.position.set(x, 3.4, z); g.add(lg);
+      lg.add(new THREE.Mesh(mergeGeometries([{ geo: Box(0.95, 3.2, 0.95), m: M(0, -1.6, 0), color: fur }, { geo: Box(1.15, 0.5, 1.4), m: M(0, -3.15, 0.15), color: dark }]), vcMat));
+      legs.push(lg);
+    }
+    const C = campInfo();
+    giant = { g, legs, t: 0, phase: 'rumble', x: -25, z: -22, tx: C.x, tz: C.z, face: 0, step: 0, flying: [], flung: new Set(), fenceBroken: false, endT: 0, site: s };
+    giant.face = Math.atan2(giant.tx - giant.x, giant.tz - giant.z);
+    toast('…ズシン……ズシン……');
+    shake(0.3);
+  }
+  function giantFlingables() {
+    const out = [];
+    const skip = new Set([playerG, playerShadow, giant.g, marker, axeTrail, launcher]);
+    for (const f of fences) skip.add(f.ground);
+    const C = campInfo(), box = new THREE.Box3(), size = new THREE.Vector3(), ctr = new THREE.Vector3();
+    for (const c of scene.children) {
+      if (c.isInstancedMesh || c.isLight || skip.has(c) || !c.visible) continue;
+      box.setFromObject(c);
+      if (box.isEmpty()) continue;
+      box.getSize(size); box.getCenter(ctr);
+      if (Math.max(size.x, size.z) > 20) continue;
+      if (Math.abs(ctr.x - C.x) < C.H + 3 && Math.abs(ctr.z - C.z) < C.H + 3 || (built.plant && built.plant.g === c)) out.push({ o: c, x: ctr.x, z: ctr.z });
+    }
+    return out;
+  }
+  function giantFling(e, power) {
+    if (giant.flung.has(e.o)) return;
+    giant.flung.add(e.o);
+    const dx = e.x - giant.x, dz = e.z - giant.z, d = Math.hypot(dx, dz) || 1;
+    giant.flying.push({ o: e.o, vx: dx / d * power * (0.7 + Math.random() * 0.6), vy: 9 + Math.random() * 8, vz: dz / d * power * (0.7 + Math.random() * 0.6), rx: (Math.random() - 0.5) * 8, rz: (Math.random() - 0.5) * 8, t: 0 });
+    burstGibs(e.x, 1.2, e.z, 10, '#a8774a', 6, 7); puff(e.x, 0.6, e.z, 3, '#ffffff', 1.4, 1, 1.4);
+  }
+  function updateGiant(dt) {
+    if (!giant) return;
+    const G = giant;
+    G.t += dt;
+    if (G.phase === 'rumble') {
+      // 遠くから地響き
+      G.rumbleT = (G.rumbleT || 0) - dt;
+      if (G.rumbleT <= 0) { G.rumbleT = 0.85; shake(0.25 + G.t * 0.08); if (!fastForwarding) { noise(0.5, 0.25, 160); tone(45, 0.5, 'sine', 0.25, 0.6); } }
+      camFocus(-12, -10, 1, 0.7);
+      if (G.t > 1.6 && !G.warned) { G.warned = true; toast('‼️ 森の奥から、何かが来る…!'); }
+      if (G.t > 3.2) {
+        G.phase = 'walk'; G.t = 0; G.g.visible = true; G.items = giantFlingables();
+        SND.roar(); shake(0.8);
+        toast('🐕 あのときのワンコが…巨大ゾンビ犬になって帰ってきた!!');
+        popText('🐕 巨大ゾンビ犬!!', G.x, G.z, '#ff5a5a', 28, 9);
+      }
+    } else if (G.phase === 'walk') {
+      const dx = G.tx - G.x, dz = G.tz - G.z, d = Math.hypot(dx, dz);
+      const sp = 5.5;
+      G.x += dx / d * sp * dt; G.z += dz / d * sp * dt;
+      // 足音と地ゆれ
+      const ph = G.t * 5.5, st = Math.floor(ph / Math.PI);
+      if (st !== G.step) { G.step = st; shake(0.35); puff(G.x, 0.3, G.z, 4, '#ffffff', 1.6, 0.8, 2.5); if (!fastForwarding) { noise(0.35, 0.3, 200); tone(55, 0.35, 'sine', 0.28, 0.5); } }
+      G.legs.forEach((lg, i) => { lg.rotation.x = Math.sin(ph + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.5; });
+      camFocus(G.x * 0.6 + G.tx * 0.4, G.z * 0.6 + G.tz * 0.4, 1, 0.9);
+      // 通り道の木はなぎ倒す
+      for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && Math.abs(t.x - G.x) < 3.6 && Math.abs(t.z - G.z) < 3.6) { const ex = t.x - G.x, ez = t.z - G.z, e = Math.hypot(ex, ez) || 1; fellTree(t, ex / e, ez / e); }
+      // 柵を踏みつぶす
+      const C = campInfo();
+      if (!G.fenceBroken && Math.max(Math.abs(G.x - C.x), Math.abs(G.z - C.z)) < C.H + 2.5) {
+        G.fenceBroken = true;
+        for (const f of fences) { f.posts.forEach((q, i) => { if (i % 2 === 0) burstGibs(q.x, 1, q.z, 4, '#a8774a', 6, 7); }); f.postMesh.visible = false; f.railMesh.visible = false; f.walls = []; }
+        shake(1.0); SND.boom(); SND.roar();
+        toast('💥 柵がこわされた!!');
+      }
+      // ぶつかった建物を吹き飛ばす
+      for (const e of G.items) if (Math.hypot(e.x - G.x, e.z - G.z) < 5) giantFling(e, 12);
+      if (d < 1.5) {
+        // まん中でドシン! 全部吹き飛ぶ
+        G.phase = 'end'; G.t = 0;
+        shake(1.4); SND.boom(); SND.roar();
+        ring(G.x, G.z, 20, 0.9, '#ff5a5a'); ring(G.x, G.z, 12, 0.7, '#ffffff');
+        for (const e of G.items) giantFling(e, 16);
+        for (const id in sites) { const st = sites[id]; if (st.pileMesh) st.pileMesh.visible = false; if (st.decal) st.decal.visible = false; if (st.pad) st.pad.visible = false; }
+        for (const P of plants) { P.tread.visible = P.belt.visible = P.workerMesh.visible = false; }
+        for (const L of lumbers) L.stack.visible = false;
+        burstGibs(G.x, 2, G.z, 60, '#a8774a', 10, 10); burstGibs(G.x, 2, G.z, 30, '#ffd23a', 10, 10);
+      }
+      G.g.position.set(G.x, Math.abs(Math.sin(ph)) * 0.25, G.z);
+      G.g.rotation.y = G.face;
+    } else if (G.phase === 'end') {
+      G.g.position.y = Math.abs(Math.sin(G.t * 8)) * 0.6 * Math.max(0, 1 - G.t);
+      camFocus(G.x, G.z, 1, 1.1);
+      if (G.t > 2.6 && !gameOver) showGameOver('🐕 拠点が…こわされた…', 'あのときのワンコが、巨大ゾンビ犬になって帰ってきた…。ゾンビからワンコを守って、キャンプで保護しておけば…');
+    }
+    for (const f of G.flying) {
+      f.t += dt; f.vy -= 22 * dt;
+      f.o.position.x += f.vx * dt; f.o.position.y += f.vy * dt; f.o.position.z += f.vz * dt;
+      f.o.rotation.x += f.rx * dt; f.o.rotation.z += f.rz * dt;
+      if (f.t > 2.4) f.o.visible = false;
+    }
+  }
+
   // ---- バキューマー: 落ちている氷を吸いこみ、コンベアで氷置き場へ ----
   const vacuums = [];
   function startVacuum(b) {
@@ -2687,11 +3088,11 @@
         continue;
       }
       // 柵に取りついた(または中に入った)ゾンビは、反対側の柵でも最優先。いなければ、いちばん近いゾンビ
-      const F = BUILDINGS.fence, FH = F.fence.H;
+      const F = campInfo(), FH = F.H;
       let best = null, bd = 1e9;
       for (const zb of zs) {
         if (zb.dead || zb.appear < 0.6 || (zb.gat || 0) > gt) continue;
-        const m = Math.max(Math.abs(zb.x - F.at[0]), Math.abs(zb.z - F.at[1]));
+        const m = Math.max(Math.abs(zb.x - F.x), Math.abs(zb.z - F.z));
         if (m > FH + 1.7) continue;
         const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; }
       }
@@ -2919,6 +3320,7 @@
     },
     zombies: (a) => { for (const k in a) if (k in ZOMBIES) ZOMBIES[k] = a[k]; if (a.first) spawnZombies(a.first, 17); zSpawnT = ZOMBIES.interval; },
     scatter: (a) => scatter(a),
+    dog: (a) => spawnDog(a),
     stockpile: (a) => createSite({ id: 'stock', at: a.at, res: a.res, need: 1e9, build: [], deposit: a }),
   };
   function runActions(list) {
@@ -3075,6 +3477,28 @@
   //  プレイヤーの更新(移動・ぶつかり・自動で斧を振る)
   // ================================================================
   // 拠点(柵ができたあと)の中にいるか
+  // 今の拠点(いちばん新しい柵)の中心と半分の幅
+  function campInfo() {
+    const f = fences[fences.length - 1];
+    return f ? { x: f.x, z: f.z, H: f.H } : { x: BUILDINGS.fence.at[0], z: BUILDINGS.fence.at[1], H: BUILDINGS.fence.fence.H };
+  }
+  // o から (tx, tz) へ行くとき、柵の中と外を行き来するなら扉を通る中継点を返す
+  function routeTo(o, tx, tz) {
+    for (const f of fences) {
+      if (!f.gateLanded) continue;
+      const inside = (x, z) => Math.abs(x - f.x) < f.H && Math.abs(z - f.z) < f.H;
+      const pin = inside(o.x, o.z), tin = inside(tx, tz);
+      if (pin === tin) continue;
+      const gx = f.x, gz = f.z + f.H;
+      if (Math.abs(o.x - gx) < 1.0 && Math.abs(o.z - gz) < 1.6) return [gx, pin ? gz + 2.2 : gz - 2.2];
+      if (pin) return [gx, gz - 1.2];
+      const rx = o.x - f.x, rz = o.z - f.z, sx = rx >= 0 ? 1 : -1, M2 = f.H + 1.7;
+      if (rz > f.H + 0.6) return [gx, gz + 1.2];
+      if (Math.abs(rx) > f.H + 0.4) return [f.x + sx * M2, f.z + M2];
+      return [f.x + sx * M2, f.z - M2];
+    }
+    return [tx, tz];
+  }
   function insideCamp(x, z, pad = 0) {
     for (const f of fences) if (f.gateLanded && Math.abs(x - f.x) < f.H + pad && Math.abs(z - f.z) < f.H + pad) return true;
     return false;
@@ -3324,8 +3748,9 @@
   // ================================================================
   // ゲームオーバー(拠点の中に入りこんだゾンビにつかまったとき)
   let gameOver = false, godMode = false;
-  function showGameOver() {
+  function showGameOver(title, sub) {
     gameOver = true;
+    if (title) { $('over').querySelector('.big').textContent = title; $('over').querySelector('.sub').textContent = sub || ''; }
     shake(0.6); SND.boom(); if (!fastForwarding) tone(220, 0.8, 'sawtooth', 0.08, 0.4);
     $('over-kills').textContent = zKills;
     $('over-money').textContent = (carried.cash * CASH_UNIT).toLocaleString();
@@ -3348,7 +3773,8 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); });
+    safe('dog', () => { updateDog(dt); updateGiant(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
     safe('fx', () => updateFx(dt));
@@ -3402,6 +3828,11 @@
     giveCash(n) { carried.cash += n; },
     kiln() { return kilnLines.map(L => ({ items: L.items.length, fuel: L.fuel, burnT: L.burnT, from: L.from.stock, to: L.to.stock, inc: L.to.incoming, cap: L.to.cap })); },
     weapon() { return { kind: AXES.kind, n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0, rockets: rockets.length }; },
+    dog() { return dog ? { st: dog.st, hp: +dog.hp.toFixed(2), x: dog.x, z: dog.z } : null; },
+    rescueDog() { if (dog && dog.st === 'lost') { dog.x = player.x - 1; dog.z = player.z; } return this.dog(); },
+    lumber() { const L = lumbers[0]; return L ? { st: L.st, load: L.load, total: L.total, x: +L.x.toFixed(1), z: +L.z.toFixed(1) } : null; },
+    giant() { return giant ? { phase: giant.phase, x: giant.x, z: giant.z } : null; },
+    camp() { return campInfo(); },
     setWeapon(i) { const lv = WEAPON_LEVELS[i]; if (lv) setAxes(lv); return AXES.kind; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
