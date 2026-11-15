@@ -84,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.25-s27';
+  const GAME_VERSION = '2026.11.25-s28';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -199,8 +199,8 @@
           announce: '🤖 電気で動く「木こりマシン」を作れるようになった!',
           onBuilt: [{ do: 'toast', text: '🤖 木こりマシン出動! 木を切って木材置き場へ運ぶ' }] },
         // 拠点拡大(木こりマシンとバキューマーで全自動になってから)。大金
-        { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 300, build: [], special: 'expand', requires: ['lumber', 'vacuum'],
-          announce: '🏗️ 全自動になった! 拠点を広げられる' },
+        { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 300, build: [], special: 'expand', requires: ['plant'],
+          announce: '🏗️ 拠点を広げられるようになった!' },
         // 拠点を広げたら: 川の水くみ(→ 村の貯水槽)と、研究所
         { do: 'site', id: 'water', icon: '💧', at: [12.0, 10.4], res: 'cash', need: 150, build: ['pump', 'cistern'], requires: ['expand'], delays: [0.2, 1.4],
           announce: '💧 川から水をくめるようになった!',
@@ -1196,7 +1196,7 @@
   let axesOff = false;
   function updateAxes(dt) {
     // 拠点の中では斧は引っこんで止まる(中から外は攻撃できない)
-    const off = insideCamp(player.x, player.z, -0.2);
+    const off = insideCamp(player.x, player.z, -0.2) || inCorridor(player.x, player.z); // 柵つき通路の中も止める
     if (off !== axesOff) { axesOff = off; if (!fastForwarding) tone(off ? 300 : 520, 0.12, 'triangle', 0.05, off ? 0.6 : 1.6); if (!off) axeGrow = 0.6; }
     updateRockets(dt);
     if (axesOff || AXES.kind === 'rocket') {
@@ -3205,6 +3205,7 @@
   const corridorBuilds = [];
   let corridorPath = null;
   const CORRIDOR_W = 2.0;
+  function inCorridor(x, z) { return extraWalls.length > 0 && corridorPath && polyDist(corridorPath, x, z) < CORRIDOR_W + 0.1; }
   function polyDist(pts, x, z) {
     let best = 1e9;
     for (let i = 0; i < pts.length - 1; i++) {
