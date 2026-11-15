@@ -84,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.25-s26';
+  const GAME_VERSION = '2026.11.25-s27';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -212,7 +212,7 @@
           announce: '🌱 水がたまった! 畑を作れるようになった',
           onBuilt: [{ do: 'farm' }, { do: 'toast', text: '🌱 畑ができた! 水で作物が育つ' }] },
         // 研究所から拠点までの柵つき通路
-        { do: 'site', id: 'corridor', icon: '🚧', at: [10.9, -8.6], res: 'cash', need: 150, build: [], special: 'corridor', requires: ['lab'],
+        { do: 'site', id: 'corridor', icon: '🚧', at: [10.9, -8.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧟', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
@@ -1384,7 +1384,8 @@
           }
           if (it.t > MAGNET.settle && it.y <= 0.14) { it.st = 'ground'; it.t = 0; it.rx = 0; }
         } else if (it.st === 'ground') {
-          if (Math.hypot(it.x - player.x, it.z - player.z) < MAGNET.radius) {
+          // 柵の内と外をまたいでは吸い寄せない(拠点の中から外の資材は取れない)
+          if (Math.hypot(it.x - player.x, it.z - player.z) < MAGNET.radius && insideCamp(it.x, it.z) === insideCamp(player.x, player.z)) {
             it.st = 'queue';
             it.start = Math.max(gt, nextMagnet);
             nextMagnet = it.start + Math.max(MAGNET.minGap, MAGNET.gap - streak * 0.0015);
@@ -2254,8 +2255,8 @@
     const c = k % g.cols, r = Math.floor(k / g.cols);
     return [s.gx + (c - (g.cols - 1) / 2) * g.cx, g.y0 + Math.min(layer, g.layers - 1) * g.h, s.gz + (r - (g.rows - 1) / 2) * g.cz];
   }
-  // 置き場の山から直接払える(背中が空のとき)。お金はお金置き場の札束から
-  function storeFor(res) { for (const id in sites) { const s = sites[id]; if ((s.store || (s.pickup && res === 'cash')) && s.res === res) return s; } return null; }
+  // (以前は、背中が空のときに置き場の山から直接払えたが、オーナーの希望で「取りに行く」手間を残すためにやめた)
+  function storeFor(res) { return null; }
   function storeStock(res) { const s = storeFor(res); return s ? s.stock : 0; }
   // ---- 炭焼き窯のライン: 木材置き場 → コンベア → 窯 → 炭置き場 ----
   const kilnLines = [];
@@ -3252,8 +3253,16 @@
       if (i > 0) railSegs.push([posts[posts.length - n - 1], posts[posts.length - n]]);
     }
     const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    // 木の床(板を並べる)
+    const planks = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const [ax, az] = path[i], [bx, bz] = path[i + 1], L = Math.hypot(bx - ax, bz - az), n = Math.round(L / 0.48), ang = Math.atan2(bx - ax, bz - az);
+      for (let k = 0; k < n; k++) planks.push({ x: lerp(ax, bx, (k + 0.5) / n), z: lerp(az, bz, (k + 0.5) / n), ry: ang, at: 0.1 + planks.length * 0.012, c: k % 2 });
+    }
+    const plankGeo = mergeGeometries([{ geo: Box(CORRIDOR_W * 2 - 0.2, 0.08, 0.44), m: M(0, 0.06, 0), color: '#b5834f' }, { geo: Box(CORRIDOR_W * 2 - 0.2, 0.02, 0.05), m: M(0, 0.11, 0.2), color: '#7a4d24' }]);
+    const plankMesh = new THREE.InstancedMesh(plankGeo, vcMat, planks.length); plankMesh.count = 0; plankMesh.frustumCulled = false; scene.add(plankMesh);
     const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
-    corridorBuilds.push({ posts, railSegs, mesh, rails, t: 0, sides, path, s, end: 0.2 + posts.length * 0.025 + 0.4 });
+    corridorBuilds.push({ posts, railSegs, mesh, rails, planks, plankMesh, t: 0, sides, path, s, end: Math.max(0.2 + posts.length * 0.025, 0.1 + planks.length * 0.012) + 0.4 });
     // 通り道の木は倒れて、中にいたゾンビは吹き飛ぶ
     for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && polyDist(path, t.x, t.z) < CORRIDOR_W + 1.2) { later(0.1 + Math.random() * 0.6, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); }); }
     for (const zb of zs) if (!zb.dead && polyDist(path, zb.x, zb.z) < CORRIDOR_W + 0.5) later(0.2 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
@@ -3277,6 +3286,9 @@
         for (const hgt of [0.55, 1.05]) setInst(cb.rails, r++, (a.x + b.x) / 2, hgt, (a.z + b.z) / 2, Math.max(0.001, L * rk), rk > 0 ? 1 : 0.001, rk > 0 ? 1 : 0.001, Math.atan2(-ddz, ddx));
       }
       cb.rails.count = r; cb.rails.instanceMatrix.needsUpdate = true;
+      let pn = 0;
+      for (const q of cb.planks) { const k = Math.min(1, Math.max(0, (cb.t - q.at) / 0.15)); setInst(cb.plankMesh, pn++, q.x, (1 - k) * 1.5, q.z, k > 0 ? 1 : 0.001, 1, 1, q.ry + (q.c ? 0.02 : -0.02)); }
+      cb.plankMesh.count = pn; cb.plankMesh.instanceMatrix.needsUpdate = true;
       if (cb.t > cb.end) {
         cb.done = true;
         for (const side of cb.sides) for (let i = 0; i < side.length - 1; i++) extraWalls.push([side[i][0], side[i][1], side[i + 1][0], side[i + 1][1]]);
@@ -4305,6 +4317,7 @@
     teleport(x, z) { player.x = x; player.z = z; },
     god(on) { godMode = on; },
     giveCash(n) { carried.cash += n; },
+    giveWood(n) { carried.wood += n; },
     kiln() { return kilnLines.map(L => ({ items: L.items.length, fuel: L.fuel, burnT: L.burnT, from: L.from.stock, to: L.to.stock, inc: L.to.incoming, cap: L.to.cap })); },
     weapon() { return { kind: AXES.kind, n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0, rockets: rockets.length }; },
     dog() { return dog ? { st: dog.st, hp: +dog.hp.toFixed(2), x: dog.x, z: dog.z } : null; },
