@@ -86,7 +86,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.20-s15';
+  const GAME_VERSION = '2026.11.20-s16';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -159,8 +159,8 @@
       exit: [
         // 木材置き場: 木の床に乗ると、背中の薪がどんどん積まれる
         { do: 'storage', id: 'woodpad', kind: 'deposit', icon: '🪵', res: 'wood', yard: 'wood', grid: { cols: 3, rows: 7, layers: 12, cx: 0.66, cz: 0.29, h: 0.27, y0: 0.45 }, delay: 0.7 },
-        // ヘリポートができたら、お金で建てるアップデートエリアが全部開く(どれから建ててもいい)
-        { do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'cash', need: 30, build: ['tower'], delay: 1.6,
+        // ヘリポートができたら、アップデートエリアが全部開く(どれから建ててもいい。見張り台だけ薪、ほかはお金)
+        { do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'wood', need: 80, build: ['tower'], delay: 1.6,
           onBuilt: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
         { do: 'site', id: 'vacuum', icon: '🌀', at: [8.3, 3.9], res: 'cash', need: 60, build: ['vacuum'], delay: 1.8,
           onBuilt: [{ do: 'toast', text: '🌀 バキューマー完成! 散らばった氷を吸いこんで氷置き場へ' }] },
