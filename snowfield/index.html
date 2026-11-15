@@ -88,7 +88,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.22-s20';
+  const GAME_VERSION = '2026.11.22-s21';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -119,6 +119,7 @@
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
   const ZOMBIES = { safe: 6, front: 0.45, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
   const ZOOM_BASE = 12;
+  const DOG_NOTICE = 12; // ゾンビがワンコに気づく距離(キャラクターより6以上遠くなければ、ワンコを追う)
   const DOG_FLEE = 1.9; // ワンコがゾンビから逃げる速さ(ゾンビは 1.3〜2.1) // カメラの距離(オーナーの希望で 14 から寄せた)
   const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧊', cash: '💵', coal: '⚫' };
 
@@ -1879,7 +1880,7 @@
       let onDog = false;
       if (dog && (dog.st === 'lost' || dog.st === 'follow' || dog.st === 'run')) {
         const ddx = dog.x - zb.x, ddz = dog.z - zb.z, dd = Math.hypot(ddx, ddz) || 1;
-        if (dd < 6.5 && dd < d) { dx = ddx; dz = ddz; d = dd; onDog = true; if (dd < 0.75 && zb.appear > 0.5) dogBite(dt); }
+        if (dd < DOG_NOTICE && dd < d + 6) { dx = ddx; dz = ddz; d = dd; onDog = true; if (dd < 0.75 && zb.appear > 0.5) dogBite(dt); }
       }
       const lureTo = plants.length && !onDog ? plantTarget(zb) : null;
       if (lureTo) { dx = lureTo[0] - zb.x; dz = lureTo[1] - zb.z; d = Math.hypot(dx, dz) || 1; if (plantCapture(zb)) continue; }
