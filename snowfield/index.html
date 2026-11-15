@@ -48,6 +48,8 @@
   @keyframes overIn { from { opacity: 0; } }
   #over .card { text-align: center; }
   #dog-label { position: fixed; left: 0; top: 0; display: none; pointer-events: none; transform: translate(-50%, -100%); padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #c0453a; font-size: 13px; font-weight: 900; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
+  /* 上の表示はお金だけ(オーナーの希望)。ほかの数は中で数えているだけ */
+  #wood-pill, #meat-pill, #ice-pill, #bld-pill, #pop-pill, #kill-pill { display: none !important; }
   #error { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 60px); padding: 8px 10px; border-radius: 10px; background: rgba(180, 30, 30, .92); color: #fff; font-size: 12px; white-space: pre-wrap; display: none; pointer-events: none; }
 </style>
 </head>
@@ -82,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.23-s23';
+  const GAME_VERSION = '2026.11.23-s24';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
