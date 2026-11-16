@@ -106,7 +106,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s48';
+  const GAME_VERSION = '2026.12.04-s49';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -4211,10 +4211,74 @@
       if (N.t > 7.5) {
         if (N.end === 'buried') { startBuried(); return; }
         N.phase = 'end';
-        if (dog && dog.rescued && (dog.st === 'saved' || dog.st === 'follow')) { $('clear').classList.add('show'); SND.done(); } // 自分で逃げこんだだけでは助けたことにならない
+        if (dog && dog.rescued && (dog.st === 'saved' || dog.st === 'follow')) { $('clear').classList.add('show'); SND.done(); startFireworks(); } // 自分で逃げこんだだけでは助けたことにならない
         else { night.cheer = false; startGiant(null); }
       }
     }
+  }
+
+  // ---- クリアの花火: 拠点のうしろの空に、つぎつぎ打ち上がる ----
+  const FW = { on: false, t: 0, next: 0, max: 2400, shells: [], sparks: [], pts: null, pos: null, col: null };
+  function startFireworks() {
+    if (FW.on) return;
+    FW.on = true; FW.t = 0; FW.next = 0.2;
+    const tex = canvasTexture(64, (g, n) => { const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, n, n); });
+    const geo = new THREE.BufferGeometry();
+    FW.pos = new Float32Array(FW.max * 3); FW.col = new Float32Array(FW.max * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(FW.pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(FW.col, 3));
+    FW.pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.15, map: tex, vertexColors: true, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+    FW.pts.frustumCulled = false; FW.pts.renderOrder = 20; scene.add(FW.pts);
+    zoomTarget = Math.max(zoomTarget, 1.9);
+    night.kT = 0.75; lightsTarget = 1;   // 少し暗くして花火を目立たせる(窓に明かり)
+  }
+  const FW_COLORS = ['#ff5a5a', '#ffd23a', '#5affa0', '#5ac8ff', '#c87aff', '#ff9a3a', '#ffffff', '#ff7ad8'];
+  function updateFireworks(dt) {
+    if (!FW.on) return;
+    FW.t += dt; FW.next -= dt;
+    const C = campInfo();
+    if (FW.next <= 0) {
+      // 拠点のうしろ(画面の奥)から打ち上げる。ときどき3発まとめて
+      const n = Math.random() < 0.25 ? 3 : 1;
+      for (let i = 0; i < n; i++) {
+        const x = C.x + (Math.random() - 0.5) * 30, z = C.z - C.H * 0.4 - Math.random() * 10;
+        FW.shells.push({ x, y: 0.5, z, vy: 17 + Math.random() * 6, top: 8 + Math.random() * 6, c: new THREE.Color(FW_COLORS[Math.floor(Math.random() * FW_COLORS.length)]), c2: new THREE.Color(FW_COLORS[Math.floor(Math.random() * FW_COLORS.length)]) });
+      }
+      if (!fastForwarding) tone(300 + Math.random() * 200, 0.5, 'sine', 0.025, 2.4);
+      FW.next = 0.45 + Math.random() * 0.6;
+    }
+    for (let i = FW.shells.length - 1; i >= 0; i--) {
+      const sh = FW.shells[i];
+      sh.y += sh.vy * dt; sh.vy -= 6 * dt;
+      FW.sparks.push({ x: sh.x + (Math.random() - 0.5) * 0.1, y: sh.y, z: sh.z, vx: 0, vy: -1, vz: 0, life: 0.35, age: 0, c: new THREE.Color('#ffe2a0'), trail: true });
+      if (sh.y >= sh.top || sh.vy < 2) {
+        FW.shells.splice(i, 1);
+        const n = 90 + Math.floor(Math.random() * 50), sp = 9 + Math.random() * 4, ring = Math.random() < 0.3;
+        for (let k = 0; k < n; k++) {
+          const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u);
+          let vx = r * Math.cos(a), vy = u, vz = r * Math.sin(a);
+          if (ring) { vx = Math.cos(a); vy = Math.sin(a); vz = 0; }
+          const v = sp * (ring ? 1 : 0.75 + Math.random() * 0.25);
+          FW.sparks.push({ x: sh.x, y: sh.y, z: sh.z, vx: vx * v, vy: vy * v, vz: vz * v, life: 1.4 + Math.random() * 0.8, age: 0, c: k % 3 ? sh.c : sh.c2 });
+        }
+        if (!fastForwarding) { noise(0.35, 0.06, 900); tone(90, 0.4, 'sine', 0.06, 0.5); }
+      }
+    }
+    let m = 0;
+    for (let i = FW.sparks.length - 1; i >= 0; i--) {
+      const p = FW.sparks[i];
+      p.age += dt;
+      if (p.age > p.life) { FW.sparks[i] = FW.sparks[FW.sparks.length - 1]; FW.sparks.pop(); continue; }
+      const drag = Math.exp(-1.6 * dt);
+      p.vx *= drag; p.vy = p.vy * drag - 4.5 * dt; p.vz *= drag;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      if (m >= FW.max) continue;
+      const k = 1 - p.age / p.life, tw = (p.trail ? k * 0.6 : k * (0.75 + Math.random() * 0.5)) * 0.8;
+      FW.pos[m * 3] = p.x; FW.pos[m * 3 + 1] = p.y; FW.pos[m * 3 + 2] = p.z;
+      FW.col[m * 3] = p.c.r * tw; FW.col[m * 3 + 1] = p.c.g * tw; FW.col[m * 3 + 2] = p.c.b * tw;
+      m++;
+    }
+    const g = FW.pts.geometry;
+    g.setDrawRange(0, m); g.attributes.position.needsUpdate = g.attributes.color.needsUpdate = true;
   }
 
   // ---- 拠点UP4: カマクラ村の東・研究所の前の空き地に大きな広場。水くみポンプ → まん中に田んぼ ----
@@ -5530,6 +5594,7 @@
     safe('sites', () => updateSites(dt));
     safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); updateTraining(dt); updatePaddy(dt); updateArchery(dt); });
     safe('night', () => updateNight(dt));
+    safe('fireworks', () => updateFireworks(dt));
     safe('stumps', () => refreshStumps(dt));
     safe('dog', () => { updateDog(dt); updateGiant(dt); });
     safe('villagers', () => updateVillagers(dt));
@@ -5596,7 +5661,7 @@
     addVillagers(n) { const C = campInfo(); for (let i = 0; i < n; i++) humans.push({ x: C.x + (Math.random() - 0.5) * 8, z: C.z + (Math.random() - 0.5) * 8, st: 'villager', hp: 1, t: 0, face: 0, tint: HUMAN_TINTS[i % HUMAN_TINTS.length], hunger: HUMAN.hunger, starve: 0, wander: null, wanderT: 0, ph: Math.random() * 6 }); return villagerCount(); },
     town() { return { villagers: villagerCount(), jobs: town.jobs.map(j => j.label + (j.h ? (j.h.atJob ? '✓' : '…') : '×')), bread: town.bakery ? town.bakery.bread : null, max: LAB.max }; },
     igloos() { return { annex: annex.done, igloos: igloos.map(ig => ig.n + '/' + ig.pts.length + (ig.done ? '✓' : '')), max: LAB.max }; },
-    night() { return { end: night.end || endingKind(), phase: night.phase, t: +night.t.toFixed(1), win: night.win, elapsed: Math.round(elapsed), corpses: corpseN, soldiers: humans.filter(h => h.soldier).length, posts: humans.filter(h => h.post).length, unlocked: allUnlocked(), missing: missingSites() }; },
+    night() { return { end: night.end || endingKind(), phase: night.phase, t: +night.t.toFixed(1), win: night.win, elapsed: Math.round(elapsed), corpses: corpseN, soldiers: humans.filter(h => h.soldier).length, posts: humans.filter(h => h.post).length, unlocked: allUnlocked(), missing: missingSites(), fw: FW.on ? FW.sparks.length : -1 }; },
     skipTime(sec) { started = true; elapsed += sec; },
     paddy() { return paddy ? { phase: paddy.phase, grow: +paddy.grow.toFixed(2), bales: paddy.nb } : null; },
     archery() { return { deck: !!town.deck, deckJobs: town.jobs.filter(j => j.deck).map(j => j.h ? (j.h.atJob ? '✓' : '…') : '×'), bows: (town.bows || []).map(b => b.n), boost: +bowBoost().toFixed(2) }; },
