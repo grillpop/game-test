@@ -84,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.28-s32';
+  const GAME_VERSION = '2026.11.29-s33';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -1467,7 +1467,7 @@
           if (it.t > MAGNET.settle && it.y <= 0.14) { it.st = 'ground'; it.t = 0; it.rx = 0; }
         } else if (it.st === 'ground') {
           // 柵の内と外をまたいでは吸い寄せない(拠点の中から外の資材は取れない)
-          if (Math.hypot(it.x - player.x, it.z - player.z) < MAGNET.radius && insideCamp(it.x, it.z) === insideCamp(player.x, player.z)) {
+          if (Math.hypot(it.x - player.x, it.z - player.z) < MAGNET.radius && inBase(it.x, it.z) === inBase(player.x, player.z)) {
             it.st = 'queue';
             it.start = Math.max(gt, nextMagnet);
             nextMagnet = it.start + Math.max(MAGNET.minGap, MAGNET.gap - streak * 0.0015);
@@ -3458,7 +3458,7 @@
           if (Math.hypot(tx - h.x, tz - h.z) < 0.5) h.path.shift();
         } else [tx, tz] = routeTo(h, C.x + (Math.random() - 0.5) * 0.2, C.z + C.H - 4);
         sp = HUMAN.speed;
-        if (insideCamp(h.x, h.z, -0.5)) { h.st = 'villager'; h.hunger = HUMAN.hunger; popText('🏠', h.x, h.z, '#ffffff', 16, 2.2); }
+        if (insideCamp(h.x, h.z, -0.5)) { h.st = 'villager'; h.hunger = HUMAN.hunger; }
       } else if (h.st === 'villager') {
         // 拠点の中をのんびり歩く
         const C = campInfo();
@@ -3470,16 +3470,12 @@
         h.hunger -= dt;
         if (h.hunger <= 0) {
           if (town.bakery && town.bakery.bread > 0) {
-            const B0 = town.bakery; B0.bread--; drawBread(); h.hunger = HUMAN.hunger * TOWN.breadHunger; h.starve = 0;
-            flyItem('bread', B0.px, 1.0, B0.pz, h.x, 1.6, h.z, 0.5, 1.6, () => popText('😋🍞', h.x, h.z, '#ffffff', 16, 2.2));
+            const B0 = town.bakery; B0.bread--; drawBread(); h.hunger = HUMAN.hunger * TOWN.breadHunger;
+            flyItem('bread', B0.px, 1.0, B0.pz, h.x, 1.6, h.z, 0.5, 1.6);
           } else if (farm && farm.food > 0) {
-            farm.food--; drawFood(); h.hunger = HUMAN.hunger; h.starve = 0;
-            flyItem('food', farm.px, 0.8, farm.pz, h.x, 1.6, h.z, 0.5, 1.6, () => popText('😋', h.x, h.z, '#ffffff', 16, 2.2));
-          } else {
-            if (h.starve === 0) popText('💢 おなかすいた…', h.x, h.z, '#ffb0b0', 14, 2.4);
-            h.starve += dt;
-            if (h.starve > HUMAN.starve) toZombie(h, '😱 おなかを空かせた人が、ゾンビになってしまった!');
-          }
+            farm.food--; drawFood(); h.hunger = HUMAN.hunger;
+            flyItem('food', farm.px, 0.8, farm.pz, h.x, 1.6, h.z, 0.5, 1.6);
+          } else h.hunger = 4; // 食べ物がなくても困らない(オーナーの希望で、空腹でゾンビになるのはなし)
         }
       }
       if (h.st === 'gone') continue;
@@ -3496,7 +3492,7 @@
       const walk = d > 0.2 && sp > 0;
       const onTower = h.job && h.job.label === '🏹' && h.atJob;
       setInst(humanMesh, n, h.x, onTower ? 2.7 : walk ? Math.abs(Math.sin(h.t * 10 + h.ph)) * 0.08 : 0, h.z, onTower ? 0.001 : 1, onTower ? 0.001 : 1, onTower ? 0.001 : 1, h.face, 0, h.bit > 0 ? 0.2 : 0);
-      humanMesh.setColorAt(n++, h.st === 'villager' && h.starve > 0 ? _col.set('#b8d8a0') : h.tint);
+      humanMesh.setColorAt(n++, h.tint);
     }
     for (let i = humans.length - 1; i >= 0; i--) if (humans[i].st === 'gone') humans.splice(i, 1);
     humanMesh.count = n; humanMesh.instanceMatrix.needsUpdate = true;
@@ -4430,8 +4426,39 @@
       if (Math.abs(rx) > f.H + 0.4) return [f.x + sx * M2, f.z + M2];
       return [f.x + sx * M2, f.z - M2];
     }
+    const f = fences[fences.length - 1];
+    if (f && f.gateLanded && !insideCamp(o.x, o.z) && !insideCamp(tx, tz)) {
+      const B = [f.x - f.H, f.z - f.H, annex.done ? Math.max(f.x + f.H, annex.x2) : f.x + f.H, f.z + f.H], m = 1.9;
+      const inner = [B[0] - 0.7, B[1] - 0.7, B[2] + 0.7, B[3] + 0.7];
+      if (segHitsBox(o.x, o.z, tx, tz, inner)) {
+        let best = null, bd = 1e9, near = null, nd = 1e9;
+        const cs = [[B[0] - m, B[1] - m], [B[2] + m, B[1] - m], [B[2] + m, B[3] + m], [B[0] - m, B[3] + m]]; // まわる順
+        for (let i = 0; i < 4; i++) {
+          const c = cs[i], d0 = Math.hypot(c[0] - o.x, c[1] - o.z);
+          if (d0 < nd) { nd = d0; near = c; }
+          if (d0 < 1.0 || segHitsBox(o.x, o.z, c[0], c[1], inner)) continue;
+          // 角から先も拠点を突っ切るなら、となりの角を回るぶんを足す
+          let rest = Math.hypot(tx - c[0], tz - c[1]);
+          if (segHitsBox(c[0], c[1], tx, tz, inner)) rest = Math.min(...[cs[(i + 1) % 4], cs[(i + 3) % 4]].map(c2 => Math.hypot(c2[0] - c[0], c2[1] - c[1]) + Math.hypot(tx - c2[0], tz - c2[1])));
+          const d = d0 + rest;
+          if (d < bd) { bd = d; best = c; }
+        }
+        return best || near;
+      }
+    }
     return [tx, tz];
   }
+  function segHitsBox(ax, az, bx, bz, b) {
+    let t0 = 0, t1 = 1;
+    const dx = bx - ax, dz = bz - az;
+    for (const [p, q] of [[-dx, ax - b[0]], [dx, b[2] - ax], [-dz, az - b[1]], [dz, b[3] - az]]) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+    }
+    return true;
+  }
+  function inBase(x, z) { return insideCamp(x, z) || inCorridor(x, z); }
   function insideCamp(x, z, pad = 0) {
     if (inAnnex(x, z, pad)) return true;
     for (const f of fences) if (f.gateLanded && Math.abs(x - f.x) < f.H + pad && Math.abs(z - f.z) < f.H + pad) return true;
