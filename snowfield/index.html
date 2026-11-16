@@ -40,13 +40,15 @@
   .site-label.full b { background: rgba(230, 150, 20, .85); }
   #arrow { position: fixed; display: none; width: 40px; height: 40px; margin: -20px 0 0 -20px; font-size: 28px; line-height: 40px; text-align: center; color: #ffd23f; text-shadow: 0 0 3px #000; pointer-events: none; }
   #version { position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom) + 6px); color: rgba(30, 50, 70, .5); font-size: 11px; pointer-events: none; }
-  #debug { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 4px 8px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font: 11px/1.4 monospace; white-space: pre; pointer-events: none; display: none; }
+  #debug { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 38px); padding: 4px 8px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font: 11px/1.4 monospace; white-space: pre; pointer-events: none; display: none; }
   #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: #000; z-index: 10; }
   #over.show { display: flex; animation: overIn 1.6s ease-in; }
   #over .go { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(44px, 13vw, 84px); font-weight: 700; letter-spacing: .08em; color: #d11a1a; text-shadow: 0 0 18px rgba(200, 0, 0, .55); }
   #over .card button { margin-top: 42px; padding: 10px 30px; border: 1px solid #8a1414; border-radius: 4px; background: transparent; color: #d11a1a; font-size: 16px; font-weight: 700; letter-spacing: .2em; }
   @keyframes overIn { from { opacity: 0; } }
   #over .card { text-align: center; }
+  /* 一時的な10分タイマー(あとで消す) */
+  #timer { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 3px 10px; border-radius: 999px; background: rgba(20, 30, 45, .55); color: #fff; font: 700 14px/1.4 monospace; pointer-events: none; z-index: 5; }
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 2.4s ease; z-index: 9; }
   #fade.on { opacity: 1; }
   #clear { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: linear-gradient(rgba(255, 236, 190, .12), rgba(0, 0, 0, .45)); z-index: 10; }
@@ -85,6 +87,7 @@
     <div class="go">GAME OVER</div>
     <button id="over-retry" type="button">最初から</button>
   </div></div>
+  <div id="timer">⏱ 0:00 / 10:00</div>
   <div id="fade"></div>
   <div id="clear"><div class="card">
     <div class="cl">CLEAR</div>
@@ -98,7 +101,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.30-s34';
+  const GAME_VERSION = '2026.11.30-s35';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -3984,7 +3987,15 @@
       if (i % 4 === 0) { SND.done(); shake(0.15); }
     });
   }
+  // 一時的な10分タイマー(あとで消す)
+  let timerKey = '';
+  function updateTimer() {
+    const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+    const key = night.phase === 'day' ? '⏱ ' + fmt(Math.min(elapsed, NIGHT.at)) + ' / ' + fmt(NIGHT.at) : '🌙 ' + fmt(NIGHT.at) + ' / ' + fmt(NIGHT.at);
+    if (key !== timerKey) { timerKey = key; $('timer').textContent = key; }
+  }
   function updateNight(dt) {
+    updateTimer();
     const N = night;
     if (N.phase === 'day') {
       if (!started) return;
