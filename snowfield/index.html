@@ -47,6 +47,14 @@
   #over .card button { margin-top: 42px; padding: 10px 30px; border: 1px solid #8a1414; border-radius: 4px; background: transparent; color: #d11a1a; font-size: 16px; font-weight: 700; letter-spacing: .2em; }
   @keyframes overIn { from { opacity: 0; } }
   #over .card { text-align: center; }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 2.4s ease; z-index: 9; }
+  #fade.on { opacity: 1; }
+  #clear { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: linear-gradient(rgba(255, 236, 190, .12), rgba(0, 0, 0, .45)); z-index: 10; }
+  #clear.show { display: flex; animation: overIn 2.2s ease-in; }
+  #clear .card { text-align: center; }
+  #clear .cl { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(48px, 15vw, 92px); font-weight: 700; letter-spacing: .1em; color: #ffd76a; text-shadow: 0 0 22px rgba(255, 190, 60, .7), 0 2px 0 #7a4a10; }
+  #clear .sub { margin-top: 6px; color: #fff4d6; font-size: 16px; letter-spacing: .3em; text-shadow: 0 1px 4px #000; }
+  #clear button { margin-top: 40px; padding: 10px 30px; border: 1px solid #ffd76a; border-radius: 4px; background: rgba(0, 0, 0, .25); color: #ffd76a; font-size: 16px; font-weight: 700; letter-spacing: .2em; }
   #dog-label { position: fixed; left: 0; top: 0; display: none; pointer-events: none; transform: translate(-50%, -100%); padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #c0453a; font-size: 13px; font-weight: 900; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
   /* 上の表示はお金だけ(オーナーの希望)。ほかの数は中で数えているだけ */
   #wood-pill, #meat-pill, #ice-pill, #bld-pill, #pop-pill, #kill-pill { display: none !important; }
@@ -77,6 +85,12 @@
     <div class="go">GAME OVER</div>
     <button id="over-retry" type="button">最初から</button>
   </div></div>
+  <div id="fade"></div>
+  <div id="clear"><div class="card">
+    <div class="cl">CLEAR</div>
+    <div class="sub">朝が来た</div>
+    <button id="clear-retry" type="button">最初から</button>
+  </div></div>
 
 <script type="module">
   import * as THREE from '../vendor/three.module.min.js';
@@ -84,7 +98,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.29-s33';
+  const GAME_VERSION = '2026.11.30-s34';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -113,6 +127,9 @@
   const ROCKET = { range: 12, treeRange: 8, every: 0.2, blast: 2.6, speed: 26 };
   const CAM_YAW = Math.PI / 4;                                 // カメラは斜め45度から(四角いキャンプがひし形に見える)
   // ゾンビ(シナリオの 'zombies' で出し始める)。森の奥(画面の奥側)から群れで歩いてくる
+  // 10分(遊び始めてから)で大群の夜。?night=秒 で変えられる(テスト用)
+  const NIGHT = { at: +((location.search.match(/[?&]night=(\d+)/) || [0, 600])[1]), dusk: 120, fight: 45, lose: 30, breakAt: 20 };
+  const night = { phase: 'day', t: 0, k: 0, kT: 0, win: false, said: {}, cheer: false };
   const ZOMBIES = { safe: 6, front: 0.45, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
   // 川(最初から東の森の向こうに流れている)。(x0,z0)→(x1,z1) の線に幅 w
   const RIVER = { x0: 17.2, z0: -47, x1: 26, z1: 31, w: 3.6 };
@@ -235,6 +252,8 @@
         // 拠点UP 2: 通路の南の空き地(川の向こうまで)へ拠点を広げる → ゾンビの頭でカマクラ
         { do: 'site', id: 'expand2', icon: '拠点UP2', padSize: 4.0, at: [11.6, 6.0], res: 'cash', need: 500, build: [], special: 'expand2', requires: ['corridor'],
           announce: '🏗️ 通路の南まで、拠点をもっと広げられる!' },
+        { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 400, build: [], special: 'train', requires: ['expand2'],
+          announce: '🏹 通路の北の空き地に「弓の訓練所」を作れる!' },
         ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8], [27.4, 3.4], [16.8, 14.0], [27.4, 9.4]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
           requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
@@ -272,7 +291,7 @@
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   document.body.prepend(renderer.domElement);
   const scene = new THREE.Scene();
-  const SKY_DAY = new THREE.Color('#cfe2f0'), SKY_DUSK = new THREE.Color('#e9b9a8');
+  const SKY_DAY = new THREE.Color('#cfe2f0'), SKY_DUSK = new THREE.Color('#e9b9a8'), SKY_NIGHT = new THREE.Color('#141c33');
   scene.background = SKY_DAY.clone();
   scene.fog = new THREE.Fog(SKY_DAY.clone(), 42, 110);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
@@ -1983,7 +2002,7 @@
     { geo: Box(0.26, 0.07, 0.05), m: M(0, 1.33, 0.27), color: '#2a3a20' },
     { geo: Box(0.52, 0.1, 0.5), m: M(0, 1.74, 0.02), color: '#f6fafd' },
   ]);
-  const ZMAX = 160;
+  const ZMAX = 320;
   const zombieMesh = new THREE.InstancedMesh(zombieGeo, vcMat, ZMAX);
   zombieMesh.count = 0; zombieMesh.frustumCulled = false;
   scene.add(zombieMesh);
@@ -2007,8 +2026,8 @@
       if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIES.safe) continue;
       if (built.lab && built.lab.box) { const [x1, z1, x2, z2] = built.lab.box; if (x > x1 - 3 && x < x2 + 3 && z > z1 - 3 && z < z2 + 3) continue; } // 研究所と通路のまわりには出ない
       if (corridorPath && polyDist(corridorPath, x, z) < 4) continue;
-      if (annex.started && x > annex.x1 - 5 && x < annex.x2 + 5 && z > annex.z1 - 5 && z < annex.z2 + 5) continue;
-      zs.push({ x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
+      if ([annex, pocket].some(A => A.started && x > A.x1 - 5 && x < A.x2 + 5 && z > A.z1 - 5 && z < A.z2 + 5)) continue;
+      zs.push({ nt: night.phase === 'fight' ? nightGoal() : null, x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
   }
   function hitZombie(zb, ax, az) {
@@ -2018,7 +2037,8 @@
     if (zb.hp > 0) { SND.hit(); return; }
     // ポンッと弾けて倒れる
     zb.dead = true; zKills++;
-    for (const k in ZOMBIES.drop) for (let i = 0; i < ZOMBIES.drop[k]; i++) spawnDrop(k, zb.x, 0.8, zb.z, 'zombie', i, ZOMBIES.drop[k]);
+    if (night.phase !== 'day') addCorpse(zb);
+    else for (const k in ZOMBIES.drop) for (let i = 0; i < ZOMBIES.drop[k]; i++) spawnDrop(k, zb.x, 0.8, zb.z, 'zombie', i, ZOMBIES.drop[k]);
     burstGibs(zb.x, 1.0, zb.z, 10, '#86e06a', 5, 5);
     burstGibs(zb.x, 1.2, zb.z, 4, '#f6fafd', 3, 4);
     puff(zb.x, 0.6, zb.z, 2, '#d8f5c8', 0.8, 0.9, 1);
@@ -2049,6 +2069,8 @@
         const hd = Math.hypot(hx, hz) || 1;
         if (hd < HUMAN.notice && hd < d + 6) { dx = hx; dz = hz; d = hd; onDog = true; if (hd < 0.75 && zb.appear > 0.5) humanBite(h, dt); }
       }
+      // 大群の夜: 拠点のまん中をめざす(外にいるキャラクターが近ければ、そっちへ)
+      if (zb.nt && !onDog && !(pd < 7 && !insideCamp(player.x, player.z))) { dx = zb.nt[0] - zb.x; dz = zb.nt[1] - zb.z; d = Math.hypot(dx, dz) || 1; onDog = true; }
       // ゾンビ寄せタワーがオンのあいだは、みんなタワーへ
       if (trap && trap.st === 'lure' && zb.appear > 0) {
         const a = zb.ph * 1.7, r = 2.0 + (zb.ph % 1) * 2.4, tx = trap.x + Math.cos(a) * r, tz = trap.z + Math.sin(a) * r;
@@ -2074,7 +2096,6 @@
       for (const w of extraWalls) segPush(zb, w, 0.55);
       if (built.plant && built.plant.done) { const [x1, z1, x2, z2] = built.plant.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 + 0.6 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, z2 - zb.z]; const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else zb.z = z2; } }
       zb.face = Math.atan2(dx, dz);
-      if (!godMode && !gameOver && !giant && zb.appear > 0.5 && pd < 0.95 && insideCamp(player.x, player.z) && insideCamp(zb.x, zb.z)) showGameOver();
       if (zb.appear <= 0) { setInst(zombieMesh, n, zb.x, -5, zb.z, 0.001, 0.001, 0.001); zombieMesh.setColorAt(n++, zb.tint); continue; }
       const s = Math.max(0.01, backOut(zb.appear)) * (zb.hit > 0 ? 1.15 : 1);
       const w = Math.sin(gt * 8 + zb.ph);
@@ -2772,10 +2793,11 @@
 
   // ---- 拠点拡大: 柵を大きく作り直す(ワンコを保護していないと…) ----
   const SPECIAL = {
-    expand: (s) => { if (dog && dog.st === 'dead') startGiant(s); else expandCamp(s); }, // 巨大ゾンビ犬はワンコが食べられたときだけ
+    expand: (s) => expandCamp(s), // 巨大ゾンビ犬は途中では来ない(大群の夜のあと、ワンコを助けていなかったら)
     corridor: (s) => buildCorridor(s),
     expand2: (s) => expandCamp2(s),
     igloo: (s) => startIgloo(s),
+    train: (s) => buildTraining(s),
   };
   function expandCamp(s) {
     const old = fences[fences.length - 1];
@@ -3201,7 +3223,8 @@
       if (j.h && j.h.st !== 'villager') j.h = null;
       if (!j.h) {
         let best = null, bd = 1e9;
-        for (const h of humans) { if (h.st !== 'villager' || h.job) continue; const d = Math.hypot(h.x - j.spot[0], h.z - j.spot[1]); if (d < bd) { bd = d; best = h; } }
+        if (night.phase !== 'day' && j.label !== '🏹') continue;
+        for (const h of humans) { if (h.st !== 'villager' || h.job || h.soldier) continue; const d = Math.hypot(h.x - j.spot[0], h.z - j.spot[1]); if (d < bd) { bd = d; best = h; } }
         if (best) { j.h = best; best.job = j; popText(j.label, best.x, best.z, '#ffffff', 14, 2.2); }
       }
     }
@@ -3466,6 +3489,15 @@
         if (!h.wander || h.wanderT <= 0) { h.wanderT = 3 + Math.random() * 4; h.wander = [C.x + (Math.random() - 0.5) * (C.H - 2) * 2, C.z + (Math.random() - 0.5) * (C.H - 2) * 2]; }
         [tx, tz] = h.wander; sp = 1.5;
         if (h.job) { [tx, tz] = h.job.spot; sp = 2.6; h.atJob = Math.hypot(tx - h.x, tz - h.z) < 0.6; }
+        if (h.soldier) {
+          if (h.path && h.path.length) {
+            // 訓練所へ(通路を通って)
+            [tx, tz] = h.path[0]; sp = 3.2;
+            if (Math.hypot(tx - h.x, tz - h.z) < 0.6) { h.path.shift(); if (!h.path.length) { h.tint = SOLDIER_TINT.clone(); popText('🏹 兵士になった!', h.x, h.z, '#ffe27a', 15, 2.4); } }
+          } else if (h.slot) { [tx, tz] = h.slot; sp = 2.4; }
+          else { h.pw = (h.pw || 0) - dt; if (!h.pwt || h.pw <= 0) { h.pw = 3 + Math.random() * 3; h.pwt = [lerp(pocket.x1 + 1.5, pocket.x2 - 1.5, Math.random()), lerp(-19, pocket.z2 - 1.5, Math.random())]; } [tx, tz] = h.pwt; sp = 1.5; }
+        }
+        if (h.post && !(h.path && h.path.length)) { [tx, tz] = h.post; sp = 3.6; }
         // おなかが空く。食べ物があれば食べる。なければ、しばらくしてゾンビになる
         h.hunger -= dt;
         if (h.hunger <= 0) {
@@ -3491,7 +3523,7 @@
       pushOut(h, 0.32, true);
       const walk = d > 0.2 && sp > 0;
       const onTower = h.job && h.job.label === '🏹' && h.atJob;
-      setInst(humanMesh, n, h.x, onTower ? 2.7 : walk ? Math.abs(Math.sin(h.t * 10 + h.ph)) * 0.08 : 0, h.z, onTower ? 0.001 : 1, onTower ? 0.001 : 1, onTower ? 0.001 : 1, h.face, 0, h.bit > 0 ? 0.2 : 0);
+      setInst(humanMesh, n, h.x, onTower ? 2.7 : night.cheer ? Math.abs(Math.sin(gt * 7 + h.ph * 3)) * 0.55 : walk ? Math.abs(Math.sin(h.t * 10 + h.ph)) * 0.08 : 0, h.z, onTower ? 0.001 : 1, onTower ? 0.001 : 1, onTower ? 0.001 : 1, h.face, 0, h.bit > 0 ? 0.2 : 0);
       humanMesh.setColorAt(n++, h.tint);
     }
     for (let i = humans.length - 1; i >= 0; i--) if (humans[i].st === 'gone') humans.splice(i, 1);
@@ -3602,7 +3634,9 @@
 
   // ---- 拠点UP 2: 通路の南の空き地(川の向こうまで)を拠点にする。川には木の橋 ----
   const annex = { x1: 14, z1: -5.2, x2: 29.5, z2: 17, started: false, done: false };
-  function inAnnex(x, z, pad = 0) { return annex.done && x > annex.x1 - pad && x < annex.x2 + pad && z > annex.z1 - pad && z < annex.z2 + pad; }
+  const pocket = { x1: 15.5, z1: -24, x2: 28, z2: -9.2, started: false, done: false }; // 弓の訓練所(通路の北)
+  function inRect(A, x, z, pad = 0) { return A.done && x > A.x1 - pad && x < A.x2 + pad && z > A.z1 - pad && z < A.z2 + pad; }
+  function inAnnex(x, z, pad = 0) { return inRect(annex, x, z, pad) || inRect(pocket, x, z, pad); }
   function expandCamp2(s) {
     const f = fences[fences.length - 1]; if (!f) return;
     const A = annex, ex = A.x1, cx = (A.x1 + A.x2) / 2, cz = (A.z1 + A.z2) / 2;
@@ -3633,6 +3667,7 @@
     }
     const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
     const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
+    A.side = side;
     corridorBuilds.push({ posts, railSegs, mesh, rails, planks: [], plankMesh: null, t: 0, sides: [side], path: [[cx, cz], [cx, cz]], s, end: 0.5 + posts.length * 0.04 + 0.5, onDone: annexDone });
     // 川には木の橋
     later(1.2, () => safe('bridge', buildBridge));
@@ -3727,6 +3762,256 @@
           toast('🧟 カマクラ村 完成! 研究所で作れる人 ' + LAB.max + '人');
           later(0.4, () => { SND.done(); shake(0.3); for (const o of igloos) burstGibs(o.x, 2.6, o.z, 24, '#ffd23a', 4, 7); });
         } else toast('🧟 カマクラ ' + igloos.filter(o => o.done).length + '/' + IGLOO.total + ' 完成! 研究所で作れる人 +' + IGLOO.add + '(' + LAB.max + '人)');
+      }
+    }
+  }
+
+  // ---- 拠点UP3: 通路の北の空き地に「弓の訓練所」。村人が兵士になって弓の練習をする ----
+  const SOLDIER_TINT = new THREE.Color('#d0524a');
+  const TRAIN = { every: 4, max: 30 };
+  let training = null;
+  function buildTraining(s) {
+    const A = pocket, cx = (A.x1 + A.x2) / 2, cz = (A.z1 + A.z2) / 2, gx = 21, gap = 1.4;
+    A.started = true;
+    clearArea([A.x1, A.z1, A.x2, A.z2], 0.6, [cx, cz]);
+    // 通路の北の柵に出入口をあける
+    for (let i = extraWalls.length - 1; i >= 0; i--) {
+      const w = extraWalls[i];
+      if (Math.abs(w[1] - A.z2) > 0.05 || Math.abs(w[3] - A.z2) > 0.05) continue;
+      const lo = Math.min(w[0], w[2]), hi = Math.max(w[0], w[2]);
+      if (gx - gap < lo || gx + gap > hi) continue;
+      extraWalls.splice(i, 1, [lo, A.z2, gx - gap, A.z2], [gx + gap, A.z2, hi, A.z2]);
+    }
+    const cb0 = corridorBuilds[0];
+    if (cb0) {
+      cb0.posts.forEach((q, i) => { if (Math.abs(q.z - A.z2) < 0.05 && Math.abs(q.x - gx) < gap) { setInst(cb0.mesh, i, q.x, -5, q.z, 0.001, 0.001, 0.001); burstGibs(q.x, 1, q.z, 4, '#a8774a', 3, 4); } });
+      cb0.railSegs.forEach(([a, b], k) => { const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2; if (Math.abs(mz - A.z2) < 0.05 && Math.abs(mx - gx) < gap + 0.7) for (const r of [k * 2, k * 2 + 1]) setInst(cb0.rails, r, mx, -5, mz, 0.001, 0.001, 0.001); });
+      cb0.mesh.instanceMatrix.needsUpdate = cb0.rails.instanceMatrix.needsUpdate = true;
+    }
+    // 地面
+    const gnd = new THREE.Mesh(new THREE.PlaneGeometry(A.x2 - A.x1 + 1.2, A.z2 - A.z1 + 1.2), campGroundMat);
+    gnd.rotation.x = -Math.PI / 2; gnd.position.set(cx, 0.024, cz); gnd.scale.setScalar(0.01); scene.add(gnd);
+    yardPops.push({ g: gnd, t: 0 });
+    // 柵(西と北。東と南は通路の柵)
+    const side = [[A.x1, A.z2], [A.x1, A.z1], [A.x2, A.z1]];
+    A.side = side;
+    const posts = [], railSegs = [];
+    for (let i = 0; i < side.length - 1; i++) {
+      const [ax, az] = side[i], [bx, bz] = side[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.3));
+      let prev = i ? posts[posts.length - 1] : null;
+      for (let k = i ? 1 : 0; k <= n; k++) { const q = { x: lerp(ax, bx, k / n), z: lerp(az, bz, k / n), at: 0.5 + posts.length * 0.04, up: false }; posts.push(q); if (prev) railSegs.push([prev, q]); prev = q; }
+    }
+    const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
+    corridorBuilds.push({ posts, railSegs, mesh, rails, planks: [], plankMesh: null, t: 0, sides: [side], path: [[cx, cz], [cx, cz]], s, end: 0.5 + posts.length * 0.04 + 0.5, onDone: trainingDone });
+    // 的・射撃の線・テント・旗・わら束
+    const parts = [], L = (x, z) => [x - cx, z - cz];
+    const targetsX = [17.6, 20.4, 23.2, 26.0], tz = -21.6;
+    for (const x of targetsX) {
+      const [px, pz] = L(x, tz);
+      parts.push({ geo: Box(0.12, 1.6, 0.12), m: M(px - 0.45, 0.75, pz - 0.2, 1, 1, 1, -0.25, 0, 0), color: '#7a4d24' }, { geo: Box(0.12, 1.6, 0.12), m: M(px + 0.45, 0.75, pz - 0.2, 1, 1, 1, -0.25, 0, 0), color: '#7a4d24' });
+      [[0.85, 0.22, '#e8d27a'], [0.68, 0.26, '#d8423a'], [0.48, 0.3, '#ffffff'], [0.28, 0.34, '#d8423a'], [0.1, 0.38, '#ffd23a']].forEach(([r, th, c]) => parts.push({ geo: Cyl(r, r, th, 18), m: M(px, 1.55, pz, 1, 1, 1, Math.PI / 2, 0, 0), color: c }));
+    }
+    { const [px, pz] = L(21.8, -15.0); parts.push({ geo: Box(10.6, 0.04, 0.14), m: M(px, 0.05, pz), color: '#ffffff' }); }
+    { const [px, pz] = L(26.4, -11.8); parts.push({ geo: Cone(1.5, 2.1, 4), m: M(px, 1.05, pz, 1, 1, 1, 0, Math.PI / 4, 0), color: '#c9b07a' }, { geo: Box(0.5, 0.9, 0.05), m: M(px, 0.45, pz + 1.07), color: '#5a3a1e' }); }
+    for (const x of [16.4, 27.1]) { const [px, pz] = L(x, -23.1); parts.push({ geo: Box(0.09, 3.2, 0.09), m: M(px, 1.6, pz), color: '#6f7883' }, { geo: Box(1.0, 0.55, 0.04), m: M(px + 0.52, 2.85, pz), color: '#d8423a' }); }
+    for (const [x, z] of [[16.6, -11.0], [17.6, -10.6], [16.9, -17.5], [27.0, -18.4]]) { const [px, pz] = L(x, z); parts.push({ geo: Box(0.95, 0.6, 0.6), m: M(px, 0.3, pz, 1, 1, 1, 0, Math.random(), 0), color: '#e2c56a' }); }
+    const fac = new THREE.Mesh(mergeGeometries(parts), vcMat); fac.position.set(cx, 0, cz); fac.scale.setScalar(0.01); scene.add(fac);
+    later(1.4, () => yardPops.push({ g: fac, t: 0 }));
+    training = { targetsX, tz, slots: [], ready: false, t: 0 };
+    for (const z of [-14.3, -13.0]) for (let k = 0; k < 7; k++) training.slots.push({ x: 16.9 + k * 1.45 + (z > -14 ? 0.7 : 0), z, h: null });
+    zoomTarget = Math.max(zoomTarget, 2.1);
+    camFocus(cx, cz, 5, 0.6);
+    toast('🏹 弓の訓練所をつくる!');
+  }
+  function trainingDone() {
+    const A = pocket;
+    A.done = true; training.ready = true;
+    for (const zb of zs) if (!zb.dead && inRect(A, zb.x, zb.z, 0.6)) later(0.1 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
+    shake(0.3); SND.done(); ring((A.x1 + A.x2) / 2, (A.z1 + A.z2) / 2, 10, 0.6, '#ffe27a');
+    toast('🏹 弓の訓練所ができた! 村人が兵士になる');
+    popText('🏹 訓練所 完成!', (A.x1 + A.x2) / 2, (A.z1 + A.z2) / 2, '#fff6b0', 22, 3);
+    checkPending();
+  }
+  // 兵士を集める・練習の矢・夜の矢
+  const battleArrows = [];
+  let bArrowMesh = null; // 矢の形(arrowGeo)はあとで作られるので、最初に使うときに用意する
+  function fireArrow(sx, sy, sz, zb, to) {
+    if (battleArrows.length >= 300) return false;
+    const tx = zb ? zb.x : to[0], tz = zb ? zb.z : to[2], d = Math.hypot(tx - sx, tz - sz);
+    battleArrows.push({ sx, sy, sz, zb, to, t: 0, dur: 0.14 + d * 0.028 });
+    if (!fastForwarding && sfx.whoosh >= 1) { sfx.whoosh--; tone(760 + Math.random() * 120, 0.05, 'triangle', 0.03, 0.6); }
+    return true;
+  }
+  function updateTraining(dt) {
+    if (training && training.ready && night.phase === 'day') {
+      const T = training;
+      T.t -= dt;
+      const soldiers = humans.filter(h => h.soldier);
+      if (T.t <= 0 && soldiers.length < TRAIN.max) {
+        T.t = TRAIN.every;
+        let best = null, bd = 1e9;
+        for (const h of humans) { if (h.st !== 'villager' || h.soldier || h.job || inRect(annex, h.x, h.z)) continue; const d = Math.hypot(h.x - 12, h.z + 7.2); if (d < bd) { bd = d; best = h; } }
+        if (best) { best.soldier = true; best.path = [[12.4, -7.2], [21, -7.2], [21, -11.2]]; popText('🏹', best.x, best.z, '#ffffff', 14, 2.2); }
+      }
+      // 空いている練習の場所に、着いた兵士を入れる
+      for (const sl of T.slots) {
+        if (sl.h && (!sl.h.soldier || sl.h.st !== 'villager')) sl.h = null;
+        if (!sl.h) { const h = soldiers.find(o => !o.slot && !(o.path && o.path.length)); if (h) { sl.h = h; h.slot = [sl.x, sl.z]; } }
+        const h = sl.h; if (!h || Math.hypot(h.x - sl.x, h.z - sl.z) > 0.5) continue;
+        h.face = Math.PI;
+        h.shootT = (h.shootT === undefined ? Math.random() * 1.2 : h.shootT) - dt;
+        if (h.shootT <= 0) { h.shootT = 1.0 + Math.random() * 0.6; const x = T.targetsX[Math.floor(Math.random() * T.targetsX.length)] + (Math.random() - 0.5) * 0.6; fireArrow(h.x, 1.3, h.z, null, [x, 1.4 + (Math.random() - 0.5) * 0.5, T.tz + 0.4]); }
+      }
+    }
+    if (!battleArrows.length && !bArrowMesh) return;
+    if (!bArrowMesh) { bArrowMesh = new THREE.InstancedMesh(arrowGeo, vcMat, 300); bArrowMesh.count = 0; bArrowMesh.frustumCulled = false; scene.add(bArrowMesh); }
+    let n = 0;
+    for (let i = battleArrows.length - 1; i >= 0; i--) {
+      const a = battleArrows[i]; a.t += dt;
+      const e = Math.min(1, a.t / a.dur), zb = a.zb;
+      const tx = zb ? zb.x : a.to[0], ty = zb ? 1.0 : a.to[1], tz = zb ? zb.z : a.to[2];
+      const x = lerp(a.sx, tx, e), y = lerp(a.sy, ty, e) + Math.sin(e * Math.PI) * (zb ? 0.9 : 0.35), z = lerp(a.sz, tz, e);
+      if (e >= 1) {
+        battleArrows.splice(i, 1);
+        if (zb) { zb.targeted = false; if (!zb.dead) hitZombie(zb, x, z); }
+        else if (Math.random() < 0.3) puff(x, y, z, 1, '#f3e6b0', 0.3, 0.3, 0.4);
+        continue;
+      }
+      setInst(bArrowMesh, n++, x, y, z, 1, 1, 1, Math.atan2(tx - a.sx, tz - a.sz), (zb ? 0.45 : 0.15) - e * (zb ? 0.9 : 0.3));
+    }
+    bArrowMesh.count = n; bArrowMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---- 大群の夜: 10分で夜になり、大群が来る。みんなで柵の外を撃つ → 朝 ----
+  const corpseMesh = new THREE.InstancedMesh(zombieGeo, vcMat, 900); corpseMesh.count = 0; corpseMesh.frustumCulled = false; scene.add(corpseMesh);
+  let corpseN = 0;
+  function addCorpse(zb) {
+    if (corpseN >= 900) return;
+    setInst(corpseMesh, corpseN, zb.x, 0.22, zb.z, 1, 1, 1, Math.random() * 6.28, -Math.PI / 2 + (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.4);
+    corpseMesh.setColorAt(corpseN, zb.tint); corpseN++;
+    corpseMesh.count = corpseN; corpseMesh.instanceMatrix.needsUpdate = true; if (corpseMesh.instanceColor) corpseMesh.instanceColor.needsUpdate = true;
+  }
+  function baseBox() {
+    const f = fences[fences.length - 1]; if (!f) return [-11, -11, 11, 11];
+    let B = [f.x - f.H, f.z - f.H, f.x + f.H, f.z + f.H];
+    for (const A of [annex, pocket]) if (A.done) B = [Math.min(B[0], A.x1), Math.min(B[1], A.z1), Math.max(B[2], A.x2), Math.max(B[3], A.z2)];
+    return B;
+  }
+  function nightGoal() { const C = campInfo(); return [C.x + (Math.random() - 0.5) * C.H, C.z + (Math.random() - 0.5) * C.H]; }
+  // 全部建てたか(置き場・武器パワーアップは数えない)
+  function missingSites() {
+    // シナリオに書かれた建築エリアを全部(まだ出ていないものも)
+    const out = [];
+    for (const sc of SCENARIO) for (const k of ['enter', 'exit']) for (const a of sc[k] || []) if (a.do === 'site' && !(sites[a.id] && sites[a.id].done)) out.push(a.id);
+    return out;
+  }
+  function allUnlocked() { return missingSites().length === 0; }
+  // 柵ぞいの持ち場(内側)
+  function nightPosts() {
+    const main = [], sold = [], f = fences[fences.length - 1];
+    const lines = [];
+    if (f) for (const w of f.walls) lines.push(w);
+    if (annex.done && annex.side) for (let i = 0; i < annex.side.length - 1; i++) lines.push([...annex.side[i], ...annex.side[i + 1]]);
+    for (const [ax, az, bx, bz] of lines) {
+      const L = Math.hypot(bx - ax, bz - az), n = Math.floor(L / 1.5);
+      for (let k = 1; k < n; k++) {
+        const x = lerp(ax, bx, k / n), z = lerp(az, bz, k / n), nx = -(bz - az) / L, nz = (bx - ax) / L;
+        for (const s of [1, -1]) { const px = x + nx * s * 1.1, pz = z + nz * s * 1.1; if (insideCamp(px, pz) && !inRect(pocket, px, pz)) { main.push([px, pz]); break; } }
+      }
+    }
+    if (pocket.done && pocket.side) for (let i = 0; i < pocket.side.length - 1; i++) {
+      const [ax, az] = pocket.side[i], [bx, bz] = pocket.side[i + 1], L = Math.hypot(bx - ax, bz - az), n = Math.floor(L / 1.2);
+      for (let k = 1; k < n; k++) { const x = lerp(ax, bx, k / n), z = lerp(az, bz, k / n); sold.push([clamp(x, pocket.x1 + 1.1, pocket.x2 - 1.1), clamp(z, pocket.z1 + 1.1, pocket.z2 - 1.1)]); }
+    }
+    return { main, sold };
+  }
+  function startNight() {
+    night.phase = 'fight'; night.t = 0; night.win = allUnlocked();
+    night.kT = 1; duskTarget = 1;
+    lightsTarget = 1;
+    toast('🌙 大群の夜!! みんなで拠点を守れ!');
+    shake(0.6); SND.boom();
+    if (!fastForwarding) { tone(70, 1.2, 'sawtooth', 0.08, 0.5); noise(0.8, 0.12, 300); }
+    Object.assign(ZOMBIES, { on: true, max: 240, interval: 0.45, group: [6, 12], spread: Math.PI * 2, front: 0.3, dist: [24, 36], speed: [1.6, 2.4], drop: {} });
+    zSpawnT = 0;
+    for (const zb of zs) zb.nt = nightGoal();
+    // 仕事はお休みして、みんな柵ぞいの持ち場へ(弓兵やぐらはそのまま)
+    for (const j of town.jobs) if (j.label !== '🏹' && j.h) { j.h.job = null; j.h = null; }
+    for (const sl of training ? training.slots : []) { if (sl.h) sl.h.slot = null; sl.h = null; }
+    const { main, sold } = nightPosts();
+    const vs = humans.filter(h => h.st === 'villager' && !h.soldier && !(h.job && h.job.label === '🏹')), ss = humans.filter(h => h.st === 'villager' && h.soldier);
+    vs.forEach((h, i) => { if (main.length) h.post = main[Math.floor(i * main.length / vs.length)]; });
+    ss.forEach((h, i) => { const P = sold.length ? sold : main; if (P.length) h.post = P[Math.floor(i * P.length / ss.length)]; });
+    const B = baseBox(); camFocus((B[0] + B[2]) / 2, (B[1] + B[3]) / 2, 3, 1.4);
+  }
+  function nightShoot(dt) {
+    for (const h of humans) {
+      if (h.st !== 'villager' || !h.post || Math.hypot(h.x - h.post[0], h.z - h.post[1]) > 1.0) continue;
+      h.shootT = (h.shootT === undefined ? Math.random() : h.shootT) - dt;
+      if (h.shootT > 0) continue;
+      h.shootT = h.soldier ? 0.45 : 1.3;
+      let best = null, bd = 14;
+      for (const zb of zs) { if (zb.dead || zb.appear < 0.6 || zb.targeted) continue; const d = Math.abs(zb.x - h.x) + Math.abs(zb.z - h.z); if (d < bd) { bd = d; best = zb; } }
+      if (!best) { h.shootT = 0.25; continue; }
+      if (fireArrow(h.x, 1.4, h.z, best, null)) { best.targeted = true; h.face = Math.atan2(best.x - h.x, best.z - h.z); }
+    }
+  }
+  function breakFences() {
+    night.broken = true;
+    for (const f of fences) { f.posts.forEach((q, i) => { if (i % 2 === 0) burstGibs(q.x, 1, q.z, 4, '#a8774a', 6, 7); }); f.postMesh.visible = false; f.railMesh.visible = false; f.walls = []; if (f.gateG) f.gateG.visible = false; f.gateLanded = false; }
+    for (const cb of corridorBuilds) { cb.mesh.visible = false; cb.rails.visible = false; }
+    extraWalls.length = 0;
+    shake(1.0); SND.boom();
+    toast('💥 柵が破られた…!');
+  }
+  function morning() {
+    for (const zb of zs) if (!zb.dead) { zb.dead = true; addCorpse(zb); }
+    zs.length = 0; zombieMesh.count = 0;
+    battleArrows.length = 0;
+    ZOMBIES.on = false;
+    night.k = night.kT = 0; dusk = 0.7; duskTarget = 0; lightsTarget = 0;
+    for (const h of humans) h.post = null;
+    night.cheer = true;
+    const B = baseBox(); zoomTarget = Math.max(zoomTarget, 2.4); camFocus((B[0] + B[2]) / 2, (B[1] + B[3]) / 2, 8, 1.6);
+  }
+  function celebrate() {
+    toast('🎉 拠点を守りきった!');
+    const B = baseBox();
+    for (let i = 0; i < 16; i++) later(i * 0.18, () => {
+      const x = lerp(B[0], B[2], Math.random()), z = lerp(B[1], B[3], Math.random());
+      for (const c of ['#ffd23a', '#ff6a6a', '#6ad1ff', '#9dff7a']) burstGibs(x, 2.5, z, 6, c, 5, 8);
+      if (i % 4 === 0) { SND.done(); shake(0.15); }
+    });
+  }
+  function updateNight(dt) {
+    const N = night;
+    if (N.phase === 'day') {
+      if (!started) return;
+      const left = NIGHT.at - elapsed;
+      if (left < NIGHT.dusk) duskTarget = Math.max(duskTarget, clamp(1 - left / NIGHT.dusk, 0, 1));
+      if (left < 40) N.kT = clamp(1 - left / 40, 0, 1) * 0.75;
+      if (left < NIGHT.dusk && !N.said.dusk) { N.said.dusk = true; toast('🌇 日が傾いてきた… 夜になると大群が来る!'); }
+      if (left < 30 && !N.said.soon) { N.said.soon = true; toast('🌙 もうすぐ夜…!'); }
+      if (left <= 0) startNight();
+      return;
+    }
+    N.t += dt;
+    if (N.phase === 'fight') {
+      nightShoot(dt);
+      if (!N.win && !N.broken && N.t > NIGHT.breakAt) breakFences();
+      if (N.t > (N.win ? NIGHT.fight : NIGHT.lose)) { N.phase = 'fade'; N.t = 0; $('fade').classList.add('on'); }
+    } else if (N.phase === 'fade') {
+      if (N.t > 2.8) {
+        if (!N.win) { N.phase = 'end'; ZOMBIES.on = false; showGameOver(); return; }
+        morning(); N.phase = 'dawn'; N.t = 0; $('fade').classList.remove('on');
+      }
+    } else if (N.phase === 'dawn') {
+      if (N.t > 2.0 && !N.said.cheer) { N.said.cheer = true; toast('🌅 朝が来た…!'); later(1.0, celebrate); }
+      if (N.t > 7.5) {
+        N.phase = 'end';
+        if (dog && (dog.st === 'saved' || dog.st === 'follow')) { $('clear').classList.add('show'); SND.done(); }
+        else { night.cheer = false; startGiant(null); }
       }
     }
   }
@@ -4428,7 +4713,8 @@
     }
     const f = fences[fences.length - 1];
     if (f && f.gateLanded && !insideCamp(o.x, o.z) && !insideCamp(tx, tz)) {
-      const B = [f.x - f.H, f.z - f.H, annex.done ? Math.max(f.x + f.H, annex.x2) : f.x + f.H, f.z + f.H], m = 1.9;
+      let B = [f.x - f.H, f.z - f.H, f.x + f.H, f.z + f.H]; const m = 1.9;
+      for (const A of [annex, pocket]) if (A.done) B = [Math.min(B[0], A.x1), Math.min(B[1], A.z1), Math.max(B[2], A.x2), Math.max(B[3], A.z2)];
       const inner = [B[0] - 0.7, B[1] - 0.7, B[2] + 0.7, B[3] + 0.7];
       if (segHitsBox(o.x, o.z, tx, tz, inner)) {
         let best = null, bd = 1e9, near = null, nd = 1e9;
@@ -4693,6 +4979,10 @@
     scene.fog.color.copy(scene.background);
     hemi.intensity = 1.9 - dusk * 0.55;
     sun.color.setRGB(1, 0.96 - dusk * 0.18, 0.9 - dusk * 0.3);
+    night.k += (night.kT - night.k) * Math.min(1, dt * 0.6);
+    if (night.k > 0.002) { scene.background.lerp(SKY_NIGHT, night.k * 0.92); scene.fog.color.copy(scene.background); hemi.intensity *= 1 - night.k * 0.72; hemi.color.setRGB(1 - night.k * 0.35, 1 - night.k * 0.25, 1); }
+    else hemi.color.setRGB(0.957, 0.973, 1);
+    sun.intensity = 1.5 * (1 - night.k * 0.82);
     windowMat.emissive.setRGB(1.0 * lightsOn, 0.72 * lightsOn, 0.28 * lightsOn);
     windowMat.color.setRGB(0.35 + lightsOn * 0.65, 0.47 + lightsOn * 0.45, 0.58 - lightsOn * 0.1);
   }
@@ -4718,6 +5008,7 @@
     $('over').classList.add('show');
   }
   $('over-retry').addEventListener('click', () => location.reload());
+  $('clear-retry').addEventListener('click', () => location.reload());
   function logic(dt) {
     if (gameOver) return;
     gt += dt;
@@ -4733,7 +5024,8 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); updateTraining(dt); });
+    safe('night', () => updateNight(dt));
     safe('dog', () => { updateDog(dt); updateGiant(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
@@ -4798,6 +5090,8 @@
     addVillagers(n) { const C = campInfo(); for (let i = 0; i < n; i++) humans.push({ x: C.x + (Math.random() - 0.5) * 8, z: C.z + (Math.random() - 0.5) * 8, st: 'villager', hp: 1, t: 0, face: 0, tint: HUMAN_TINTS[i % HUMAN_TINTS.length], hunger: HUMAN.hunger, starve: 0, wander: null, wanderT: 0, ph: Math.random() * 6 }); return villagerCount(); },
     town() { return { villagers: villagerCount(), jobs: town.jobs.map(j => j.label + (j.h ? (j.h.atJob ? '✓' : '…') : '×')), bread: town.bakery ? town.bakery.bread : null, max: LAB.max }; },
     igloos() { return { annex: annex.done, igloos: igloos.map(ig => ig.n + '/' + ig.pts.length + (ig.done ? '✓' : '')), max: LAB.max }; },
+    night() { return { phase: night.phase, t: +night.t.toFixed(1), win: night.win, elapsed: Math.round(elapsed), corpses: corpseN, soldiers: humans.filter(h => h.soldier).length, posts: humans.filter(h => h.post).length, unlocked: allUnlocked(), missing: missingSites() }; },
+    skipTime(sec) { started = true; elapsed += sec; },
     village() { return { water: waterSys ? Math.round(waterSys.water) : null, food: farm ? farm.food : null, lab: labs[0] ? { heads: labs[0].nHeads, coal: labs[0].nCoal, made: labs[0].made } : null, humans: humans.map(h => h.st), corridor: extraWalls.length > 0 }; },
     killDog() { if (dog && dog.st !== 'dead') { dog.st = 'lost'; dog.hp = 0.001; dogBite(0.01); } return this.dog(); },
     rescueDog() { if (dog && dog.st === 'lost') { dog.x = player.x - 1; dog.z = player.z; } return this.dog(); },
