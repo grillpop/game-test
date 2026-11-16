@@ -48,7 +48,8 @@
   @keyframes overIn { from { opacity: 0; } }
   #over .card { text-align: center; }
   /* 一時的な10分タイマー(あとで消す) */
-  #timer { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 3px 10px; border-radius: 999px; background: rgba(20, 30, 45, .55); color: #fff; font: 700 14px/1.4 monospace; pointer-events: none; z-index: 5; }
+  #timer { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 3px 10px; border-radius: 999px; background: rgba(20, 30, 45, .55); color: #fff; font: 700 14px/1.4 monospace; pointer-events: auto; cursor: pointer; z-index: 5; user-select: none; -webkit-user-select: none; }
+  #timer.stop { background: rgba(200, 40, 40, .8); }
   #spot { position: fixed; inset: 0; display: none; pointer-events: none; z-index: 8; }
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 2.4s ease; z-index: 9; }
   #fade.on { opacity: 1; }
@@ -106,7 +107,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s49';
+  const GAME_VERSION = '2026.12.04-s50';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -4174,10 +4175,14 @@
   }
   // 一時的な10分タイマー(あとで消す)
   let timerKey = '';
+  // アイデア検討用: 右上のタイマーをタップすると時間が止まる(夜が来ない)。もう一度タップで動く
+  let timeStop = false;
+  $('timer').addEventListener('click', (e) => { e.stopPropagation(); timeStop = !timeStop; $('timer').classList.toggle('stop', timeStop); timerKey = ''; });
   function updateTimer() {
     const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
     const key = night.phase === 'day' ? '⏱ ' + fmt(Math.min(elapsed, NIGHT.at)) + ' / ' + fmt(NIGHT.at) : '🌙 ' + fmt(NIGHT.at) + ' / ' + fmt(NIGHT.at);
-    if (key !== timerKey) { timerKey = key; $('timer').textContent = key; }
+    const k2 = (timeStop ? '⏸ ' : '') + key;
+    if (k2 !== timerKey) { timerKey = k2; $('timer').textContent = k2; }
   }
   function updateNight(dt) {
     updateTimer();
@@ -5580,7 +5585,7 @@
   function logic(dt) {
     if (gameOver) return;
     gt += dt;
-    if (started) elapsed += dt;
+    if (started && !timeStop) elapsed += dt;
     sfxTick(dt);
     for (let i = timers.length - 1; i >= 0; i--) if (gt >= timers[i].at) { const t = timers[i]; timers.splice(i, 1); safe('timer', t.fn); }
     safe('scenario', updateScenario);
