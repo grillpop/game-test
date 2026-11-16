@@ -84,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.27-s30';
+  const GAME_VERSION = '2026.11.27-s31';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -233,7 +233,7 @@
         { do: 'site', id: 'corridor', icon: '🚧', at: [12.0, -4.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
-        { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧟', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 6, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
+        { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧟', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 20, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
         { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💵', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 30, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
         { do: 'toast', text: '🧟 ゾンビの頭を置き場へ! ヘリが売ってくれる 💰' },
         { do: 'toast', text: '💰 お金で建てるエリアは、どれから建ててもOK!', delay: 4 },
@@ -2455,6 +2455,8 @@
         if (ice && cash && h.st > 1 && (ice.stock >= h.cfg.batch || (ice.stock > 0 && gt - ice.lastIn > h.cfg.wait) || (coal && coal.stock >= 12))) {
           // 回る順番: 氷置き場 → 炭置き場(あるものだけ)
           h.queue = [ice, coal].filter(p => p && p.stock > 0); h.cur = h.queue.shift();
+          // 山が高いほど、1回にたくさん運ぶ(最大80個)
+          h.iceCap = Math.min(80, h.cfg.maxIce + Math.floor(ice.stock * 0.5));
           h.state = 'go'; h.st = 0; h.loaded = 0; h.loadedIce = 0; h.loadedCoal = 0; h.netN = 0; h.netC = 0; h.bundles = undefined; h.from = [hp.x, hp.y, hp.z];
           popText('🚁 回収に来た!', h.x, h.z, '#ffffff', 16, 3.5);
         }
@@ -2467,7 +2469,7 @@
         const pile = h.cur, isCoal = pile.res === 'coal';
         hp.set(pile.gx, 6.2 + Math.sin(gt * 3) * 0.1, pile.gz);
         h.loadT -= dt;
-        const capped = () => !isCoal && h.loadedIce >= h.cfg.maxIce;
+        const capped = () => !isCoal && h.loadedIce >= (h.iceCap || h.cfg.maxIce);
         while (h.loadT <= 0 && pile.stock > 0 && h.loaded < 80 && !capped()) {
           h.loadT += 0.035;
           pile.stock--; drawPile(pile);
