@@ -106,7 +106,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s46';
+  const GAME_VERSION = '2026.12.04-s47';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -250,11 +250,11 @@
         { do: 'site', id: 'corridor', icon: '🚧', at: [12.0, -4.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
         // 拠点UP 2: 通路の南の空き地(川の向こうまで)へ拠点を広げる → ゾンビの頭でカマクラ
-        { do: 'site', id: 'expand2', icon: '拠点UP2', padSize: 4.0, at: [11.6, 6.0], res: 'cash', need: 335, build: [], special: 'expand2', requires: ['corridor'],
+        { do: 'site', id: 'expand2', icon: '拠点UP2', padSize: 4.0, at: [11.6, 6.0], res: 'cash', need: 335, build: [], special: 'expand2', requires: ['expand'],
           announce: '🏗️ 通路の南まで、拠点をもっと広げられる!' },
         { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 265, build: [], special: 'train', requires: ['corridor'],
           announce: '🏹 通路の北の空き地に「弓の訓練所」を作れる!' },
-        { do: 'site', id: 'plaza', icon: '拠点UP4', padSize: 3.4, at: [27.4, 9.0], res: 'cash', need: 300, build: [], special: 'plaza', requires: ['expand2'], needAnnex: true,
+        { do: 'site', id: 'plaza', icon: '拠点UP4', padSize: 3.4, at: [27.4, 9.0], res: 'cash', need: 300, build: [], special: 'plaza', requires: ['expand2', 'corridor'], needAnnex: true,
           announce: '🏗️ 研究所の前に、大きな広場を作れる!' },
         { do: 'site', id: 'pump', icon: '💧', padSize: 3.2, at: [19.5, 14.6], res: 'cash', need: 100, build: ['pump2'], requires: ['expand2'], needAnnex: true,
           announce: '💧 橋のとなりに水くみポンプを作れる!' },
@@ -3777,7 +3777,7 @@
     const plankGeo = mergeGeometries([{ geo: Box(CORRIDOR_W * 2 - 0.2, 0.08, 0.44), m: M(0, 0.06, 0), color: '#b5834f' }, { geo: Box(CORRIDOR_W * 2 - 0.2, 0.02, 0.05), m: M(0, 0.11, 0.2), color: '#7a4d24' }]);
     const plankMesh = new THREE.InstancedMesh(plankGeo, vcMat, planks.length); plankMesh.count = 0; plankMesh.frustumCulled = false; scene.add(plankMesh);
     const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
-    corridorBuilds.push({ posts, railSegs, mesh, rails, planks, plankMesh, t: 0, sides, path, s, end: Math.max(0.2 + posts.length * 0.025, 0.1 + planks.length * 0.012) + 0.4 });
+    corridorBuilds.push({ posts, railSegs, mesh, rails, planks, plankMesh, t: 0, sides, path, s, end: Math.max(0.2 + posts.length * 0.025, 0.1 + planks.length * 0.012) + 0.4, after: removeAnnexNorth });
     // 通り道の木は倒れて、中にいたゾンビは吹き飛ぶ
     for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && polyDist(path, t.x, t.z) < CORRIDOR_W + 1.2) { later(0.1 + Math.random() * 0.6, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); }); }
     for (const zb of zs) if (!zb.dead && polyDist(path, zb.x, zb.z) < CORRIDOR_W + 0.5) later(0.2 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
@@ -3808,6 +3808,7 @@
         cb.done = true;
         for (const side of cb.sides) for (let i = 0; i < side.length - 1; i++) extraWalls.push([side[i][0], side[i][1], side[i + 1][0], side[i + 1][1]]);
         if (cb.onDone) { cb.onDone(cb); continue; }
+        if (cb.after) safe('after', () => cb.after(cb));
         shake(0.2); SND.done(); toast('🚧 柵つき通路ができた! 生まれた人を守れる');
         popText('🚧 通路 完成!', cb.path[1][0], cb.path[1][1], '#fff6b0', 20, 3);
       }
@@ -3841,8 +3842,9 @@
     const gnd = new THREE.Mesh(new THREE.PlaneGeometry(A.x2 - A.x1 + 1.2, A.z2 - A.z1 + 1.2), campGroundMat);
     gnd.rotation.x = -Math.PI / 2; gnd.position.set(cx, 0.024, cz); gnd.scale.setScalar(0.01); scene.add(gnd);
     yardPops.push({ g: gnd, t: 0 });
-    // 新しい柵(東と南)。杭がポンポン立って、横木が渡る
-    const side = [[A.x2, A.z1], [A.x2, A.z2], [A.x1, A.z2]];
+    // 新しい柵(東と南。通路がまだないときは北も)。杭がポンポン立って、横木が渡る
+    A.northOwn = !corridorPath;
+    const side = A.northOwn ? [[A.x1, A.z1], [A.x2, A.z1], [A.x2, A.z2], [A.x1, A.z2]] : [[A.x2, A.z1], [A.x2, A.z2], [A.x1, A.z2]];
     const posts = [], railSegs = [];
     for (let i = 0; i < side.length - 1; i++) {
       const [ax, az] = side[i], [bx, bz] = side[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.3));
@@ -3858,6 +3860,22 @@
     zoomTarget = Math.max(zoomTarget, 2.1);
     camFocus(cx - 2, cz, 5, 0.8);
     toast('🏗️ 拠点を川の向こうまで広げる!');
+  }
+  // 拠点UP2を通路より先に建てたとき: 通路ができたら、カマクラ村の北の柵は通路の柵にまかせて取りはらう
+  function removeAnnexNorth() {
+    const A = annex;
+    if (!A.northOwn) return;
+    if (!A.done) { later(1, removeAnnexNorth); return; }
+    A.northOwn = false;
+    const onN = (z) => Math.abs(z - A.z1) < 0.05;
+    for (let i = extraWalls.length - 1; i >= 0; i--) { const w = extraWalls[i]; if (onN(w[1]) && onN(w[3]) && Math.min(w[0], w[2]) >= A.x1 - 0.05 && Math.max(w[0], w[2]) <= A.x2 + 0.05) extraWalls.splice(i, 1); }
+    const acb = corridorBuilds.find(cb => cb.onDone === annexDone);
+    if (acb) {
+      acb.posts.forEach((q, i) => { if (onN(q.z) && q.x < A.x2 - 0.2) setInst(acb.mesh, i, q.x, -5, q.z, 0.001, 0.001, 0.001); });
+      acb.railSegs.forEach(([a, b], k) => { if (onN(a.z) && onN(b.z)) for (const r of [k * 2, k * 2 + 1]) setInst(acb.rails, r, a.x, -5, a.z, 0.001, 0.001, 0.001); });
+      acb.mesh.instanceMatrix.needsUpdate = acb.rails.instanceMatrix.needsUpdate = true;
+    }
+    if (A.side && A.side.length === 4) A.side = A.side.slice(1);
   }
   function annexDone() {
     const A = annex;
