@@ -70,7 +70,7 @@
     <div id="wood-pill" class="pill">🪵 <span id="wood">0</span></div>
     <div id="meat-pill" class="pill hide">🍖 <span id="meat">0</span></div>
     <div id="ice-pill" class="pill hide">🧟 <span id="ice">0</span></div>
-    <div id="money-pill" class="pill hide" style="color:#ffe27a">💰 <span id="money">0</span></div>
+    <div id="money-pill" class="pill hide" style="color:#ffe27a"><img id="money-ico" alt="" style="width:22px;height:22px;vertical-align:-5px;margin-right:3px"><span id="money">0</span></div>
     <div id="bld-pill" class="pill">🏠 <span id="bld">0</span></div>
     <div id="pop-pill" class="pill hide">👥 <span id="pop">0</span></div>
     <div id="kill-pill" class="pill hide">⚔️ <span id="kills">0</span></div>
@@ -101,7 +101,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.01-s36';
+  const GAME_VERSION = '2026.12.01-s37';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -111,6 +111,7 @@
     ice: { per: 2, gap: 0.5, layerH: 0.48, max: 90 },   // 凍ったゾンビ(氷ブロック)
     cash: { per: 2, gap: 0.32, layerH: 0.17, max: 160 }, // 札束(1つ 💰10)
   };
+  const TAKE_MAX = { wood: 120, ice: 60 }; // 置き場から1回に取れる数(背中が空のまま乗ったとき)
   const DELIVER = { gap: 0.07, minGap: 0.016, speedUp: 0.92, flight: 0.3 }; // 納品: 最初の間隔・最短・だんだん速く・飛ぶ時間
   const WORLD = { x1: -30, x2: 46, z1: -46, z2: 30 }; // 研究所のために東と北へ広げた
   // まわりを回る斧(シナリオの 'axes' で本数・半径・速さが増える)。hitR = 斧の当たりの大きさ、cd = 同じ相手に続けて当たる間隔
@@ -257,7 +258,7 @@
           announce: '🏗️ 通路の南まで、拠点をもっと広げられる!' },
         { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 400, build: [], special: 'train', requires: ['expand2'],
           announce: '🏹 通路の北の空き地に「弓の訓練所」を作れる!' },
-        ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8], [27.4, 3.4], [16.8, 14.0], [27.4, 9.4]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
+        ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8], [27.4, 3.4]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
           requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧟', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 20, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
@@ -1823,6 +1824,25 @@
               s.dT += s.gap; s.gap = Math.max(DELIVER.minGap, s.gap * DELIVER.speedUp);
             }
           } else { s.gap = DELIVER.gap; s.dT = 0; }
+        }
+        if (s.store && TAKE_MAX[s.res]) {
+          // 乗った瞬間に背中が空なら「取る」、持っていれば「置く」(降りるまで変わらない)
+          if (near && !s.wasNear) { s.take = carried[s.res] === 0 && s.stock > 0; s.takeN = 0; s.gap = DELIVER.gap; s.dT = 0; }
+          s.wasNear = near;
+          if (!near) s.take = false;
+        }
+        if (s.pickup) { /* 上で済み */ }
+        else if (s.take) {
+          if (s.stock > 0 && s.takeN < TAKE_MAX[s.res]) {
+            s.dT -= dt;
+            while (s.dT <= 0 && s.stock > 0 && s.takeN < TAKE_MAX[s.res]) {
+              s.stock--; s.takeN++; drawPile(s);
+              const q = gridPos(s, s.stock), pool = drops[s.res];
+              if (pool.items.length < pool.max) pool.items.push({ kind: s.res, st: 'magnet', t: 0, dur: 0.22 + Math.random() * 0.06, sx: q[0], sy: q[1], sz: q[2], x: q[0], y: q[1], z: q[2], ry: 0, rx: 0 });
+              else carried[s.res]++;
+              s.dT += s.gap; s.gap = Math.max(DELIVER.minGap, s.gap * DELIVER.speedUp);
+            }
+          }
         } else if (near && (carried[s.res] > 0 || (!s.store && storeStock(s.res) > 0)) && s.paid + s.incoming < s.need && !(s.store && s.stock + s.incoming >= s.cap)) {
           s.dT -= dt;
           while (s.dT <= 0 && (carried[s.res] > 0 || (!s.store && storeStock(s.res) > 0)) && s.paid + s.incoming < s.need) {
@@ -3758,7 +3778,7 @@
   }
 
   // ---- カマクラ: ゾンビの頭を積み上げたドーム。1つで研究所の上限 +10人 ----
-  const IGLOO = { R: 1.7, add: 10, total: 6 };
+  const IGLOO = { R: 1.7, add: 10, total: 4 };
   const igloos = [];
   function iglooPlan(cx, cz) {
     const R = IGLOO.R, pts = [];
@@ -4900,6 +4920,7 @@
   for (let i = 0; i < 10; i++) { const el = document.createElement('div'); el.className = 'pop'; document.body.appendChild(el); popEls.push({ el, t: 0 }); }
   let popI = 0;
   function popText(text, x, z, color = '#fff', size = 18, y = 3) { const p = popEls[popI++ % popEls.length]; p.el.textContent = text; p.el.style.color = color; p.el.style.fontSize = size + 'px'; p.t = 1.1; p.x = x; p.z = z; p.y = y; p.el.style.display = 'block'; }
+  { const c = document.createElement('canvas'); c.width = c.height = 64; drawResIcon(c.getContext('2d'), 'cash', 32, 30, 60); $('money-ico').src = c.toDataURL(); }
   const PILL = { ice: 'ice-pill', money: 'money-pill', cash: 'money-pill', wood: 'wood-pill', meat: 'meat-pill', bld: 'bld-pill', pop: 'pop-pill', kills: 'kill-pill' };
   function bumpPill(k) { const el = $(PILL[k]); if (!el) return; el.classList.remove('hide'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
   const shownRes = { wood: -1, meat: -1, ice: -1 };
