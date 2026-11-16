@@ -101,7 +101,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.01-s37';
+  const GAME_VERSION = '2026.12.01-s38';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -1734,7 +1734,7 @@
       s.pileMesh.count = 0; s.pileMesh.frustumCulled = false; scene.add(s.pileMesh);
       if (a.kind === 'pickup') s.pickup = true; else s.store = true;
     }
-    s.pad.rotation.x = -Math.PI / 2; s.pad.position.set(s.x, 0.08, s.z); s.pad.renderOrder = 3; // キャンプファイアーの光より上に描く
+    s.pad.rotation.x = -Math.PI / 2; s.pad.position.set(s.x, inCorridor(s.x, s.z) ? 0.16 : 0.08, s.z); /* 通路の中は木の床より上に */ s.pad.renderOrder = 3; // キャンプファイアーの光より上に描く
     if (!s.grid) scene.add(s.pad);
     drawPadFace(s);
     // これから建つ建物の青い設計図
