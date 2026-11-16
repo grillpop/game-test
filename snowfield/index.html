@@ -106,7 +106,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s45';
+  const GAME_VERSION = '2026.12.04-s46';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -125,7 +125,7 @@
   const TREE_FALL = 0.28;
   // 武器パワーアップ(お金で払う)。払うたびに次のレベルへ
   // 斧 2本 → 3 → 4 → 5本 → 剣(リーチが長い) → トゲ鉄球(鎖の先) → ロケットランチャー
-  const WEAPON_COOL = 25;   // 武器パワーアップのあと、次を買えるようになるまでの秒数(オーナーの希望)
+  const WEAPON_COOL = 20;   // 武器パワーアップのあと、次を買えるようになるまでの秒数(オーナーの希望)
   const WEAPON_LEVELS = [
     { cost: 150, kind: 'axe', icon: '🪓', label: '斧が3本に', n: 3, radius: 1.9, speed: 1.9, hitR: 0.45 },
     { cost: 250, kind: 'axe', icon: '🪓', label: '斧が4本に', n: 4, radius: 2.2, speed: 2.1, hitR: 0.45 },
@@ -252,7 +252,7 @@
         // 拠点UP 2: 通路の南の空き地(川の向こうまで)へ拠点を広げる → ゾンビの頭でカマクラ
         { do: 'site', id: 'expand2', icon: '拠点UP2', padSize: 4.0, at: [11.6, 6.0], res: 'cash', need: 335, build: [], special: 'expand2', requires: ['corridor'],
           announce: '🏗️ 通路の南まで、拠点をもっと広げられる!' },
-        { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 265, build: [], special: 'train', requires: ['expand2'],
+        { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 265, build: [], special: 'train', requires: ['corridor'],
           announce: '🏹 通路の北の空き地に「弓の訓練所」を作れる!' },
         { do: 'site', id: 'plaza', icon: '拠点UP4', padSize: 3.4, at: [27.4, 9.0], res: 'cash', need: 300, build: [], special: 'plaza', requires: ['expand2'], needAnnex: true,
           announce: '🏗️ 研究所の前に、大きな広場を作れる!' },
