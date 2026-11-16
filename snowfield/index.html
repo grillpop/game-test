@@ -107,7 +107,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s50';
+  const GAME_VERSION = '2026.12.04-s51';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -144,6 +144,7 @@
   const night = { phase: 'day', t: 0, k: 0, kT: 0, win: false, said: {}, cheer: false };
   const ZOMBIES = { safe: 6, front: 0.45, drop: { ice: 1 }, on: false, interval: 2.6, group: [3, 5], max: 70, speed: [1.3, 2.1], hp: 1, from: -Math.PI * 3 / 4, spread: 2.4, dist: [19, 27] }; // dist = 拠点の中心からの距離                                      // 木が倒れきるまでの秒数
   // 川(最初から東の森の向こうに流れている)。(x0,z0)→(x1,z1) の線に幅 w
+  const WALL_PADS = [[-17.6, 3.0], [6.0, 20.6], [22.0, 20.6], [36.5, 20.6], [-11.6, -14.8]]; // 柵強化のエリア(柵の外)
   const RIVER = { x0: 17.2, z0: -47, x1: 26, z1: 31, w: 3.6 };
   function riverDist(x, z) {
     const { x0, z0, x1, z1 } = RIVER, vx = x1 - x0, vz = z1 - z0, t = clamp(((x - x0) * vx + (z - z0) * vz) / (vx * vx + vz * vz), 0, 1);
@@ -259,12 +260,19 @@
           announce: '🏗️ 研究所の前に、大きな広場を作れる!' },
         { do: 'site', id: 'pump', icon: '💧', padSize: 3.2, at: [19.5, 14.6], res: 'cash', need: 100, build: ['pump2'], requires: ['expand2'], needAnnex: true,
           announce: '💧 橋のとなりに水くみポンプを作れる!' },
-        { do: 'site', id: 'paddy', icon: '田んぼ', padSize: 4.0, at: [36.5, 6.0], res: 'cash', need: 200, build: [], special: 'paddy', requires: ['plaza', 'pump'], needPlaza: true,
+        { do: 'site', id: 'paddy', icon: '田んぼ', padSize: 4.0, at: [36.5, 6.0], res: 'cash', need: 200, build: [], special: 'paddy', requires: ['plaza'], needPlaza: true,
           announce: '🌾 広場のまん中に田んぼを作れる!' },
         { do: 'site', id: 'diner', icon: '食堂', padSize: 3.6, at: [6.5, 13.6], res: 'cash', need: 200, build: ['diner'], requires: ['paddy'],
           announce: '🍚 食堂を作れる!', onBuilt: [{ do: 'town', what: 'diner' }] },
-        { do: 'site', id: 'lodge', icon: 'ロッジ', padSize: 4.0, at: [38.0, -14.0], res: 'cash', need: 450, build: ['lodge'], requires: ['paddy'],
+        { do: 'site', id: 'lodge', icon: 'ロッジ', padSize: 4.0, at: [38.0, -14.0], res: 'cash', need: 450, build: ['lodge'], requires: ['plaza'], needPlaza: true,
           announce: '🏡 広場の奥に大きなロッジを作れる!', onBuilt: [{ do: 'town', what: 'lodge' }] },
+        // 最後の拠点UPのあと: 柵の外の柵強化(木材)・ロッジの裏の拠点UP5(倉庫への通路)→ 倉庫の中でメカゾンビ(ゾンビの頭)
+        ...[0, 1, 2, 3, 4].map(i => ({ do: 'site', id: 'wall' + (i + 1), icon: '柵強化', padSize: 3.2, at: WALL_PADS[i], res: 'wood', need: 120, build: [], special: 'wall', requires: ['plaza'], needPlaza: true,
+          announce: i ? '' : '🪵 柵の外に「柵強化」を作れる! とがった丸太でゾンビを倒す' })),
+        { do: 'site', id: 'garage', icon: '拠点UP5', padSize: 3.4, at: [38.0, -21.0], res: 'cash', need: 450, build: [], special: 'garage', requires: ['plaza'], needPlaza: true,
+          announce: '🏗️ ロッジの裏から、発電所の裏の大きな倉庫まで通路を作れる!' },
+        { do: 'site', id: 'mech', icon: 'メカ', padSize: 3.2, at: [2.6, -33.0], res: 'ice', need: 200, build: [], special: 'mech', requires: ['garage'], needGarage: true,
+          announce: '🤖 倉庫の中で、ゾンビの頭から「メカゾンビ」を作れる!' },
         ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
           requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
@@ -1101,7 +1109,7 @@
   // 切り株を消す場所: 拠点の中・柵つき通路・建物の敷地(発電所・研究所・ゾンビ寄せタワーなど、まわりの木を倒して建てたもの)
   function stumpHidden(t) {
     if (insideCamp(t.x, t.z, 0.8)) return true;
-    if (corridorPath && extraWalls.length && polyDist(corridorPath, t.x, t.z) < CORRIDOR_W + 0.9) return true;
+    if (extraWalls.length && corrDist(t.x, t.z) < CORRIDOR_W + 0.9) return true;
     for (const id in built) {
       const b = built[id]; if (!b.box || !b.info.clear) continue;
       const m = b.info.clear + 0.6, [x1, z1, x2, z2] = b.box;
@@ -1937,6 +1945,7 @@
         else if (s.special) { if (s.paid >= s.need && s.incoming === 0) { const fn = SPECIAL[s.special]; markSiteDone(s); safe('special', () => fn(s)); } }
         else if (s.paid >= s.need) startBuilding(s);
       }
+      s.pad.position.y = corridorPath && polyDist(corridorPath, s.x, s.z) < CORRIDOR_W + 0.1 ? 0.16 : 0.08; // 通路の中は木の床より上に(通路より先にエリアが出ても)
       const sc = backOut(s.appear) * (1 + s.bump * 0.06) * (s.building ? Math.max(0.01, 1 - (gt - s.buildAt) * 3) : 1);
       s.pad.scale.set(sc, sc, 1);
       s.pad.material.opacity = 0.75 + Math.sin(gt * 5) * 0.2;
@@ -2182,7 +2191,7 @@
       const x = cx + (Math.random() - 0.5) * 5, z = cz + (Math.random() - 0.5) * 5;
       if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIES.safe) continue;
       if (built.lab && built.lab.box) { const [x1, z1, x2, z2] = built.lab.box; if (x > x1 - 3 && x < x2 + 3 && z > z1 - 3 && z < z2 + 3) continue; } // 研究所と通路のまわりには出ない
-      if (corridorPath && polyDist(corridorPath, x, z) < 4) continue;
+      if (corrDist(x, z) < 4) continue;
       if (RECTS.some(A => A.started && x > A.x1 - 5 && x < A.x2 + 5 && z > A.z1 - 5 && z < A.z2 + 5)) continue;
       zs.push({ nt: night.phase === 'fight' ? nightGoal() : null, x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
@@ -2251,6 +2260,7 @@
       // 発電所の建物には入れない(吸い込み口からだけ)
       for (const id of ['lab', 'pump', 'cistern', 'pylon']) { const b = built[id]; if (!b || !b.box) continue; const [x1, z1, x2, z2] = b.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, zb.z - z1, z2 - zb.z]; if (id === 'lab' && Math.abs(zb.x - b.info.at[0]) < 2.8) m[3] = 99; /* 扉の側(通路)へは押し出さない */ const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else if (k === 2) zb.z = z1; else zb.z = z2; } }
       for (const w of extraWalls) segPush(zb, w, 0.55);
+      for (const w of zombieWalls) segPush(zb, w, 0.55);
       if (built.plant && built.plant.done) { const [x1, z1, x2, z2] = built.plant.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 + 0.6 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, z2 - zb.z]; const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else zb.z = z2; } }
       zb.face = Math.atan2(dx, dz);
       if (zb.appear <= 0) { setInst(zombieMesh, n, zb.x, -5, zb.z, 0.001, 0.001, 0.001); zombieMesh.setColorAt(n++, zb.tint); continue; }
@@ -2333,7 +2343,7 @@
   function checkPending() {
     for (let i = pendingSites.length - 1; i >= 0; i--) {
       const a = pendingSites[i];
-      if (!(a.requires || []).every(id => sites[id] && sites[id].done) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || (a.needPlaza && !plazaA.done) || giant) continue;
+      if (!(a.requires || []).every(id => sites[id] && sites[id].done) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || (a.needPlaza && !plazaA.done) || (a.needGarage && !garageState.open) || giant) continue;
       pendingSites.splice(i, 1);
       later(1.2, () => safe('site ' + a.id, () => { if (giant) return; createSite(a); if (a.announce) toast(a.announce); }));
     }
@@ -2969,6 +2979,9 @@
     train: (s) => buildTraining(s),
     plaza: (s) => buildPlaza(s),
     paddy: (s) => buildPaddy(s),
+    wall: (s) => buildWall(Object.assign(s, { wall: +s.id.slice(4) - 1 })),
+    garage: (s) => buildGarage(s),
+    mech: (s) => startMech(s),
   };
   function expandCamp(s) {
     const old = fences[fences.length - 1];
@@ -3720,7 +3733,7 @@
   const corridorBuilds = [];
   let corridorPath = null;
   const CORRIDOR_W = 2.0;
-  function inCorridor(x, z) { return extraWalls.length > 0 && corridorPath && polyDist(corridorPath, x, z) < CORRIDOR_W + 0.1; }
+  function inCorridor(x, z) { return extraWalls.length > 0 && corrDist(x, z) < CORRIDOR_W + 0.1; }
   function polyDist(pts, x, z) {
     let best = 1e9;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -4334,6 +4347,293 @@
     checkPending();
   }
 
+  // ---- 柵強化: 柵の外側に、先をとがらせた丸太のバリケードを並べる。さわったゾンビは倒れる ----
+  const WALLS = [
+    { pad: WALL_PADS[0], segs: [[-14, -11, -14, 17]], out: [-1, 0] },          // 西
+    { pad: WALL_PADS[1], segs: [[-14, 17, -2.1, 17], [2.1, 17, 14, 17]], out: [0, 1] }, // 南(入口はあける)
+    { pad: WALL_PADS[2], segs: [[14, 17, 29.5, 17]], out: [0, 1] },            // カマクラ村の南
+    { pad: WALL_PADS[3], segs: [[29.5, 17, 43.5, 17]], out: [0, 1] },          // 広場の南
+    { pad: WALL_PADS[4], segs: [[-14, -11, -8.9, -11]], out: [0, -1] },      // 北西(発電所の横)
+  ];
+  const spikeGeo = mergeGeometries([
+    { geo: Cyl(0.13, 0.13, 1.4, 6), m: M(0, 0.32, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#7a4d24' },
+    ...[-0.45, 0, 0.45].map(x => ({ geo: Cyl(0.05, 0.12, 1.6, 6), m: M(x, 0.78, 0.38, 1, 1, 1, 0.85, 0, 0), color: '#d9a866' })),
+    ...[-0.45, 0, 0.45].map(x => ({ geo: Cone(0.07, 0.3, 6), m: M(x, 1.42, 1.02, 1, 1, 1, 0.85, 0, 0), color: '#fff2cf' })),
+    { geo: Box(1.5, 0.22, 0.5), m: M(0, 0.11, -0.05), color: '#8d97a3' },
+    { geo: Box(0.12, 0.6, 0.12), m: M(-0.55, 0.3, -0.1), color: '#5a3a1e' }, { geo: Box(0.12, 0.6, 0.12), m: M(0.55, 0.3, -0.1), color: '#5a3a1e' },
+  ]);
+  const wallBuilds = [];
+  function buildWall(s) {
+    const W = WALLS[s.wall], spikes = [];
+    for (const [ax, az, bx, bz] of W.segs) {
+      const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / 1.6));
+      for (let k = 0; k < n; k++) { const u = (k + 0.5) / n; spikes.push({ x: lerp(ax, bx, u) + W.out[0] * 1.5, z: lerp(az, bz, u) + W.out[1] * 1.5, at: 0.2 + spikes.length * 0.06, up: false }); }
+    }
+    const ry = Math.atan2(W.out[0], W.out[1]);
+    const mesh = new THREE.InstancedMesh(spikeGeo, vcMat, spikes.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    wallBuilds.push({ W, spikes, mesh, ry, t: 0, s, killT: 0 });
+    // バリケードのまわりの木は倒れる(見えるように)
+    for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && spikes.some(q => Math.hypot(t.x - q.x, t.z - q.z) < 3.2)) later(0.1 + Math.random() * 0.6, () => { if (!t.dead && !t.gone) fellTree(t, W.out[0] + (Math.random() - 0.5) * 0.6, W.out[1] + (Math.random() - 0.5) * 0.6); });
+    const m = spikes[Math.floor(spikes.length / 2)];
+    camFocus(m.x, m.z, 3, 0.4);
+  }
+  function updateWalls(dt) {
+    for (const wb of wallBuilds) {
+      wb.t += dt;
+      let n = 0;
+      for (const q of wb.spikes) {
+        if (!q.flew && wb.t > q.at - 0.4) { q.flew = true; flyLog(wb.s.x, 0.5, wb.s.z, q.x, 0.8, q.z, 0.38, 2); }
+        const k = (wb.t - q.at) / 0.22, sc = k <= 0 ? 0.001 : Math.max(0.01, backOut(Math.min(1, k)));
+        setInst(wb.mesh, n++, q.x, 0, q.z, sc * 1.45, sc * 1.45, sc * 1.45, wb.ry);
+        if (!q.up && k >= 0.6) { q.up = true; puff(q.x, 0.2, q.z, 1, '#ffffff', 0.6, 0.6, 0.6); if (!fastForwarding && n % 2 === 0) tone(380 + (n % 20) * 22, 0.05, 'square', 0.03, 1.3); }
+      }
+      wb.mesh.count = n; wb.mesh.instanceMatrix.needsUpdate = true;
+      if (!wb.done && wb.spikes.every(q => q.up)) { wb.done = true; shake(0.15); SND.done(); ring(wb.s.x, wb.s.z, 4, 0.5, '#ffe27a'); }
+      if (!wb.done || night.noFire) continue;
+      // とがった丸太にさわったゾンビは倒れる(1体ずつ、少し間をあけて)
+      wb.killT -= dt;
+      if (wb.killT > 0) continue;
+      for (const zb of zs) {
+        if (zb.dead || zb.lure) continue;
+        let near = false;
+        for (const [ax, az, bx, bz] of wb.W.segs) { const ox = ax + wb.W.out[0] * 1.5, oz = az + wb.W.out[1] * 1.5, px = bx + wb.W.out[0] * 1.5, pz = bz + wb.W.out[1] * 1.5; if (polyDist([[ox, oz], [px, pz]], zb.x, zb.z) < 1.5) { near = true; break; } }
+        if (near) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); wb.killT = 0.35; break; }
+      }
+    }
+  }
+
+  // ---- 拠点UP5: ロッジの裏から研究所の裏を通って、発電所の裏の大きな木の倉庫へ。倉庫の中でメカゾンビを作る ----
+  const GARAGE = { x: -3.5, z: -33, w: 19, d: 7, door: 1.6, shutter: 4 };
+  const garageRect = { x1: GARAGE.x - GARAGE.w / 2, z1: GARAGE.z - GARAGE.d / 2, x2: GARAGE.x + GARAGE.w / 2, z2: GARAGE.z + GARAGE.d / 2, started: false, done: false };
+  let corridorPath2 = null, garageState = { open: false, shutter: null, k: 0 };
+  const zombieWalls = []; // ゾンビだけ通れない線(倉庫のシャッター)
+  function corrDist(x, z) { let d = 1e9; if (corridorPath) d = polyDist(corridorPath, x, z); if (corridorPath2) d = Math.min(d, polyDist(corridorPath2, x, z)); return d; }
+  function warehouseDef() {
+    const W = GARAGE.w, D = GARAGE.d, H = 7.2, hw = W / 2, hd = D / 2, sw = GARAGE.shutter, dw = GARAGE.door, wood = '#9a6a3e', dark = '#5a3a1e';
+    const parts = [B(W, 0.2, D, 0, 0.1, 0, '#8d8f94', 'base')];
+    for (const x of [-hw, -sw, sw, hw]) for (const z of [-hd, hd]) parts.push(B(0.45, H, 0.45, x, H / 2, z, dark, 'pillar'));
+    parts.push(B(0.45, H, 0.45, hw, H / 2, -dw - 0.2, dark, 'pillar'), B(0.45, H, 0.45, hw, H / 2, dw + 0.2, dark, 'pillar'));
+    parts.push(B(W, H, 0.3, 0, H / 2, -hd + 0.15, wood, 'wall'), B(0.3, H, D, -hw + 0.15, H / 2, 0, wood, 'wall'));
+    const side = (hd - dw); parts.push(B(0.3, H, side, hw - 0.15, H / 2, -dw - side / 2, wood, 'wall'), B(0.3, H, side, hw - 0.15, H / 2, dw + side / 2, wood, 'wall'), B(0.3, H - 2.7, dw * 2, hw - 0.15, 2.7 + (H - 2.7) / 2, 0, wood, 'wall'));
+    const sl = hw - sw; parts.push(B(sl, H, 0.3, -sw - sl / 2, H / 2, hd - 0.15, wood, 'wall'), B(sl, H, 0.3, sw + sl / 2, H / 2, hd - 0.15, wood, 'wall'), B(sw * 2, H - 6.0, 0.3, 0, 6.0 + (H - 6.0) / 2, hd - 0.15, wood, 'wall'));
+    for (let i = 0; i < 9; i++) parts.push(B(0.08, H - 0.3, 0.05, -hw + 1 + i * 0.9, H / 2, -hd - 0.02, dark, 'wall'));
+    parts.push(B(W + 0.6, 0.35, D + 0.6, 0, H + 0.18, 0, '#5a3a2a', 'roof'), B(W + 0.6, 0.45, D * 0.5, 0, H + 0.55, 0, '#6b4422', 'roof'));
+    parts.push(B(sw * 2 + 0.4, 0.28, 0.1, 0, 6.15, hd + 0.05, '#ffd23a', 'deco'));
+    for (let i = 0; i < 8; i++) parts.push(B(0.45, 0.28, 0.11, -sw + 0.5 + i * 1.0, 6.15, hd + 0.06, '#2a2a2e', 'deco', { rz: 0.5 }));
+    parts.push(B(0.1, 2.6, dw * 0.9, hw + 0.05, 1.3, dw * 0.95, '#c0453a', 'deco', { ry: 1.2 }));
+    parts.push(B(1.6, 0.7, 0.1, 0, H - 0.2, -hd - 0.08, '#2f343c', 'deco'));
+    return { parts, size: [W, D], ridge: H + 1 };
+  }
+  BUILDINGS.mechgarage = { name: 'メカ倉庫', at: [GARAGE.x, GARAGE.z], rot: 0, def: warehouseDef, clear: 1.6 };
+  function buildGarage(s) {
+    garageRect.started = true; if (!RECTS.includes(garageRect)) RECTS.push(garageRect);
+    // 広場の北の柵に出入口をあける
+    const gx = 40, gz = plazaB.z1, gap = 1.8;
+    for (let i = extraWalls.length - 1; i >= 0; i--) {
+      const w = extraWalls[i];
+      if (Math.abs(w[1] - gz) > 0.05 || Math.abs(w[3] - gz) > 0.05) continue;
+      const lo = Math.min(w[0], w[2]), hi = Math.max(w[0], w[2]);
+      if (gx - gap < lo || gx + gap > hi) continue;
+      extraWalls.splice(i, 1, [lo, gz, gx - gap, gz], [gx + gap, gz, hi, gz]);
+    }
+    const pcb = corridorBuilds.find(cb => cb.onDone === plazaDone);
+    if (pcb) {
+      pcb.posts.forEach((q, i) => { if (Math.abs(q.z - gz) < 0.05 && Math.abs(q.x - gx) < gap) { setInst(pcb.mesh, i, q.x, -5, q.z, 0.001, 0.001, 0.001); burstGibs(q.x, 1, q.z, 4, '#a8774a', 3, 4); } });
+      pcb.railSegs.forEach(([a, b], k) => { const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2; if (Math.abs(mz - gz) < 0.05 && Math.abs(mx - gx) < gap + 0.7) for (const r of [k * 2, k * 2 + 1]) setInst(pcb.rails, r, mx, -5, mz, 0.001, 0.001, 0.001); });
+      pcb.mesh.instanceMatrix.needsUpdate = pcb.rails.instanceMatrix.needsUpdate = true;
+    }
+    const x2 = garageRect.x2, path = [[gx, gz], [gx, -42], [10, -42], [10, GARAGE.z], [x2 + 0.2, GARAGE.z]];
+    makeCorridor(path, s, () => {
+      corridorPath2 = path;
+      // 通路ができたら、倉庫が建つ(シャッターは閉まったまま)
+      const b = construct('mechgarage', false, s);
+      const sh = new THREE.Mesh(mergeGeometries([
+        { geo: Box(GARAGE.shutter * 2 - 0.1, 5.9, 0.12), m: M(0, 0, 0), color: '#9aa2ab' },
+        ...[...Array(15).keys()].map(i => ({ geo: Box(GARAGE.shutter * 2 - 0.1, 0.05, 0.16), m: M(0, -2.8 + i * 0.4, 0), color: '#6f7883' })),
+      ]), vcMat);
+      sh.position.set(GARAGE.x, 3.05, garageRect.z2 - 0.12); sh.scale.set(1, 0.01, 1); scene.add(sh);
+      garageState.shutter = sh; garageState.b = b; garageState.t = 0;
+      camFocus(GARAGE.x, GARAGE.z, 6, 0.7);
+    });
+    for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && polyDist(path, t.x, t.z) < CORRIDOR_W + 1.2) later(0.1 + Math.random() * 0.8, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); });
+    for (const zb of zs) if (!zb.dead && polyDist(path, zb.x, zb.z) < CORRIDOR_W + 0.5) later(0.2 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
+    zoomTarget = Math.max(zoomTarget, 2.3);
+    camFocus(25, -36, 5, 0.9);
+  }
+  // 柵つき通路(床の板と両側の柵)を作る。できたら after を呼ぶ
+  function makeCorridor(path, s, after) {
+    const sides = [offsetPath(path, CORRIDOR_W), offsetPath(path, -CORRIDOR_W)];
+    const posts = [], railSegs = [];
+    for (const side of sides) for (let i = 0; i < side.length - 1; i++) {
+      const [ax, az] = side[i], [bx, bz] = side[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.4));
+      let prev = null;
+      for (let k = i ? 1 : 0; k <= n; k++) { const q = { x: lerp(ax, bx, k / n), z: lerp(az, bz, k / n), at: 0.2 + posts.length * 0.018, up: false }; posts.push(q); if (prev) railSegs.push([prev, q]); prev = q; }
+      if (i > 0) railSegs.push([posts[posts.length - n - 1], posts[posts.length - n]]);
+    }
+    const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    const planks = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const [ax, az] = path[i], [bx, bz] = path[i + 1], L = Math.hypot(bx - ax, bz - az), n = Math.round(L / 0.48), ang = Math.atan2(bx - ax, bz - az);
+      for (let k = 0; k < n; k++) planks.push({ x: lerp(ax, bx, (k + 0.5) / n), z: lerp(az, bz, (k + 0.5) / n), ry: ang, at: 0.1 + planks.length * 0.008, c: k % 2 });
+    }
+    const plankGeo = mergeGeometries([{ geo: Box(CORRIDOR_W * 2 - 0.2, 0.08, 0.44), m: M(0, 0.06, 0), color: '#b5834f' }, { geo: Box(CORRIDOR_W * 2 - 0.2, 0.02, 0.05), m: M(0, 0.11, 0.2), color: '#7a4d24' }]);
+    const plankMesh = new THREE.InstancedMesh(plankGeo, vcMat, planks.length); plankMesh.count = 0; plankMesh.frustumCulled = false; scene.add(plankMesh);
+    const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
+    corridorBuilds.push({ posts, railSegs, mesh, rails, planks, plankMesh, t: 0, sides, path, s, end: Math.max(0.2 + posts.length * 0.018, 0.1 + planks.length * 0.008) + 0.4, onDone: () => { shake(0.2); SND.done(); after(); } });
+  }
+  function updateGarage(dt) {
+    const G = garageState; if (!G.shutter) return;
+    G.t += dt;
+    if (G.b.done && !G.roof) {
+      // 屋根を別にして、中にいるとき・メカを作っているときは透けるように
+      const ps = G.b.def.parts;
+      for (const c of [...G.b.g.children]) { G.b.g.remove(c); if (c.geometry) c.geometry.dispose(); }
+      G.b.g.add(new THREE.Mesh(mergeGeometries(ps.filter(p => p.st !== 'roof').map(p => ({ geo: partGeo(p), m: M(...p.p, 1, 1, 1, ...p.r), color: p.c }))), vcMat));
+      G.roofMat = vcMat.clone(); G.roofMat.transparent = true;
+      G.roof = new THREE.Mesh(mergeGeometries(ps.filter(p => p.st === 'roof').map(p => ({ geo: partGeo(p), m: M(...p.p, 1, 1, 1, ...p.r), color: p.c }))), G.roofMat);
+      G.b.g.add(G.roof);
+    }
+    if (G.roof) {
+      const see = (player.x > garageRect.x1 - 3 && player.x < garageRect.x2 + 3 && player.z > garageRect.z1 - 3 && player.z < garageRect.z2 + 3) || (mech && mech.st === 'build') || (!garageRect.done && Math.hypot(player.x - GARAGE.x, player.z - GARAGE.z) < 12);
+      G.roofMat.opacity += ((see ? 0.12 : 1) - G.roofMat.opacity) * Math.min(1, dt * 5);
+      G.roofMat.depthWrite = G.roofMat.opacity > 0.95;
+    }
+    if (!G.b.done) { G.shutter.scale.y = Math.min(1, G.shutter.scale.y + dt * 0.8); return; }
+    if (!G.open) {
+      G.k += dt * 0.6;
+      if (G.k === dt * 0.6) { if (!fastForwarding) noise(1.6, 0.05, 500); }
+      const e = Math.min(1, G.k);
+      G.shutter.scale.y = Math.max(0.04, 1 - e); G.shutter.position.y = 3.05 + e * 2.8;
+      if (e >= 1) {
+        G.open = true; garageRect.done = true;
+        G.b.box = null; // 中を歩けるように(壁は線で)
+        const { x1, z1, x2, z2 } = garageRect, cz = GARAGE.z, cx = GARAGE.x;
+        extraWalls.push([x1, z1, x2, z1], [x1, z1, x1, z2], [x2, z1, x2, cz - GARAGE.door], [x2, cz + GARAGE.door, x2, z2], [x1, z2, cx - GARAGE.shutter, z2], [cx + GARAGE.shutter, z2, x2, z2]);
+        zombieWalls.push([cx - GARAGE.shutter, z2, cx + GARAGE.shutter, z2]);
+        for (const zb of zs) if (!zb.dead && inRect(garageRect, zb.x, zb.z, 0.3)) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); }
+        ring(cx, cz, 10, 0.6, '#ffe27a'); SND.done(); shake(0.2);
+        checkPending();
+      }
+    }
+  }
+
+  // ---- メカゾンビ: ゾンビの頭を大量に使って、倉庫の中で組み上がる。昼はシャッターの前を守り、夜は外へ出て大暴れ ----
+  const MECH = { at: [GARAGE.x, GARAGE.z - 0.6], speed: 4.2, range: 11, every: 0.12, stomp: 2.6, stompR: 3.4 };
+  let mech = null;
+  function mechParts() {
+    const metal = '#7d8792', dark = '#3a3f47', skin = '#86e06a', skin2 = '#5fa84a';
+    const leg = () => mergeGeometries([
+      { geo: Box(0.9, 1.2, 0.9), m: M(0, -0.6, 0), color: metal }, { geo: Sph(0.42, 8, 6), m: M(0, -1.25, 0), color: dark },
+      { geo: Box(0.75, 1.1, 0.75), m: M(0, -1.85, 0), color: metal }, { geo: Box(0.3, 0.6, 0.12), m: M(0, -1.7, 0.42), color: '#ffd23a' },
+      { geo: Box(1.1, 0.35, 1.5), m: M(0, -2.5, 0.2), color: dark },
+    ]);
+    const body = mergeGeometries([
+      { geo: Box(1.8, 0.5, 1.2), m: M(0, 2.85, 0), color: dark },
+      { geo: Box(2.8, 1.9, 1.9), m: M(0, 3.95, 0), color: metal },
+      { geo: Box(1.6, 1.1, 0.12), m: M(0, 4.05, 0.98), color: skin }, { geo: Box(0.12, 1.1, 0.14), m: M(-0.3, 4.05, 1.0), color: '#2a4a20' }, { geo: Box(1.0, 0.08, 0.14), m: M(0, 4.2, 1.0), color: '#2a4a20' },
+      { geo: Box(2.9, 0.22, 0.1), m: M(0, 3.15, 0.97), color: '#ffd23a' },
+      ...[-1, -0.5, 0, 0.5, 1].map(x => ({ geo: Box(0.22, 0.2, 0.11), m: M(x * 1.2, 3.15, 0.99, 1, 1, 1, 0, 0, 0.5), color: '#2a2a2e' })),
+      { geo: Box(1.3, 1.2, 1.2), m: M(0, 5.45, 0.1), color: skin }, { geo: Box(1.34, 0.35, 1.24), m: M(0, 5.95, 0.1), color: skin2 },
+      { geo: Box(0.9, 0.25, 0.08), m: M(0, 5.05, 0.72), color: '#2a3a20' }, { geo: Box(0.08, 0.5, 0.06), m: M(0.35, 5.6, 0.72), color: '#2a4a20' },
+      { geo: Box(1.6, 0.25, 1.4), m: M(0, 4.85, 0), color: dark },
+      { geo: Cyl(0.22, 0.22, 1.4, 8), m: M(-0.7, 4.6, -1.15), color: dark }, { geo: Cyl(0.22, 0.22, 1.4, 8), m: M(0.7, 4.6, -1.15), color: dark },
+      { geo: Sph(0.55, 8, 6), m: M(-1.65, 4.5, 0), color: dark }, { geo: Sph(0.55, 8, 6), m: M(1.65, 4.5, 0), color: dark },
+    ]);
+    const armR = mergeGeometries([
+      { geo: Box(0.6, 1.3, 0.6), m: M(0, -0.65, 0), color: metal },
+      ...[0, 1, 2, 3, 4, 5].map(i => ({ geo: Cyl(0.08, 0.08, 1.8, 6), m: M(Math.cos(i * Math.PI / 3) * 0.22, -1.35 + Math.sin(i * Math.PI / 3) * 0.22, 0.9, 1, 1, 1, Math.PI / 2, 0, 0), color: '#2a2a2e' })),
+      { geo: Cyl(0.36, 0.36, 0.5, 10), m: M(0, -1.35, 0.2, 1, 1, 1, Math.PI / 2, 0, 0), color: dark },
+    ]);
+    const armL = mergeGeometries([
+      { geo: Box(0.6, 1.3, 0.6), m: M(0, -0.65, 0), color: metal }, { geo: Box(0.7, 0.5, 0.8), m: M(0, -1.45, 0.15), color: dark },
+      ...[-0.25, 0, 0.25].map(x => ({ geo: Cone(0.1, 0.6, 5), m: M(x, -1.6, 0.75, 1, 1, 1, Math.PI / 2, 0, 0), color: '#dfe6ec' })),
+    ]);
+    return { leg, body, armR, armL };
+  }
+  function startMech(s) {
+    const P = mechParts(), g = new THREE.Group(); g.position.set(MECH.at[0], 0, MECH.at[1]); scene.add(g);
+    const mk = (geo, x, y, z) => { const o = new THREE.Group(); o.position.set(x, y, z); const m = new THREE.Mesh(geo, vcMat); o.add(m); o.scale.setScalar(0.001); g.add(o); return o; };
+    const legL = mk(P.leg(), -0.65, 2.75, 0), legR = mk(P.leg(), 0.65, 2.75, 0);
+    const body = mk(P.body, 0, 0, 0), armR = mk(P.armR, 1.85, 4.6, 0.1), armL = mk(P.armL, -1.85, 4.6, 0.1);
+    const eyes = new THREE.Mesh(mergeGeometries([{ geo: Box(0.26, 0.18, 0.06), m: M(-0.3, 5.55, 0.74), color: '#ffffff' }, { geo: Box(0.26, 0.18, 0.06), m: M(0.3, 5.55, 0.74), color: '#ffffff' }]), new THREE.MeshBasicMaterial({ color: '#ff3a2a' }));
+    eyes.visible = false; g.add(eyes);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexL, color: '#ff4a2a', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); glow.position.set(0, 5.55, 0.9); glow.scale.setScalar(0.01); g.add(glow);
+    mech = { g, legL, legR, body, armR, armL, eyes, glow, x: MECH.at[0], z: MECH.at[1], face: 0, st: 'build', t: 0, fireT: 0, stompT: 0, walk: 0, route: null, ri: 0, dir: 1, kills: 0 };
+    camFocus(MECH.at[0], MECH.at[1], 11, 0.4);
+    zoomTarget = Math.max(zoomTarget, 1.3);
+  }
+  const MECH_ORDER = [['legL', 0.4], ['legR', 1.6], ['body', 3.0], ['armL', 5.6], ['armR', 6.8]];
+  function updateMech(dt) {
+    const m = mech; if (!m) return;
+    m.t += dt;
+    if (m.st === 'build') {
+      // 頭が1個ずつ飛んできて、足 → 体 → 腕の順に組み上がる
+      if (Math.random() < dt * 22 && m.t < 8.5) { const tx = m.x + (Math.random() - 0.5) * 2.4, ty = 0.5 + Math.random() * 5, tz = m.z + (Math.random() - 0.5) * 1.6; flyItem('ice', 2.6, 0.6, GARAGE.z, tx, ty, tz, 0.45, 2, () => { burstGibs(tx, ty, tz, 3, '#86e06a', 2, 2); if (!fastForwarding && Math.random() < 0.3) SND.tok(); }, 10); }
+      for (const [k, at] of MECH_ORDER) { const e = (m.t - at) / 0.9, o = m[k]; o.scale.setScalar(e <= 0 ? 0.001 : Math.max(0.01, backOut(Math.min(1, e)))); if (e > 0 && !o.landed) { o.landed = true; shake(0.12); if (!fastForwarding) tone(110, 0.3, 'sawtooth', 0.06, 0.6); puff(m.x, 1, m.z, 4, '#e8eef4', 1.2, 1, 1.4); } }
+      if (m.t > 8.6 && !m.eyes.visible) { m.eyes.visible = true; m.glow.scale.setScalar(1.6); shake(0.5); ring(m.x, m.z, 7, 0.6, '#ff6a3a'); burstGibs(m.x, 5, m.z, 30, '#ffd23a', 6, 7); if (!fastForwarding) { tone(70, 1.2, 'sawtooth', 0.12, 0.5); noise(0.8, 0.12, 400); } }
+      if (m.t > 10.5) { m.st = 'idle'; SND.done(); }
+      return;
+    }
+    const phase = night.phase;
+    // 夜: シャッターから外へ出て、拠点のまわりを歩きながら撃ちまくる
+    if (phase === 'fight' && !night.noFire && !night.end_alone) {
+      if (m.st === 'idle') {
+        const sx = GARAGE.x, sz = garageRect.z2 + 3.5, wz = 20.6;
+        m.route = [[sx, garageRect.z2 - 1], [sx, sz], [-17.8, sz], [-17.8, wz], [45, wz]]; m.ri = 1; m.dir = 1; m.st = 'out';
+      }
+    } else if (m.st === 'out') { m.dir = -1; m.st = 'back'; m.ri = Math.max(0, m.ri - 1); }
+    let moving = false;
+    if (m.st === 'out' || m.st === 'back') {
+      const tgt = m.route[m.ri], dx = tgt[0] - m.x, dz = tgt[1] - m.z, d = Math.hypot(dx, dz);
+      if (d < 0.3) {
+        m.ri += m.dir;
+        if (m.ri >= m.route.length) { m.dir = -1; m.ri = m.route.length - 2; }
+        if (m.ri < 0) { if (m.st === 'back') { m.st = 'idle'; m.x = MECH.at[0]; m.z = MECH.at[1]; } else { m.dir = 1; m.ri = 1; } }
+      } else {
+        const sp = MECH.speed * (m.st === 'back' ? 1.4 : 1);
+        m.x += dx / d * Math.min(d, sp * dt); m.z += dz / d * Math.min(d, sp * dt);
+        const want = Math.atan2(dx, dz); let df = want - m.face; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2; m.face += df * Math.min(1, dt * 5);
+        moving = true;
+      }
+    }
+    if (m.st === 'idle') { let df = 0 - m.face; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2; m.face += df * Math.min(1, dt * 3); }
+    // 撃つ: 昼は倉庫の前の外のゾンビ、夜は歩きながらまわりのゾンビ
+    const canFire = !night.noFire && (phase === 'day' || phase === 'fight') && !giantBusy();
+    m.fireT -= dt;
+    if (canFire && m.fireT <= 0) {
+      const ox = m.st === 'idle' ? GARAGE.x : m.x, oz = m.st === 'idle' ? garageRect.z2 + 1 : m.z, R = m.st === 'idle' ? 14 : MECH.range;
+      let best = null, bd = R;
+      for (const zb of zs) { if (zb.dead || zb.mechT > gt || zb.lure || insideCamp(zb.x, zb.z)) continue; const d = Math.hypot(zb.x - ox, zb.z - oz); if (d < bd) { bd = d; best = zb; } }
+      if (best) {
+        m.fireT = MECH.every * (m.st === 'idle' ? 1.6 : 1);
+        if (m.st === 'idle') { const want = Math.atan2(best.x - m.x, best.z - m.z); let df = want - m.face; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2; m.face += clamp(df, -0.5, 0.5) * 0.3; }
+        const gx = m.x + Math.cos(m.face) * 1.85 + Math.sin(m.face) * 1.8, gz = m.z - Math.sin(m.face) * 1.85 + Math.cos(m.face) * 1.8;
+        if (tracers.length < 60) { tracers.push({ sx: gx, sy: 3.3, sz: gz, zb: best, t: 0, dur: 0.05 + bd * 0.008 }); best.mechT = gt + 0.2; best.hp = 1; }
+        muzzle.visible = true; muzzle.position.set(gx, 3.3, gz); muzzle.scale.setScalar(0.8 + Math.random() * 0.9); m.flash = 0.04;
+        if (!fastForwarding && sfx.chop >= 1) { sfx.chop--; noise(0.05, 0.12, 2200); }
+      } else m.fireT = 0.1;
+    }
+    if (m.flash > 0) { m.flash -= dt; if (m.flash <= 0) muzzle.visible = false; }
+    // ドシン: 夜に外を歩いているとき、足もとのゾンビをまとめて吹き飛ばす
+    if (moving && m.st === 'out' && canFire) {
+      m.stompT -= dt;
+      if (m.stompT <= 0) {
+        m.stompT = MECH.stomp;
+        let k = 0;
+        for (const zb of zs) if (!zb.dead && Math.hypot(zb.x - m.x, zb.z - m.z) < MECH.stompR) { zb.hp = 1; hitZombie(zb, m.x, m.z); k++; }
+        ring(m.x, m.z, MECH.stompR + 1, 0.4, '#ffe27a'); puff(m.x, 0.3, m.z, 4, '#e8eef4', 1.4, 0.6, 1.6); shake(0.12);
+        if (!fastForwarding) { tone(60, 0.35, 'sine', 0.12, 0.5); noise(0.25, 0.08, 300); }
+      }
+    }
+    // 見た目: 歩くと足が前後にゆれ、体が上下する
+    m.walk += moving ? dt * 7 : 0;
+    const sw = moving ? Math.sin(m.walk) * 0.5 : m.legL.rotation.x * 0.8;
+    m.legL.rotation.x = sw; m.legR.rotation.x = -sw;
+    m.armR.rotation.x = moving ? -0.2 + Math.sin(m.walk) * 0.15 : -0.1; m.armL.rotation.x = moving ? -Math.sin(m.walk) * 0.3 : Math.sin(gt * 1.3) * 0.05;
+    m.g.position.set(m.x, moving ? Math.abs(Math.cos(m.walk)) * 0.18 : Math.sin(gt * 2) * 0.03, m.z); m.g.rotation.y = m.face;
+    m.glow.scale.setScalar(1.4 + Math.sin(gt * 6) * 0.25);
+  }
+
   // 田んぼ: 3×3の区画。水が流れこみ、稲が育って金色になると刈り取られ、米俵が積み上がる
   const PADDY = { cx: 36.5, cz: 6.0, size: 3.4, gap: 0.5, grow: 24, cap: 30 };
   let paddy = null;
@@ -4378,11 +4678,12 @@
     }
     const pipe = new THREE.Mesh(mergeGeometries(pipeParts), vcMat);
     pipe.scale.set(1, 0.01, 1); scene.add(pipe);
-    later(0.2, () => yardPops.push({ g: pipe, t: 0 }));
+    const pumpOn = built.pump2 && built.pump2.done;
+    if (pumpOn) later(0.2, () => yardPops.push({ g: pipe, t: 0 }));
     const blobs = new THREE.InstancedMesh(Sph(0.13, 6, 5), new THREE.MeshBasicMaterial({ color: '#7fd4ff' }), 10); blobs.count = 0; blobs.frustumCulled = false; scene.add(blobs);
     const bales = new THREE.InstancedMesh(baleGeo, vcMat, P.cap); bales.count = 0; bales.frustumCulled = false; scene.add(bales);
     const total = segs.reduce((t, s2) => t + Math.hypot(s2[2] - s2[0], s2[3] - s2[1]), 0);
-    paddy = { plots, tufts, mesh, blobs, pipe: { segs, total, y: ya + 0.25 }, bales, nb: 0, t: 0, grow: 0, phase: 'grow', pile: [41.6, 14.0] };
+    paddy = { plots, tufts, mesh, blobs, pipeOn: pumpOn, pipeMesh: pipe, pipe: { segs, total, y: ya + 0.25 }, bales, nb: 0, t: 0, grow: 0, phase: 'grow', pile: [41.6, 14.0] };
     // 村人が3人、田んぼで農作業
     for (let k = 0; k < 3; k++) town.jobs.push({ spot: plots[k * 3 + 1].slice(), label: '農', h: null, farm: true, ft: Math.random() * 3 });
     camFocus(P.cx, P.cz, 4, 0.5);
@@ -4411,8 +4712,9 @@
       P.mesh.setColorAt(n++, _col);
     }
     P.mesh.count = n; P.mesh.instanceMatrix.needsUpdate = true; if (P.mesh.instanceColor) P.mesh.instanceColor.needsUpdate = true;
-    // 管の中を流れる水
-    for (let i = 0; i < 10; i++) {
+    // 管の中を流れる水(ポンプができてから)
+    if (!P.pipeOn && built.pump2 && built.pump2.done) { P.pipeOn = true; yardPops.push({ g: P.pipeMesh, t: 0 }); }
+    if (P.pipeOn) for (let i = 0; i < 10; i++) {
       let d = ((P.t * 0.18 + i / 10) % 1) * P.pipe.total;
       for (const [ax, az, bx, bz] of P.pipe.segs) { const L = Math.hypot(bx - ax, bz - az); if (d <= L) { setInst(P.blobs, i, lerp(ax, bx, d / L), P.pipe.y, lerp(az, bz, d / L), 1, 1, 1); break; } d -= L; }
     }
@@ -4421,7 +4723,7 @@
     // 食堂: 米俵を1つずつ運ぶ
     const D = town.diner;
     if (D && P.nb > 0) { D.t -= dt; if (D.t <= 0) { D.t = 6; P.nb--; drawBales(); flyItem('bale', P.pile[0], 0.6, P.pile[1], D.x, 2.6, D.z, 1.4, 6, () => { smokePuff(D.x + 2.0, 3.8, D.z + 0.5); }, 4); } }
-    P.blobs.count = P.t > 1 ? 10 : 0; P.blobs.instanceMatrix.needsUpdate = true;
+    P.blobs.count = P.t > 1 && P.pipeOn ? 10 : 0; P.blobs.instanceMatrix.needsUpdate = true;
   }
   function drawBales() {
     const P = paddy, n = Math.min(P.nb, PADDY.cap);
@@ -4462,7 +4764,7 @@
   }
 
   // ---- 結末のふり分け: 拠点なし → 守り不足 → 食べ物不足 → 暮らし不足 → (ワンコ) ----
-  const DEF_IDS = ['tower', 'gatling', 'archers', 'deck', 'train'];   // 守り
+  const DEF_IDS = ['tower', 'gatling', 'archers', 'deck', 'train', 'wall1', 'wall2', 'wall3', 'wall4', 'wall5', 'garage', 'mech'];   // 守り
   const FOOD_IDS = ['pump', 'paddy', 'diner'];                        // 食べ物
   function endingKind() {
     if (!(sites.camp && sites.camp.done) || !fences.length) return 'alone';
@@ -5069,7 +5371,7 @@
     place: (a) => construct(a.building, true),
     spawn: (a) => a.at.forEach(([x, z]) => spawnTarget(a.what, x, z, a)),
     site: (a) => {
-      if ((a.requires && !a.requires.every(id => sites[id] && sites[id].done)) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || (a.needPlaza && !plazaA.done)) { pendingSites.push(a); return null; }
+      if ((a.requires && !a.requires.every(id => sites[id] && sites[id].done)) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || (a.needPlaza && !plazaA.done) || (a.needGarage && !garageState.open)) { pendingSites.push(a); return null; }
       return createSite(a);
     },
     unlock: (a) => unlockArea(a.area),
@@ -5169,7 +5471,7 @@
         for (let k = 0; k < 30; k++) {
           const a = Math.random() * Math.PI * 2, d = C.H + 4 + Math.random() * 6;
           x = clamp(C.x + Math.cos(a) * d, WORLD.x1 + 3, WORLD.x2 - 3); z = clamp(C.z + Math.sin(a) * d, WORLD.z1 + 3, WORLD.z2 - 3);
-          if (!insideCamp(x, z, 2.5) && !(corridorPath && polyDist(corridorPath, x, z) < CORRIDOR_W + 2) && riverDist(x, z) > RIVER.w / 2 + 1 && !stumpHidden({ x, z })) break;
+          if (!insideCamp(x, z, 2.5) && !(corrDist(x, z) < CORRIDOR_W + 2) && riverDist(x, z) > RIVER.w / 2 + 1 && !stumpHidden({ x, z })) break;
         }
       } else if (area) { const [x1, z1, x2, z2] = AREAS[area].rect; x = lerp(Math.max(x1, -6) + 2, Math.min(x2, 18) - 2, Math.random()); z = lerp(Math.max(z1, -15) + 2, Math.min(z2, 6) - 2, Math.random()); }
       spawnTarget(s.res === 'meat' ? 'wolf' : 'tree', x, z, { tag: 'extra', hits: 2, drops: { [s.res]: Math.min(10, s.need - have) }, grow: true });
@@ -5597,7 +5899,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); updateTraining(dt); updatePaddy(dt); updateArchery(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); updateTraining(dt); updatePaddy(dt); updateArchery(dt); updateWalls(dt); updateGarage(dt); updateMech(dt); });
     safe('night', () => updateNight(dt));
     safe('fireworks', () => updateFireworks(dt));
     safe('stumps', () => refreshStumps(dt));
@@ -5666,6 +5968,8 @@
     addVillagers(n) { const C = campInfo(); for (let i = 0; i < n; i++) humans.push({ x: C.x + (Math.random() - 0.5) * 8, z: C.z + (Math.random() - 0.5) * 8, st: 'villager', hp: 1, t: 0, face: 0, tint: HUMAN_TINTS[i % HUMAN_TINTS.length], hunger: HUMAN.hunger, starve: 0, wander: null, wanderT: 0, ph: Math.random() * 6 }); return villagerCount(); },
     town() { return { villagers: villagerCount(), jobs: town.jobs.map(j => j.label + (j.h ? (j.h.atJob ? '✓' : '…') : '×')), bread: town.bakery ? town.bakery.bread : null, max: LAB.max }; },
     igloos() { return { annex: annex.done, igloos: igloos.map(ig => ig.n + '/' + ig.pts.length + (ig.done ? '✓' : '')), max: LAB.max }; },
+    testWall(i) { buildWall({ x: WALL_PADS[i][0], z: WALL_PADS[i][1], wall: i }); return wallBuilds.length; },
+    mech() { return { garage: garageState.open, built: !!(garageState.b && garageState.b.done), mech: mech ? { st: mech.st, x: +mech.x.toFixed(1), z: +mech.z.toFixed(1) } : null, walls: wallBuilds.map(w => w.done) }; },
     night() { return { end: night.end || endingKind(), phase: night.phase, t: +night.t.toFixed(1), win: night.win, elapsed: Math.round(elapsed), corpses: corpseN, soldiers: humans.filter(h => h.soldier).length, posts: humans.filter(h => h.post).length, unlocked: allUnlocked(), missing: missingSites(), fw: FW.on ? FW.sparks.length : -1 }; },
     skipTime(sec) { started = true; elapsed += sec; },
     paddy() { return paddy ? { phase: paddy.phase, grow: +paddy.grow.toFixed(2), bales: paddy.nb } : null; },
