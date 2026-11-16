@@ -84,7 +84,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.27-s31';
+  const GAME_VERSION = '2026.11.28-s32';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -232,6 +232,11 @@
         // 研究所から拠点までの柵つき通路
         { do: 'site', id: 'corridor', icon: '🚧', at: [12.0, -4.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
+        // 拠点UP 2: 通路の南の空き地(川の向こうまで)へ拠点を広げる → ゾンビの頭でカマクラ
+        { do: 'site', id: 'expand2', icon: '拠点UP2', padSize: 4.0, at: [11.6, 6.0], res: 'cash', need: 500, build: [], special: 'expand2', requires: ['corridor'],
+          announce: '🏗️ 通路の南まで、拠点をもっと広げられる!' },
+        ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8], [27.4, 3.4], [16.8, 14.0], [27.4, 9.4]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
+          requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
         { do: 'storage', id: 'icepad', kind: 'deposit', icon: '🧟', res: 'ice', yard: 'ice', grid: { cols: 4, rows: 4, layers: 20, cx: 0.52, cz: 0.52, h: 0.48, y0: 0.55 }, delay: 0.3 },
         { do: 'storage', id: 'cashpad', kind: 'pickup', icon: '💵', res: 'cash', yard: 'cash', grid: { cols: 3, rows: 4, layers: 30, cx: 0.56, cz: 0.32, h: 0.17, y0: 0.42 }, delay: 0.5 },
@@ -1618,7 +1623,7 @@
     g.textAlign = 'center'; g.textBaseline = 'middle';
     if (s.iconCh && s.iconCh.length > 2) {
       // 文字のアイコン(「拠点UP」など)
-      g.globalAlpha = 1; g.font = 'bold 56px sans-serif'; g.lineWidth = 10; g.strokeStyle = 'rgba(20,60,30,0.9)'; g.fillStyle = '#fff6a0';
+      g.globalAlpha = 1; g.font = 'bold ' + (s.iconCh.length > 4 ? 44 : 56) + 'px sans-serif'; g.lineWidth = 10; g.strokeStyle = 'rgba(20,60,30,0.9)'; g.fillStyle = '#fff6a0';
       g.strokeText(s.iconCh, 0, -26); g.fillText(s.iconCh, 0, -26);
     } else if (s.iconCh) { g.globalAlpha = 1; g.fillStyle = '#ffffff'; g.font = '88px sans-serif'; g.fillText(s.iconCh, 0, -26); }
     g.font = 'bold 58px sans-serif'; g.lineWidth = 9; g.strokeStyle = 'rgba(20,60,30,0.85)'; g.fillStyle = '#ffffff';
@@ -2002,6 +2007,7 @@
       if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIES.safe) continue;
       if (built.lab && built.lab.box) { const [x1, z1, x2, z2] = built.lab.box; if (x > x1 - 3 && x < x2 + 3 && z > z1 - 3 && z < z2 + 3) continue; } // 研究所と通路のまわりには出ない
       if (corridorPath && polyDist(corridorPath, x, z) < 4) continue;
+      if (annex.started && x > annex.x1 - 5 && x < annex.x2 + 5 && z > annex.z1 - 5 && z < annex.z2 + 5) continue;
       zs.push({ x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
   }
@@ -2149,7 +2155,7 @@
   function checkPending() {
     for (let i = pendingSites.length - 1; i >= 0; i--) {
       const a = pendingSites[i];
-      if (!(a.requires || []).every(id => sites[id] && sites[id].done) || (a.needPeople && villagerCount() < a.needPeople) || giant) continue;
+      if (!(a.requires || []).every(id => sites[id] && sites[id].done) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || giant) continue;
       pendingSites.splice(i, 1);
       later(1.2, () => safe('site ' + a.id, () => { if (giant) return; createSite(a); if (a.announce) toast(a.announce); }));
     }
@@ -2768,6 +2774,8 @@
   const SPECIAL = {
     expand: (s) => { if (dog && dog.st === 'dead') startGiant(s); else expandCamp(s); }, // 巨大ゾンビ犬はワンコが食べられたときだけ
     corridor: (s) => buildCorridor(s),
+    expand2: (s) => expandCamp2(s),
+    igloo: (s) => startIgloo(s),
   };
   function expandCamp(s) {
     const old = fences[fences.length - 1];
@@ -3166,7 +3174,7 @@
   function addJob(spot, label) { town.jobs.push({ spot, label, h: null }); }
   function startTown(what) {
     if (what === 'houses') {
-      town.houses = true; LAB.max = TOWN.houseMax;
+      town.houses = true; LAB.max = TOWN.houseMax + igloos.length * IGLOO.add;
       for (const id of ['town1', 'town2', 'town3', 'town4']) if (built[id]) built[id].smokeOn = true;
     } else if (what === 'bakery') {
       const [bx, bz] = built.bakery.info.at;
@@ -3412,7 +3420,7 @@
     { geo: Box(0.5, 0.14, 0.48), m: M(0, 1.72, 0.0), color: '#6b4426' },
   ]);
   const HUMAN_TINTS = ['#e0453a', '#3f8fd0', '#ffd23a', '#3fb34f', '#c27ad8', '#ff8a3a'].map(c => new THREE.Color(c));
-  const humanMesh = new THREE.InstancedMesh(humanGeo, vcMat, LAB.max + 5); humanMesh.count = 0; humanMesh.frustumCulled = false; scene.add(humanMesh);
+  const humanMesh = new THREE.InstancedMesh(humanGeo, vcMat, 160); humanMesh.count = 0; humanMesh.frustumCulled = false; scene.add(humanMesh);
   const humans = [];
   let humanMsg = {};
   function spawnHuman(L) {
@@ -3583,13 +3591,146 @@
       }
       cb.rails.count = r; cb.rails.instanceMatrix.needsUpdate = true;
       let pn = 0;
-      for (const q of cb.planks) { const k = Math.min(1, Math.max(0, (cb.t - q.at) / 0.15)); setInst(cb.plankMesh, pn++, q.x, (1 - k) * 1.5, q.z, k > 0 ? 1 : 0.001, 1, 1, q.ry + (q.c ? 0.02 : -0.02)); }
-      cb.plankMesh.count = pn; cb.plankMesh.instanceMatrix.needsUpdate = true;
+      if (cb.plankMesh) for (const q of cb.planks) { const k = Math.min(1, Math.max(0, (cb.t - q.at) / 0.15)); setInst(cb.plankMesh, pn++, q.x, (1 - k) * 1.5, q.z, k > 0 ? 1 : 0.001, 1, 1, q.ry + (q.c ? 0.02 : -0.02)); }
+      if (cb.plankMesh) { cb.plankMesh.count = pn; cb.plankMesh.instanceMatrix.needsUpdate = true; }
       if (cb.t > cb.end) {
         cb.done = true;
         for (const side of cb.sides) for (let i = 0; i < side.length - 1; i++) extraWalls.push([side[i][0], side[i][1], side[i + 1][0], side[i + 1][1]]);
+        if (cb.onDone) { cb.onDone(cb); continue; }
         shake(0.2); SND.done(); toast('🚧 柵つき通路ができた! 生まれた人を守れる');
         popText('🚧 通路 完成!', cb.path[1][0], cb.path[1][1], '#fff6b0', 20, 3);
+      }
+    }
+  }
+
+
+  // ---- 拠点UP 2: 通路の南の空き地(川の向こうまで)を拠点にする。川には木の橋 ----
+  const annex = { x1: 14, z1: -5.2, x2: 29.5, z2: 17, started: false, done: false };
+  function inAnnex(x, z, pad = 0) { return annex.done && x > annex.x1 - pad && x < annex.x2 + pad && z > annex.z1 - pad && z < annex.z2 + pad; }
+  function expandCamp2(s) {
+    const f = fences[fences.length - 1]; if (!f) return;
+    const A = annex, ex = A.x1, cx = (A.x1 + A.x2) / 2, cz = (A.z1 + A.z2) / 2;
+    A.started = true;
+    clearArea([A.x1, A.z1, A.x2, A.z2], 0.8, [cx, cz]);
+    // 東の柵(通路より南)が弾け飛ぶ
+    f.walls = f.walls.flatMap(w => {
+      const [ax, az, bx, bz] = w;
+      if (Math.abs(ax - ex) > 0.01 || Math.abs(bx - ex) > 0.01) return [w];
+      const lo = Math.min(az, bz), hi = Math.max(az, bz);
+      if (hi <= A.z1 + 0.01) return [w];
+      return lo < A.z1 ? [[ex, lo, ex, A.z1]] : [];
+    });
+    f.posts.forEach((q, i) => { if (Math.abs(q.x - ex) < 0.05 && q.z > A.z1 + 0.2 && q.z < A.z2 - 0.2) { setInst(f.postMesh, i, q.x, -5, q.z, 0.001, 0.001, 0.001); if (i % 2 === 0) burstGibs(q.x, 1, q.z, 4, '#a8774a', 4, 5); } });
+    f.rails.forEach((rl, i) => { const mx = (rl.p.x + rl.q.x) / 2, mz = (rl.p.z + rl.q.z) / 2; if (Math.abs(mx - ex) < 0.05 && mz > A.z1 && mz < A.z2) setInst(f.railMesh, i, mx, -5, mz, 0.001, 0.001, 0.001); });
+    f.postMesh.instanceMatrix.needsUpdate = f.railMesh.instanceMatrix.needsUpdate = true;
+    // 地面が広がる
+    const gnd = new THREE.Mesh(new THREE.PlaneGeometry(A.x2 - A.x1 + 1.2, A.z2 - A.z1 + 1.2), campGroundMat);
+    gnd.rotation.x = -Math.PI / 2; gnd.position.set(cx, 0.024, cz); gnd.scale.setScalar(0.01); scene.add(gnd);
+    yardPops.push({ g: gnd, t: 0 });
+    // 新しい柵(東と南)。杭がポンポン立って、横木が渡る
+    const side = [[A.x2, A.z1], [A.x2, A.z2], [A.x1, A.z2]];
+    const posts = [], railSegs = [];
+    for (let i = 0; i < side.length - 1; i++) {
+      const [ax, az] = side[i], [bx, bz] = side[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.3));
+      let prev = i ? posts[posts.length - 1] : null;
+      for (let k = i ? 1 : 0; k <= n; k++) { const q = { x: lerp(ax, bx, k / n), z: lerp(az, bz, k / n), at: 0.5 + posts.length * 0.04, up: false }; posts.push(q); if (prev) railSegs.push([prev, q]); prev = q; }
+    }
+    const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
+    corridorBuilds.push({ posts, railSegs, mesh, rails, planks: [], plankMesh: null, t: 0, sides: [side], path: [[cx, cz], [cx, cz]], s, end: 0.5 + posts.length * 0.04 + 0.5, onDone: annexDone });
+    // 川には木の橋
+    later(1.2, () => safe('bridge', buildBridge));
+    zoomTarget = Math.max(zoomTarget, 2.1);
+    camFocus(cx - 2, cz, 5, 0.8);
+    toast('🏗️ 拠点を川の向こうまで広げる!');
+  }
+  function annexDone() {
+    const A = annex;
+    A.done = true;
+    for (const zb of zs) if (!zb.dead && inAnnex(zb.x, zb.z, 0.6)) later(0.1 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
+    shake(0.3); SND.done(); ring((A.x1 + A.x2) / 2, (A.z1 + A.z2) / 2, 12, 0.6, '#ffe27a');
+    toast('🏗️ 拠点が川の向こうまで広がった!');
+    popText('🏗️ 拠点UP!', (A.x1 + A.x2) / 2, (A.z1 + A.z2) / 2, '#fff6b0', 24, 3);
+    checkPending();
+  }
+  function buildBridge() {
+    const z = 13.5, cx = RIVER.x0 + (z - RIVER.z0) * (RIVER.x1 - RIVER.x0) / (RIVER.z1 - RIVER.z0), len = 6.2, n = 13;
+    const parts = [];
+    for (let k = 0; k < n; k++) {
+      const u = (k + 0.5) / n, x = (u - 0.5) * len, y = 0.12 + Math.sin(u * Math.PI) * 0.55, tilt = Math.cos(u * Math.PI) * 0.36;
+      parts.push({ geo: Box(len / n + 0.02, 0.1, 2.0), m: M(x, y, 0, 1, 1, 1, 0, 0, tilt), color: k % 2 ? '#b5834f' : '#a8774a' });
+    }
+    for (const sz of [-1, 1]) {
+      for (let k = 0; k <= 4; k++) { const u = k / 4, x = (u - 0.5) * len, y = 0.12 + Math.sin(u * Math.PI) * 0.55; parts.push({ geo: Box(0.14, 0.75, 0.14), m: M(x, y + 0.35, sz * 0.95), color: '#7a4d24' }); }
+      for (let k = 0; k < 4; k++) { const u = (k + 0.5) / 4, x = (u - 0.5) * len, y = 0.12 + Math.sin(u * Math.PI) * 0.55 + 0.68, tilt = Math.cos(u * Math.PI) * 0.36 * 1.2; parts.push({ geo: Box(len / 4 + 0.1, 0.09, 0.1), m: M(x, y, sz * 0.95, 1, 1, 1, 0, 0, tilt), color: '#8b5a2b' }); }
+    }
+    const g = new THREE.Mesh(mergeGeometries(parts), vcMat);
+    g.position.set(cx, 0, z); g.rotation.y = -Math.atan2(RIVER.x1 - RIVER.x0, RIVER.z1 - RIVER.z0); g.scale.setScalar(0.01); scene.add(g);
+    yardPops.push({ g, t: 0 });
+  }
+
+  // ---- カマクラ: ゾンビの頭を積み上げたドーム。1つで研究所の上限 +10人 ----
+  const IGLOO = { R: 1.7, add: 10, total: 6 };
+  const igloos = [];
+  function iglooPlan(cx, cz) {
+    const R = IGLOO.R, pts = [];
+    [0, 0.32, 0.64, 0.96, 1.28].forEach((ph, ri) => {
+      const r = R * Math.cos(ph), y = 0.28 + R * Math.sin(ph), n = Math.max(1, Math.round(2 * Math.PI * r / 0.5));
+      for (let k = 0; k < n; k++) {
+        const a = k / n * Math.PI * 2 + ri * 0.27;
+        const da = Math.atan2(Math.sin(a - Math.PI / 2), Math.cos(a - Math.PI / 2));
+        if (ri < 2 && Math.abs(da) < 0.36) continue; // 入口(手前)
+        pts.push({ x: cx + Math.cos(a) * r, y, z: cz + Math.sin(a) * r, ry: Math.atan2(Math.cos(a), Math.sin(a)) });
+      }
+    });
+    pts.push({ x: cx, y: 0.28 + R, z: cz, ry: 0 });
+    // 入口のトンネル
+    for (const dz of [R - 0.02, R + 0.46]) {
+      for (const sx of [-0.56, 0.56]) for (const y of [0.28, 0.76]) pts.push({ x: cx + sx, y, z: cz + dz, ry: 0 });
+      for (const sx of [-0.26, 0.26]) pts.push({ x: cx + sx, y: 1.22, z: cz + dz, ry: 0 });
+    }
+    return pts;
+  }
+  function startIgloo(s) {
+    const cx = s.x, cz = s.z, pts = iglooPlan(cx, cz);
+    const mesh = new THREE.InstancedMesh(iceGeo, iceMat, pts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexL, color: '#ffb050', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.position.set(cx, 0.75, cz + IGLOO.R + 0.6); glow.scale.setScalar(0.01); scene.add(glow);
+    const door = new THREE.Mesh(new THREE.CircleGeometry(0.42, 16), new THREE.MeshBasicMaterial({ color: '#ff9a3a' }));
+    door.position.set(cx, 0.5, cz + IGLOO.R + 0.2); door.scale.set(1, 1.15, 1); door.visible = false; scene.add(door);
+    const ig = { x: cx, z: cz, pts, mesh, glow, door, n: 0, t: 0, done: false, no: igloos.length + 1 };
+    igloos.push(ig);
+    pts.forEach((q, i) => {
+      q.at = -1;
+      later(0.2 + i * 0.045, () => {
+        const sx = cx + (Math.random() - 0.5) * 1.2, sz = cz + IGLOO.R + 1.6;
+        flyItem('ice', sx, 0.4, sz, q.x, q.y, q.z, 0.34, 1.6 + q.y * 0.5, () => { q.at = ig.t; ig.n++; if (!fastForwarding && ig.n % 2 === 0) tone(380 + ig.n * 9, 0.05, 'triangle', 0.04, 1.3); if (ig.n % 6 === 0) puff(q.x, q.y, q.z, 1, '#ffffff', 0.5, 0.5, 0.5); }, 10);
+      });
+    });
+    camFocus(cx, cz, 4.5, 0.2);
+    ring(cx, cz, 3, 0.4, '#94d17c');
+  }
+  function updateIgloos(dt) {
+    for (const ig of igloos) {
+      ig.t += dt;
+      let n = 0;
+      for (const q of ig.pts) {
+        if (q.at < 0) continue;
+        const k = Math.min(1, (ig.t - q.at) / 0.16), sc = Math.max(0.01, 0.6 + backOut(k) * 0.4);
+        setInst(ig.mesh, n++, q.x, q.y, q.z, sc, sc, sc, q.ry);
+      }
+      ig.mesh.count = n; ig.mesh.instanceMatrix.needsUpdate = true;
+      if (ig.done) { ig.glow.material.opacity = 0.75 + Math.sin(gt * 9 + ig.no) * 0.12 + Math.sin(gt * 23 + ig.no * 2) * 0.08; continue; }
+      if (ig.n >= ig.pts.length && ig.t > 0.3) {
+        ig.done = true; ig.door.visible = true;
+        yardPops.push({ g: ig.glow, t: 0 }); later(0.45, () => ig.glow.scale.setScalar(2.6));
+        LAB.max += IGLOO.add;
+        shake(0.2); SND.done(); ring(ig.x, ig.z, 4, 0.5, '#ffb050'); burstGibs(ig.x, 2.2, ig.z, 18, '#94d17c', 4, 6);
+        popText('🧟 カマクラ 完成!', ig.x, ig.z, '#ffe27a', 20, 3.4);
+        if (igloos.filter(o => o.done).length >= IGLOO.total) {
+          toast('🧟 カマクラ村 完成! 研究所で作れる人 ' + LAB.max + '人');
+          later(0.4, () => { SND.done(); shake(0.3); for (const o of igloos) burstGibs(o.x, 2.6, o.z, 24, '#ffd23a', 4, 7); });
+        } else toast('🧟 カマクラ ' + igloos.filter(o => o.done).length + '/' + IGLOO.total + ' 完成! 研究所で作れる人 +' + IGLOO.add + '(' + LAB.max + '人)');
       }
     }
   }
@@ -3878,7 +4019,7 @@
       for (const zb of zs) {
         if (zb.dead || zb.appear < 0.6 || (zb.gat || 0) > gt) continue;
         const m = Math.max(Math.abs(zb.x - F.x), Math.abs(zb.z - F.z));
-        if (m > FH + 1.1) continue; // 柵にさわっている(または中に入った)ゾンビだけ
+        if (m > FH + 1.1 && !inAnnex(zb.x, zb.z, 1.1)) continue; // 柵にさわっている(または中に入った)ゾンビだけ
         const d = Math.hypot(zb.x - G.x, zb.z - G.z); if (d < bd) { bd = d; best = zb; }
       }
 
@@ -4083,7 +4224,7 @@
     place: (a) => construct(a.building, true),
     spawn: (a) => a.at.forEach(([x, z]) => spawnTarget(a.what, x, z, a)),
     site: (a) => {
-      if ((a.requires && !a.requires.every(id => sites[id] && sites[id].done)) || (a.needPeople && villagerCount() < a.needPeople)) { pendingSites.push(a); return null; }
+      if ((a.requires && !a.requires.every(id => sites[id] && sites[id].done)) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done)) { pendingSites.push(a); return null; }
       return createSite(a);
     },
     unlock: (a) => unlockArea(a.area),
@@ -4239,7 +4380,7 @@
     // 柵の中と外を行き来するときは、扉を通る
     for (const f of fences) {
       if (!f.gateLanded) continue;
-      const inside = (x, z) => Math.abs(x - f.x) < f.H && Math.abs(z - f.z) < f.H;
+      const inside = (x, z) => (Math.abs(x - f.x) < f.H && Math.abs(z - f.z) < f.H) || inAnnex(x, z);
       const pin = inside(player.x, player.z), tin = inside(tx, tz);
       if (pin === tin) continue;
       const gx = f.x, gz = f.z + f.H;
@@ -4278,7 +4419,7 @@
   function routeTo(o, tx, tz) {
     for (const f of fences) {
       if (!f.gateLanded) continue;
-      const inside = (x, z) => Math.abs(x - f.x) < f.H && Math.abs(z - f.z) < f.H;
+      const inside = (x, z) => (Math.abs(x - f.x) < f.H && Math.abs(z - f.z) < f.H) || inAnnex(x, z);
       const pin = inside(o.x, o.z), tin = inside(tx, tz);
       if (pin === tin) continue;
       const gx = f.x, gz = f.z + f.H;
@@ -4292,6 +4433,7 @@
     return [tx, tz];
   }
   function insideCamp(x, z, pad = 0) {
+    if (inAnnex(x, z, pad)) return true;
     for (const f of fences) if (f.gateLanded && Math.abs(x - f.x) < f.H + pad && Math.abs(z - f.z) < f.H + pad) return true;
     return false;
   }
@@ -4305,6 +4447,7 @@
   }
   function pushOut(o, rad, skipTrees) {
     for (const w of extraWalls) segPush(o, w, rad + 0.18);
+    for (const ig of igloos) { const dx = o.x - ig.x, dz = o.z - ig.z, d = Math.hypot(dx, dz), R = IGLOO.R + rad - 0.15; if (d < R && d > 1e-4) { o.x = ig.x + dx / d * R; o.z = ig.z + dz / d * R; } }
     // 柵: 線(壁)ごとに押し返す。扉は閉じているときだけ通れない
     for (const f of fences) {
       for (const w of f.walls) segPush(o, w, rad + 0.18);
@@ -4563,7 +4706,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); });
     safe('dog', () => { updateDog(dt); updateGiant(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
@@ -4617,6 +4760,7 @@
     god(on) { godMode = on; },
     giveCash(n) { carried.cash += n; },
     giveWood(n) { carried.wood += n; },
+    giveIce(n) { carried.ice += n; },
     kiln() { return kilnLines.map(L => ({ items: L.items.length, fuel: L.fuel, burnT: L.burnT, from: L.from.stock, to: L.to.stock, inc: L.to.incoming, cap: L.to.cap })); },
     weapon() { return { kind: AXES.kind, n: AXES.n, radius: AXES.radius, level: sites.weapon ? sites.weapon.level : 0, rockets: rockets.length }; },
     dog() { return dog ? { st: dog.st, hp: +dog.hp.toFixed(2), x: dog.x, z: dog.z } : null; },
@@ -4626,6 +4770,7 @@
     trap() { return trap ? { st: trap.st, cool: +trap.cool.toFixed(1), inPit: trapCount() } : null; },
     addVillagers(n) { const C = campInfo(); for (let i = 0; i < n; i++) humans.push({ x: C.x + (Math.random() - 0.5) * 8, z: C.z + (Math.random() - 0.5) * 8, st: 'villager', hp: 1, t: 0, face: 0, tint: HUMAN_TINTS[i % HUMAN_TINTS.length], hunger: HUMAN.hunger, starve: 0, wander: null, wanderT: 0, ph: Math.random() * 6 }); return villagerCount(); },
     town() { return { villagers: villagerCount(), jobs: town.jobs.map(j => j.label + (j.h ? (j.h.atJob ? '✓' : '…') : '×')), bread: town.bakery ? town.bakery.bread : null, max: LAB.max }; },
+    igloos() { return { annex: annex.done, igloos: igloos.map(ig => ig.n + '/' + ig.pts.length + (ig.done ? '✓' : '')), max: LAB.max }; },
     village() { return { water: waterSys ? Math.round(waterSys.water) : null, food: farm ? farm.food : null, lab: labs[0] ? { heads: labs[0].nHeads, coal: labs[0].nCoal, made: labs[0].made } : null, humans: humans.map(h => h.st), corridor: extraWalls.length > 0 }; },
     killDog() { if (dog && dog.st !== 'dead') { dog.st = 'lost'; dog.hp = 0.001; dogBite(0.01); } return this.dog(); },
     rescueDog() { if (dog && dog.st === 'lost') { dog.x = player.x - 1; dog.z = player.z; } return this.dog(); },
