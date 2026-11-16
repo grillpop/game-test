@@ -106,7 +106,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s44';
+  const GAME_VERSION = '2026.12.04-s45';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -125,6 +125,7 @@
   const TREE_FALL = 0.28;
   // 武器パワーアップ(お金で払う)。払うたびに次のレベルへ
   // 斧 2本 → 3 → 4 → 5本 → 剣(リーチが長い) → トゲ鉄球(鎖の先) → ロケットランチャー
+  const WEAPON_COOL = 25;   // 武器パワーアップのあと、次を買えるようになるまでの秒数(オーナーの希望)
   const WEAPON_LEVELS = [
     { cost: 150, kind: 'axe', icon: '🪓', label: '斧が3本に', n: 3, radius: 1.9, speed: 1.9, hitR: 0.45 },
     { cost: 250, kind: 'axe', icon: '🪓', label: '斧が4本に', n: 4, radius: 2.2, speed: 2.1, hitR: 0.45 },
@@ -1871,6 +1872,11 @@
     for (const id in sites) {
       const s = sites[id];
       if (s.done) continue;
+      // 武器パワーアップのあとは少し休み(エリアが消えて、時間がたつとまたポンと出る)
+      if (s.cool) {
+        if (gt < s.cool) { s.appear = Math.max(0, s.appear - dt * 4); s.pad.scale.setScalar(Math.max(0.001, backOut(s.appear))); s.pad.visible = s.appear > 0.01; continue; }
+        s.cool = 0; s.appear = 0; s.pad.visible = true; ring(s.x, s.z, 3, 0.4, '#5dff7a'); if (!fastForwarding) SND.give(1);
+      }
       s.appear = Math.min(1, s.appear + dt * 3);
       s.bump = Math.max(0, s.bump - dt * 6);
       if (!s.building) {
@@ -1949,6 +1955,7 @@
     const next = s.upgrade.levels[s.level];
     if (!next) { s.done = true; scene.remove(s.pad); toast('⚔️ 武器が最大レベルになった!'); return; }
     s.paid = 0; s.need = Math.round(next.cost / CASH_UNIT); s.iconCh = next.icon || s.iconCh; s.padKey = '';
+    s.cool = gt + WEAPON_COOL; s.dT = 0; s.gap = DELIVER.gap;
   }
   function startBuilding(s) {
     s.building = true; s.buildAt = gt;
