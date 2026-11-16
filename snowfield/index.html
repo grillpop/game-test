@@ -107,10 +107,10 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s54';
+  const GAME_VERSION = '2026.12.04-s55';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
-  const PLAYER_CFG = { speed: 10, accel: 16, radius: 0.4, reach: 1.35 };
+  const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
   const STACK = {                                             // 背中の積荷(段ごとに向きを変えて井桁に積む)
     wood: { per: 3, gap: 0.29, layerH: 0.27, max: 150 },
@@ -1646,7 +1646,7 @@
     let col = 0;
     for (const k of ['wood', 'meat', 'ice', 'cash']) { stackCol[k] += (col - stackCol[k]) * Math.min(1, dt * 8); if (carried[k] > 0) col += k === 'wood' ? 0.8 : k === 'cash' ? 0.55 : 0.72; }
     for (const kind in stackMesh) {
-      const m = stackMesh[kind], n = night.lying ? 0 : Math.min(carried[kind], STACK[kind].max);
+      const m = stackMesh[kind], n = night.lying || night.phase !== 'day' ? 0 : Math.min(carried[kind], STACK[kind].max);
       stackPop[kind] = Math.max(0, stackPop[kind] - dt * 7);
       for (let i = 0; i < n; i++) {
         slotPos(kind, i, slot);
@@ -1790,6 +1790,8 @@
     s.cv = document.createElement('canvas'); s.cv.width = s.cv.height = 256;
     s.tex = new THREE.CanvasTexture(s.cv); s.tex.colorSpace = THREE.SRGBColorSpace;
     s.pad = new THREE.Mesh(new THREE.PlaneGeometry(a.padSize || 3.2, a.padSize || 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
+    // エリアの上に生えている木は、出たときに倒す(見えるように)
+    { const hr = (a.padSize || 3.2) / 2 + 0.9; for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && Math.abs(t.x - at[0]) < hr && Math.abs(t.z - at[1]) < hr) later(0.05 + Math.random() * 0.3, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); }); }
     s.iconCh = a.icon || ''; s.padKey = '';
     s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null; s.onBuilt = a.onBuilt || null; s.special = a.special || null;
     if (a.grid) {
@@ -1880,7 +1882,7 @@
   function updateSites(dt) {
     for (const id in sites) {
       const s = sites[id];
-      if (s.done) continue;
+      if (s.done || s.removed) continue;
       // 武器パワーアップのあとは少し休み(エリアが消えて、時間がたつとまたポンと出る)
       if (s.cool) {
         if (gt < s.cool) { s.appear = Math.max(0, s.appear - dt * 4); s.pad.scale.setScalar(Math.max(0.001, backOut(s.appear))); s.pad.visible = s.appear > 0.01; continue; }
@@ -4128,6 +4130,9 @@
     night.phase = 'fight'; night.t = 0; night.end = endingKind(); night.win = night.end !== 'breach' && night.end !== 'alone';
     night.kT = 1; duskTarget = 1;
     lightsTarget = 1;
+    // 夜になったら、まだ建っていないアップデートエリアは消える(かけこみで建てられないように)
+    pendingSites.length = 0;
+    for (const id in sites) { const st = sites[id]; if (st.done || st.removed || st.store || st.pickup || st.grid || st.building) continue; st.removed = true; scene.remove(st.pad); for (const gh of st.ghosts || []) scene.remove(gh); puff(st.x, 0.3, st.z, 3, '#ffffff', 1, 0.6, 1.2); }
     toast('🌙 大群の夜!! みんなで拠点を守れ!');
     shake(0.6); SND.boom();
     if (!fastForwarding) { tone(70, 1.2, 'sawtooth', 0.08, 0.5); noise(0.8, 0.12, 300); }
@@ -4860,9 +4865,11 @@
     }
     if (!N.freeze) {
       // 目をさましたゾンビから順に動き出す(最初は少し遅く、だんだん速く)
-      for (const zb of zs) if (zb.wake !== undefined && N.t > 5.2 + zb.wake) zb.speed = Math.min(8.6, 3.4 + (N.t - 5.2 - zb.wake) * 1.3) * (zb.spd || (zb.spd = 0.85 + Math.random() * 0.3));
-      if (N.t > 6.0) for (const zb of zs) if (!zb.dead && Math.hypot(zb.x - player.x, zb.z - player.z) < 0.95) { N.phase = 'end'; shake(0.8); showGameOver(); return; }
-      if (N.t > 16) { N.phase = 'end'; showGameOver(); }
+      // ゾンビはふだんの歩く速さ。かいくぐって逃げられるかも…でも数が多すぎる(時間がたつと少しずつ速くなる)
+      const hurry = 1 + Math.max(0, N.t - 30) * 0.03;
+      for (const zb of zs) if (zb.wake !== undefined && N.t > 5.2 + zb.wake) zb.speed = (zb.spd || (zb.spd = 1.5 + Math.random() * 0.9)) * hurry;
+      if (N.t > 7.0) for (const zb of zs) if (!zb.dead && Math.hypot(zb.x - player.x, zb.z - player.z) < 0.85) { N.phase = 'end'; shake(0.8); if (!fastForwarding) tone(80, 0.8, 'sawtooth', 0.1, 0.4); showGameOver(); return; }
+      if (N.t > 120) { N.phase = 'end'; showGameOver(); }
     }
   }
   // 暮らしが足りない: 朝の喜びのあと、人間はみんな研究所に吸いこまれ、空からゾンビの頭が降ってきて埋めつくされる
@@ -5493,7 +5500,7 @@
     supplyT = 1;
     for (const id in sites) {
       const s = sites[id];
-      if (s.building || s.done || s.deposit || s.store || s.pickup || s.upgrade || s.res === 'cash' || s.res === 'ice') continue;
+      if (s.building || s.done || s.removed || s.deposit || s.store || s.pickup || s.upgrade || s.res === 'cash' || s.res === 'ice') continue;
       let have = s.paid + s.incoming + carried[s.res] + storeStock(s.res);
       for (const it of drops[s.res].items) if (it.st !== 'deliver') have++;
       for (const t of targets) if (!t.gone && t.drops[s.res] && (t.type !== 'bear')) have += t.drops[s.res];
@@ -5669,6 +5676,7 @@
   }
   function pushOut(o, rad, skipTrees) {
     for (const w of extraWalls) segPush(o, w, rad + 0.18);
+    if (night.locked) for (const w of zombieWalls) segPush(o, w, rad + 0.18);
     for (const ig of igloos) { const dx = o.x - ig.x, dz = o.z - ig.z, d = Math.hypot(dx, dz), R = IGLOO.R + rad - 0.15; if (d < R && d > 1e-4) { o.x = ig.x + dx / d * R; o.z = ig.z + dz / d * R; } }
     // 柵: 線(壁)ごとに押し返す。扉は閉じているときだけ通れない
     for (const f of fences) {
@@ -5767,7 +5775,7 @@
   function guideTarget() {
     // 払える建築エリア(残りがいちばん少ないところ)
     let sb = null;
-    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.store && !s.pickup && !s.building && !s.done && (carried[s.res] > 0 || storeStock(s.res) > 0) && s.paid + s.incoming < s.need && (!sb || s.need - s.paid < sb.need - sb.paid)) sb = s; }
+    for (const id in sites) { const s = sites[id]; if (!s.deposit && !s.store && !s.pickup && !s.building && !s.done && !s.removed && (carried[s.res] > 0 || storeStock(s.res) > 0) && s.paid + s.incoming < s.need && (!sb || s.need - s.paid < sb.need - sb.paid)) sb = s; }
     if (sb) return { kind: 'site', x: sb.x, z: sb.z, site: sb };
     // 今のシーンで倒すもの(狼など)があれば、そちらを先に
     const focus = SCN.active.filter(sc => sc.goal && sc.goal.type === 'clear').map(sc => sc.goal.tag);
@@ -5983,7 +5991,7 @@
     get state() {
       return { gt, elapsed, carried: { ...carried }, scenes: SCN.log.map(l => ({ ...l })), active: SCN.active.map(s => s.id), buildings: Object.keys(built).filter(k => built[k].done),
         villagers: villagers.length, targets: targets.filter(t => !t.gone).map(t => t.type + ':' + t.tag), drops: drops.wood.items.length + drops.meat.items.length,
-        sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : '')])),
+        sites: Object.fromEntries(Object.values(sites).map(s => [s.id, s.paid + '/' + s.need + (s.done ? ' done' : s.building ? ' building' : s.removed ? ' removed' : '')])),
         unlocked: Object.keys(unlocked), over: gameOver, axesOff, workers: plants[0] ? plants[0].workers.length : 0, vacuumed: vacuums[0] ? vacuums[0].total : null, lampsLit: lamps.filter(l => l.lit).length, gatling: gatlings.length, coalStock: sites.coalpad ? sites.coalpad.stock : null, woodStock: sites.woodpad ? sites.woodpad.stock : null, money: carried.cash * CASH_UNIT, iceStock: sites.icepad ? sites.icepad.stock : null, cashStock: sites.cashpad ? sites.cashpad.stock : null, heli: helis[0] ? helis[0].state : null, zombies: zs.length, zKills, door: fences[0] ? +fences[0].doorOpen.toFixed(2) : null, errors: errorsSeen.slice(), x: player.x, z: player.z, calls: renderer.info.render.calls, fx: FX.particles };
     },
     bot(on) { bot = on; },
