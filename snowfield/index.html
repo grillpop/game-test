@@ -104,7 +104,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.02-s42';
+  const GAME_VERSION = '2026.12.03-s43';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -227,10 +227,7 @@
         // 拠点拡大(木こりマシンとバキューマーで全自動になってから)。大金
         { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 200, build: [], special: 'expand', requires: ['plant'],
           announce: '🏗️ 拠点を広げられるようになった!' },
-        // 拠点を広げたら: 川の水くみ(→ 村の貯水槽)と、研究所
-        { do: 'site', id: 'water', icon: '💧', at: [12.0, 10.4], res: 'cash', need: 100, build: ['pump', 'cistern'], requires: ['expand'], delays: [0.2, 1.4],
-          announce: '💧 川から水をくめるようになった!',
-          onBuilt: [{ do: 'water' }, { do: 'toast', text: '💧 水くみ完成! 川の水が村の貯水槽にたまっていく' }] },
+        // 拠点を広げたら: 研究所(水くみと畑は、いったんなし。水くみは拠点UP4の広場へ)
         { do: 'site', id: 'lab', icon: '🧪', at: [11.4, -9.0], res: 'cash', need: 235, build: ['lab'], requires: ['expand'], camera: [24, -24],
           onBuilt: [{ do: 'lab' }] },
         // ゾンビ寄せタワー(拠点の外・左手前の空き地)。拠点の中のスイッチでオンにすると、ゾンビを集めて落とし穴へ
@@ -238,22 +235,16 @@
           announce: '📡 ゾンビ寄せタワーを作れるようになった!',
           onBuilt: [{ do: 'trap' }] },
         // 町づくり: 村人が増えると、町の建物が建てられるようになる
-        { do: 'site', id: 'houses', icon: '🏠', at: [-11.0, -1.0], res: 'cash', need: 100, build: ['town1', 'town2', 'town3', 'town4'], delays: [0.2, 0.9, 1.6, 2.3], requires: ['lab'], needPeople: 10,
-          announce: '🏘️ 村人が10人に! 村の家を建てられる',
-          onBuilt: [{ do: 'town', what: 'houses' }, { do: 'toast', text: '🏠 村の家ができた! 研究所で作れる人が増える(60人)' }] },
-        { do: 'site', id: 'bakery', icon: '🍞', at: [4.2, 13.9], res: 'cash', need: 135, build: ['bakery'], requires: ['lab'], needPeople: 10,
-          announce: '🍞 パン屋を建てられる! キャベツをパンにすると、おなかが長持ち',
-          onBuilt: [{ do: 'town', what: 'bakery' }, { do: 'toast', text: '🍞 パン屋ができた! 村人がキャベツをパンに焼く' }] },
-        { do: 'site', id: 'market', icon: '🛒', at: [8.8, 13.9], res: 'cash', need: 165, build: ['market'], requires: ['lab'], needPeople: 20,
-          announce: '🛒 村人が20人に! 市場を建てられる',
-          onBuilt: [{ do: 'town', what: 'market' }, { do: 'toast', text: '🛒 市場ができた! 村人の数に応じてお金が入る' }] },
+        { do: 'site', id: 'deck', icon: '弓兵台', padSize: 3.6, at: [-11.0, -1.0], res: 'wood', need: 150, build: ['deck'], requires: ['lab'], needPeople: 10,
+          announce: '🏹 村人が10人に! 弓兵台を建てられる', onBuilt: [{ do: 'town', what: 'deck' }] },
+        // パン屋と市場 → 弓矢屋(矢を作るほど、村人の矢が速くなる)
+        { do: 'site', id: 'bow1', icon: '弓矢屋', padSize: 3.4, at: [4.2, 13.9], res: 'cash', need: 135, build: ['bowshop1'], requires: ['lab'], needPeople: 10,
+          onBuilt: [{ do: 'town', what: 'bow', id: 'bowshop1' }] },
+        { do: 'site', id: 'bow2', icon: '弓矢屋', padSize: 3.4, at: [8.8, 13.9], res: 'cash', need: 165, build: ['bowshop2'], requires: ['lab'], needPeople: 20,
+          onBuilt: [{ do: 'town', what: 'bow', id: 'bowshop2' }] },
         { do: 'site', id: 'archers', icon: '🏹', at: [-3.6, 12.0], res: 'cash', need: 200, build: ['archer1', 'archer2', 'archer3', 'archer4'], delays: [0.2, 0.8, 1.4, 2.0], requires: ['lab'], needPeople: 20,
           announce: '🏹 弓兵やぐらを建てられる! 村人がゾンビを撃つ',
           onBuilt: [{ do: 'town', what: 'archers' }, { do: 'toast', text: '🏹 弓兵やぐらができた! 村人が弓でゾンビを撃つ' }] },
-        // 畑(水があると作れる)。作物が育つと食べ物がたまる
-        { do: 'site', id: 'farm', icon: '🌱', at: [-7.6, 14.2], res: 'cash', need: 100, build: ['farm'], requires: ['water'],
-          announce: '🌱 水がたまった! 畑を作れるようになった',
-          onBuilt: [{ do: 'farm' }, { do: 'toast', text: '🌱 畑ができた! 水で作物が育つ' }] },
         // 研究所から拠点までの柵つき通路
         { do: 'site', id: 'corridor', icon: '🚧', at: [12.0, -4.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
@@ -262,6 +253,10 @@
           announce: '🏗️ 通路の南まで、拠点をもっと広げられる!' },
         { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 265, build: [], special: 'train', requires: ['expand2'],
           announce: '🏹 通路の北の空き地に「弓の訓練所」を作れる!' },
+        { do: 'site', id: 'plaza', icon: '拠点UP4', padSize: 3.4, at: [27.4, 9.0], res: 'cash', need: 300, build: [], special: 'plaza', requires: ['expand2'], needAnnex: true,
+          announce: '🏗️ 研究所の前に、大きな広場を作れる!' },
+        { do: 'site', id: 'paddy', icon: '田んぼ', padSize: 4.0, at: [36.5, 6.0], res: 'cash', need: 200, build: [], special: 'paddy', requires: ['plaza'], needPlaza: true,
+          announce: '🌾 広場のまん中に田んぼを作れる!' },
         ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8], [27.4, 3.4]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
           requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
         // 氷置き場に氷を置く → ヘリが回収して売りに行く → お金置き場に札束が積み上がる → 取りに行くと背中に積まれる
@@ -822,6 +817,34 @@
     g.size = [3.6, 3.0];
     return g;
   }
+  // 弓兵台: 木の長い台(3軒ぶん)。手すりとはしご・矢の箱・旗
+  function deckDef() {
+    const parts = [];
+    for (let k = 0; k < 6; k++) for (const x of [-1.0, 1.0]) parts.push(C(0.12, 0.14, 1.6, x, 0.8, -5.5 + k * 2.2, '#6b4422', 'pillar'));
+    parts.push(B(2.4, 0.18, 12, 0, 1.65, 0, '#a8774a', 'wall'));
+    for (let k = 0; k < 15; k++) parts.push(B(2.42, 0.02, 0.06, 0, 1.75, -5.6 + k * 0.8, '#7a4d24', 'deco'));
+    for (let k = 0; k < 9; k++) parts.push(B(0.1, 0.9, 0.1, -1.15, 2.2, -6 + k * 1.5, '#7a4d24', 'roof'));
+    parts.push(B(0.08, 0.08, 12, -1.15, 2.6, 0, '#8b5a2b', 'roof'), B(0.08, 0.08, 12, -1.15, 2.15, 0, '#8b5a2b', 'roof'));
+    for (const x of [-0.4, 0.4]) parts.push(B(0.08, 2.0, 0.08, x, 0.9, 6.35, '#6b4422', 'deco', { rx: -0.4 }));
+    for (let k = 0; k < 4; k++) parts.push(B(0.8, 0.06, 0.06, 0, 0.35 + k * 0.42, 6.65 - k * 0.17, '#8b5a2b', 'deco'));
+    for (const z of [-4.8, 0.2, 4.4]) { parts.push(B(0.6, 0.4, 0.6, 0.7, 1.95, z, '#8b5a2b', 'deco')); for (const dx of [-0.12, 0, 0.12]) parts.push(C(0.025, 0.025, 0.6, 0.7 + dx, 2.3, z, '#e8d27a', 'deco')); }
+    for (const z of [-5.9, 5.9]) parts.push(B(0.06, 1.6, 0.06, 1.1, 2.5, z, '#6f7883', 'deco'), B(0.6, 0.35, 0.03, 1.4, 3.1, z, '#d8423a', 'deco'));
+    return { parts, size: [2.6, 12.6], ridge: 2.8 };
+  }
+  // 弓矢屋: 弓が壁にかかり、矢のたるがある小さな店
+  function bowShopDef() {
+    const parts = [];
+    parts.push(B(3.6, 0.12, 2.6, 0, 0.06, 0, '#a8774a', 'base'));
+    parts.push(B(3.4, 1.9, 0.15, 0, 1.0, -1.15, '#8b5a2b', 'wall'), B(0.15, 1.9, 2.3, -1.65, 1.0, 0, '#8b5a2b', 'wall'), B(0.15, 1.9, 2.3, 1.65, 1.0, 0, '#8b5a2b', 'wall'));
+    parts.push(B(3.2, 0.8, 0.5, 0, 0.45, 0.95, '#93602f', 'wall'));
+    for (const x of [-1.6, 1.6]) parts.push(C(0.08, 0.08, 2.2, x, 1.1, 1.15, '#7a4d24', 'pillar'));
+    parts.push(B(3.9, 0.12, 2.9, 0, 2.3, 0, '#3f8f5a', 'roof', { rx: 0.15 }), B(3.9, 0.13, 0.4, 0, 2.15, 1.3, '#ffffff', 'roof', { rx: 0.15 }));
+    for (let i = 0; i < 3; i++) { const x = -1 + i; parts.push(B(0.07, 0.55, 0.07, x - 0.1, 1.55, -1.02, '#6b4422', 'deco', { rz: 0.35 }), B(0.07, 0.55, 0.07, x - 0.1, 1.05, -1.02, '#6b4422', 'deco', { rz: -0.35 }), B(0.02, 1.0, 0.02, x + 0.06, 1.3, -1.02, '#f0f0f0', 'deco')); }
+    parts.push(C(0.3, 0.3, 0.6, 1.2, 0.3, 0.2, '#8b5a2b', 'deco'));
+    for (const [dx, dz] of [[-0.1, 0], [0.1, 0], [0, 0.1], [0, -0.1], [0.05, 0.05]]) parts.push(C(0.025, 0.025, 0.8, 1.2 + dx, 0.8, 0.2 + dz, '#e8d27a', 'deco'));
+    parts.push(C(0.45, 0.45, 0.08, -1.2, 1.5, 1.27, '#ffffff', 'deco', { rx: Math.PI / 2 }), C(0.28, 0.28, 0.1, -1.2, 1.5, 1.28, '#d8423a', 'deco', { rx: Math.PI / 2 }), C(0.1, 0.1, 0.12, -1.2, 1.5, 1.29, '#ffd23a', 'deco', { rx: Math.PI / 2 }));
+    return { parts, size: [3.6, 2.6], ridge: 2.4 };
+  }
   function marketDef() {
     const parts = [], cols = [['#e0453a', '#ffffff'], ['#3f8fd0', '#ffffff'], ['#3fb34f', '#fff6a0']];
     parts.push(B(5.0, 0.12, 2.6, 0, 0.06, 0, '#a8774a', 'base'));
@@ -880,6 +903,10 @@
     gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.08, y: 7.55 } },
     // 電動木こりマシンの車庫。マシンは森へ行って木を切り、積んで、木材置き場へ運ぶ
     lumber: { name: '木こりマシン', at: [-8.3, 8.3], rot: 0, def: garageDef, lumber: { speed: 6.5, cap: 36, saw: 0.2, collectR: 6 } },
+    deck: { name: '弓兵台', at: [-12.0, -1.0], rot: 0, def: deckDef },
+    bowshop1: { name: '弓矢屋', at: [4.2, 14.2], rot: Math.PI, def: bowShopDef },
+    bowshop2: { name: '弓矢屋', at: [8.8, 14.0], rot: Math.PI, def: bowShopDef },
+    pump2: { name: '水くみポンプ', at: [38.5, -15.0], rot: 0, def: pumpDef, clear: 1.0 },
     pump: { name: '水くみ', at: [19.0, 3.0], rot: 0, def: pumpDef, clear: 1.0 },
     cistern: { name: '村の貯水槽', at: [12.2, -1.2], rot: 0, def: cisternDef },
     farm: { name: '畑', at: [-7.6, 14.2], rot: 0, def: farmDef },
@@ -2122,7 +2149,7 @@
       if (Math.max(Math.abs(x - ox), Math.abs(z - oz)) < H + ZOMBIES.safe) continue;
       if (built.lab && built.lab.box) { const [x1, z1, x2, z2] = built.lab.box; if (x > x1 - 3 && x < x2 + 3 && z > z1 - 3 && z < z2 + 3) continue; } // 研究所と通路のまわりには出ない
       if (corridorPath && polyDist(corridorPath, x, z) < 4) continue;
-      if ([annex, pocket].some(A => A.started && x > A.x1 - 5 && x < A.x2 + 5 && z > A.z1 - 5 && z < A.z2 + 5)) continue;
+      if (RECTS.some(A => A.started && x > A.x1 - 5 && x < A.x2 + 5 && z > A.z1 - 5 && z < A.z2 + 5)) continue;
       zs.push({ nt: night.phase === 'fight' ? nightGoal() : null, x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
   }
@@ -2272,7 +2299,7 @@
   function checkPending() {
     for (let i = pendingSites.length - 1; i >= 0; i--) {
       const a = pendingSites[i];
-      if (!(a.requires || []).every(id => sites[id] && sites[id].done) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || giant) continue;
+      if (!(a.requires || []).every(id => sites[id] && sites[id].done) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || (a.needPlaza && !plazaA.done) || giant) continue;
       pendingSites.splice(i, 1);
       later(1.2, () => safe('site ' + a.id, () => { if (giant) return; createSite(a); if (a.announce) toast(a.announce); }));
     }
@@ -2894,6 +2921,8 @@
     expand2: (s) => expandCamp2(s),
     igloo: (s) => startIgloo(s),
     train: (s) => buildTraining(s),
+    plaza: (s) => buildPlaza(s),
+    paddy: (s) => buildPaddy(s),
   };
   function expandCamp(s) {
     const old = fences[fences.length - 1];
@@ -3291,7 +3320,16 @@
   // 村人に仕事をわりあてる(spot に立って働く)
   function addJob(spot, label) { town.jobs.push({ spot, label, h: null }); }
   function startTown(what) {
-    if (what === 'houses') {
+    if (what === 'deck') {
+      const b = built.deck; town.deck = b; if (b) b.box = null; // 台の上を歩ける
+      for (let k = 0; k < 6; k++) town.jobs.push({ spot: [DECK.x + 0.2, DECK.z1 + 0.8 + k * 2.0], label: '🏹', h: null, deck: true });
+    } else if (what === 'bow') {
+      const id = arguments[1], b = built[id]; if (!b) return;
+      const [bx, bz] = b.info.at;
+      const mesh = new THREE.InstancedMesh(arrowGeo, vcMat, 12); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+      (town.bows = town.bows || []).push({ id, x: bx, z: bz, n: 0, t: 2.5, mesh });
+      town.jobs.push({ spot: [bx, bz - 1.9], label: '弓', h: null, bow: id });
+    } else if (what === 'houses') {
       town.houses = true; LAB.max = TOWN.houseMax + igloos.length * IGLOO.add;
       for (const id of ['town1', 'town2', 'town3', 'town4']) if (built[id]) built[id].smokeOn = true;
     } else if (what === 'bakery') {
@@ -3618,8 +3656,8 @@
       }
       pushOut(h, 0.32, true);
       const walk = d > 0.2 && sp > 0;
-      const onTower = h.job && h.job.label === '🏹' && h.atJob;
-      setInst(humanMesh, n, h.x, onTower ? 2.7 : night.cheer ? Math.abs(Math.sin(gt * 7 + h.ph * 3)) * 0.55 : walk ? Math.abs(Math.sin(h.t * 10 + h.ph)) * 0.08 : 0, h.z, onTower ? 0.001 : 1, onTower ? 0.001 : 1, onTower ? 0.001 : 1, h.face, 0, h.bit > 0 ? 0.2 : 0);
+      const onTower = h.job && h.job.label === '🏹' && h.atJob && !h.job.deck;
+      setInst(humanMesh, n, h.x, onTower ? 2.7 : (onDeck(h) ? DECK.y : 0) + (night.cheer ? Math.abs(Math.sin(gt * 7 + h.ph * 3)) * 0.55 : walk ? Math.abs(Math.sin(h.t * 10 + h.ph)) * 0.08 : 0), h.z, onTower ? 0.001 : 1, onTower ? 0.001 : 1, onTower ? 0.001 : 1, h.face, 0, h.bit > 0 ? 0.2 : 0);
       humanMesh.setColorAt(n++, h.tint);
     }
     for (let i = humans.length - 1; i >= 0; i--) if (humans[i].st === 'gone') humans.splice(i, 1);
@@ -3732,7 +3770,8 @@
   const annex = { x1: 14, z1: -5.2, x2: 29.5, z2: 17, started: false, done: false };
   const pocket = { x1: 15.5, z1: -24, x2: 28, z2: -9.2, started: false, done: false }; // 弓の訓練所(通路の北)
   function inRect(A, x, z, pad = 0) { return A.done && x > A.x1 - pad && x < A.x2 + pad && z > A.z1 - pad && z < A.z2 + pad; }
-  function inAnnex(x, z, pad = 0) { return inRect(annex, x, z, pad) || inRect(pocket, x, z, pad); }
+  const RECTS = [annex, pocket]; // 拠点の中として扱う四角(広場もあとで足す)
+  function inAnnex(x, z, pad = 0) { for (const A of RECTS) if (inRect(A, x, z, pad)) return true; return false; }
   function expandCamp2(s) {
     const f = fences[fences.length - 1]; if (!f) return;
     const A = annex, ex = A.x1, cx = (A.x1 + A.x2) / 2, cz = (A.z1 + A.z2) / 2;
@@ -3991,7 +4030,7 @@
   function baseBox() {
     const f = fences[fences.length - 1]; if (!f) return [-11, -11, 11, 11];
     let B = [f.x - f.H, f.z - f.H, f.x + f.H, f.z + f.H];
-    for (const A of [annex, pocket]) if (A.done) B = [Math.min(B[0], A.x1), Math.min(B[1], A.z1), Math.max(B[2], A.x2), Math.max(B[3], A.z2)];
+    for (const A of RECTS) if (A.done) B = [Math.min(B[0], A.x1), Math.min(B[1], A.z1), Math.max(B[2], A.x2), Math.max(B[3], A.z2)];
     return B;
   }
   function nightGoal() { const C = campInfo(); return [C.x + (Math.random() - 0.5) * C.H, C.z + (Math.random() - 0.5) * C.H]; }
@@ -4008,7 +4047,7 @@
     const main = [], sold = [], f = fences[fences.length - 1];
     const lines = [];
     if (f) for (const w of f.walls) lines.push(w);
-    if (annex.done && annex.side) for (let i = 0; i < annex.side.length - 1; i++) lines.push([...annex.side[i], ...annex.side[i + 1]]);
+    for (const A of [annex, plazaA]) if (A.done && A.side) for (let i = 0; i < A.side.length - 1; i++) lines.push([...A.side[i], ...A.side[i + 1]]);
     for (const [ax, az, bx, bz] of lines) {
       const L = Math.hypot(bx - ax, bz - az), n = Math.floor(L / 1.5);
       for (let k = 1; k < n; k++) {
@@ -4046,7 +4085,7 @@
       if (h.st !== 'villager' || !h.post || Math.hypot(h.x - h.post[0], h.z - h.post[1]) > 1.0) continue;
       h.shootT = (h.shootT === undefined ? Math.random() : h.shootT) - dt;
       if (h.shootT > 0) continue;
-      h.shootT = h.soldier ? 0.45 : 1.3;
+      h.shootT = (h.soldier ? 0.45 : 1.3) / bowBoost();
       let best = null, bd = 14;
       for (const zb of zs) { if (zb.dead || zb.appear < 0.6 || zb.targeted) continue; const d = Math.abs(zb.x - h.x) + Math.abs(zb.z - h.z); if (d < bd) { bd = d; best = zb; } }
       if (!best) { h.shootT = 0.25; continue; }
@@ -4117,6 +4156,166 @@
         if (dog && dog.rescued && (dog.st === 'saved' || dog.st === 'follow')) { $('clear').classList.add('show'); SND.done(); } // 自分で逃げこんだだけでは助けたことにならない
         else { night.cheer = false; startGiant(null); }
       }
+    }
+  }
+
+  // ---- 拠点UP4: カマクラ村の東・研究所の前の空き地に大きな広場。水くみポンプ → まん中に田んぼ ----
+  const plazaA = { x1: 29.5, z1: -5.2, x2: 43.5, z2: 17, started: false, done: false };
+  const plazaB = { x1: 32, z1: -24, x2: 43.5, z2: -5.2, started: false, done: false };
+  RECTS.push(plazaA, plazaB);
+  function buildPlaza(s) {
+    plazaA.started = plazaB.started = true;
+    const cx = 37, cz = -2;
+    clearArea([plazaA.x1, plazaA.z1, plazaA.x2, plazaA.z2], 0.6, [cx, cz]);
+    clearArea([plazaB.x1, plazaB.z1, plazaB.x2, plazaB.z2], 0.6, [cx, cz]);
+    // カマクラ村の東の柵を取りはらう
+    for (let i = extraWalls.length - 1; i >= 0; i--) { const w = extraWalls[i]; if (Math.abs(w[0] - annex.x2) < 0.05 && Math.abs(w[2] - annex.x2) < 0.05) extraWalls.splice(i, 1); }
+    const acb = corridorBuilds.find(cb => cb.onDone === annexDone);
+    if (acb) {
+      acb.posts.forEach((q, i) => { if (Math.abs(q.x - annex.x2) < 0.05 && q.z < annex.z2 - 0.2) { setInst(acb.mesh, i, q.x, -5, q.z, 0.001, 0.001, 0.001); if (i % 2 === 0) burstGibs(q.x, 1, q.z, 4, '#a8774a', 4, 5); } });
+      acb.railSegs.forEach(([a, b], k) => { if (Math.abs(a.x - annex.x2) < 0.05 && Math.abs(b.x - annex.x2) < 0.05) for (const r of [k * 2, k * 2 + 1]) setInst(acb.rails, r, a.x, -5, a.z, 0.001, 0.001, 0.001); });
+      acb.mesh.instanceMatrix.needsUpdate = acb.rails.instanceMatrix.needsUpdate = true;
+    }
+    annex.side = [[annex.x2, annex.z2], [annex.x1, annex.z2]];
+    // 地面
+    for (const A of [plazaA, plazaB]) {
+      const gnd = new THREE.Mesh(new THREE.PlaneGeometry(A.x2 - A.x1 + 1.2, A.z2 - A.z1 + 1.2), campGroundMat);
+      gnd.rotation.x = -Math.PI / 2; gnd.position.set((A.x1 + A.x2) / 2, 0.024, (A.z1 + A.z2) / 2); gnd.scale.setScalar(0.01); scene.add(gnd);
+      yardPops.push({ g: gnd, t: 0 });
+    }
+    // 新しい柵(北・東・南)
+    const side = [[plazaB.x1, plazaB.z1], [plazaB.x2, plazaB.z1], [plazaA.x2, plazaA.z2], [plazaA.x1, plazaA.z2]];
+    plazaA.side = side;
+    const posts = [], railSegs = [];
+    for (let i = 0; i < side.length - 1; i++) {
+      const [ax, az] = side[i], [bx, bz] = side[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.3));
+      let prev = i ? posts[posts.length - 1] : null;
+      for (let k = i ? 1 : 0; k <= n; k++) { const q = { x: lerp(ax, bx, k / n), z: lerp(az, bz, k / n), at: 0.5 + posts.length * 0.03, up: false }; posts.push(q); if (prev) railSegs.push([prev, q]); prev = q; }
+    }
+    const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
+    corridorBuilds.push({ posts, railSegs, mesh, rails, planks: [], plankMesh: null, t: 0, sides: [side], path: [[cx, cz], [cx, cz]], s, end: 0.5 + posts.length * 0.03 + 0.5, onDone: plazaDone });
+    zoomTarget = Math.max(zoomTarget, 2.3);
+    camFocus(cx, cz, 5, 0.9);
+    toast('🏗️ 研究所の前に大きな広場をつくる!');
+  }
+  function plazaDone() {
+    plazaA.done = plazaB.done = true;
+    for (const zb of zs) if (!zb.dead && (inRect(plazaA, zb.x, zb.z, 0.6) || inRect(plazaB, zb.x, zb.z, 0.6))) later(0.1 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
+    shake(0.3); SND.done(); ring(37, 0, 14, 0.6, '#ffe27a');
+    // 水くみポンプが建つ
+    later(0.8, () => safe('pump2', () => { construct('pump2', false, null); camFocus(BUILDINGS.pump2.at[0], BUILDINGS.pump2.at[1], 3, 0.4); }));
+    checkPending();
+  }
+
+  // 田んぼ: 3×3の区画。水が流れこみ、稲が育って金色になると刈り取られ、米俵が積み上がる
+  const PADDY = { cx: 36.5, cz: 6.0, size: 3.4, gap: 0.5, grow: 24, cap: 30 };
+  let paddy = null;
+  const tuftGeo = mergeGeometries([
+    { geo: Box(0.06, 0.55, 0.06), m: M(0, 0.27, 0, 1, 1, 1, 0.25, 0, 0), color: '#ffffff' },
+    { geo: Box(0.06, 0.6, 0.06), m: M(0.06, 0.3, 0, 1, 1, 1, -0.2, 0, 0.25), color: '#ffffff' },
+    { geo: Box(0.06, 0.5, 0.06), m: M(-0.06, 0.25, 0.04, 1, 1, 1, 0, 0, -0.3), color: '#ffffff' },
+  ]);
+  const baleGeo = mergeGeometries([
+    { geo: Cyl(0.26, 0.26, 0.7, 10), m: M(0, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#e2c56a' },
+    { geo: Cyl(0.27, 0.27, 0.06, 10), m: M(0.18, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#8b5a2b' },
+    { geo: Cyl(0.27, 0.27, 0.06, 10), m: M(-0.18, 0, 0, 1, 1, 1, 0, 0, Math.PI / 2), color: '#8b5a2b' },
+  ]);
+  const GREEN = new THREE.Color('#5fbf4a'), GOLD = new THREE.Color('#e6c34a');
+  function buildPaddy(s) {
+    const P = PADDY, step = P.size + P.gap, plots = [];
+    clearArea([P.cx - step * 1.5, P.cz - step * 1.5, P.cx + step * 1.5, P.cz + step * 1.5], 0.2, [P.cx, P.cz]);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) plots.push([P.cx + (i - 1) * step, P.cz + (j - 1) * step]);
+    plots.forEach(([x, z], k) => {
+      const h = P.size / 2;
+      const g = new THREE.Mesh(mergeGeometries([
+        { geo: Box(P.size - 0.3, 0.05, P.size - 0.3), m: M(0, 0.05, 0), color: '#6f95a3' },
+        { geo: Box(P.size, 0.2, 0.3), m: M(0, 0.1, h - 0.15), color: '#8a6a44' }, { geo: Box(P.size, 0.2, 0.3), m: M(0, 0.1, -h + 0.15), color: '#8a6a44' },
+        { geo: Box(0.3, 0.2, P.size), m: M(h - 0.15, 0.1, 0), color: '#8a6a44' }, { geo: Box(0.3, 0.2, P.size), m: M(-h + 0.15, 0.1, 0), color: '#8a6a44' },
+      ]), vcMat);
+      g.position.set(x, 0, z); g.scale.setScalar(0.01); scene.add(g);
+      later(0.3 + k * 0.15, () => { yardPops.push({ g, t: 0 }); });
+    });
+    const tufts = [];
+    plots.forEach(([x, z], k) => { for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) tufts.push({ x: x - 1.05 + a * 0.7 + (Math.random() - 0.5) * 0.12, z: z - 1.05 + b * 0.7 + (Math.random() - 0.5) * 0.12, ry: Math.random() * 6, at: 1.8 + k * 0.15 + (a + b) * 0.03 }); });
+    const mesh = new THREE.InstancedMesh(tuftGeo, vcMat, tufts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
+    // ポンプから田んぼへの水の管
+    const pz = BUILDINGS.pump2.at, x0 = pz[0] - 1.4, z0 = pz[1] + 1.4, z1 = P.cz - step * 1.5 - 0.2;
+    const pipe = new THREE.Mesh(mergeGeometries([
+      { geo: Cyl(0.13, 0.13, z1 - z0, 8), m: M(x0, 0.35, (z0 + z1) / 2, 1, 1, 1, Math.PI / 2, 0, 0), color: '#6f7883' },
+      ...[0.2, 0.5, 0.8].map(u => ({ geo: Box(0.08, 0.35, 0.08), m: M(x0, 0.17, lerp(z0, z1, u)), color: '#5a3a1e' })),
+    ]), vcMat);
+    pipe.scale.set(1, 0.01, 1); scene.add(pipe);
+    later(0.2, () => yardPops.push({ g: pipe, t: 0 }));
+    const blobs = new THREE.InstancedMesh(Sph(0.13, 6, 5), new THREE.MeshBasicMaterial({ color: '#7fd4ff' }), 10); blobs.count = 0; blobs.frustumCulled = false; scene.add(blobs);
+    const bales = new THREE.InstancedMesh(baleGeo, vcMat, P.cap); bales.count = 0; bales.frustumCulled = false; scene.add(bales);
+    paddy = { plots, tufts, mesh, blobs, pipe: [x0, z0, z1], bales, nb: 0, t: 0, grow: 0, phase: 'grow', pile: [41.6, 14.0] };
+    camFocus(P.cx, P.cz, 4, 0.5);
+    toast('🌾 田んぼができる!');
+  }
+  function updatePaddy(dt) {
+    const P = paddy; if (!P) return;
+    P.t += dt;
+    if (P.phase === 'grow') { P.grow = Math.min(1, P.grow + dt / PADDY.grow); if (P.grow >= 1) { P.phase = 'cut'; P.cutT = 0; } }
+    else if (P.phase === 'cut') {
+      P.cutT += dt;
+      if (P.cutT > 1.6) {
+        P.phase = 'grow'; P.grow = 0;
+        const add = Math.min(3, PADDY.cap - P.nb);
+        for (let i = 0; i < add; i++) later(i * 0.2, () => { P.nb++; drawBales(); puff(P.pile[0], 0.5, P.pile[1], 1, '#f3e6b0', 0.6, 0.6, 0.6); if (!fastForwarding) tone(520 + P.nb * 10, 0.06, 'triangle', 0.04, 1.3); });
+        for (let k = 0; k < 6; k++) { const pl = P.plots[Math.floor(Math.random() * P.plots.length)]; burstGibs(pl[0], 0.6, pl[1], 3, '#e6c34a', 2, 3); }
+      }
+    }
+    let n = 0;
+    const cutK = P.phase === 'cut' ? Math.max(0.15, 1 - P.cutT / 1.2) : 1;
+    _col.copy(GREEN).lerp(GOLD, P.phase === 'cut' ? 1 : Math.max(0, (P.grow - 0.55) / 0.45));
+    for (const q of P.tufts) {
+      if (P.t < q.at) continue;
+      const pop = Math.min(1, (P.t - q.at) / 0.25), sc = Math.max(0.01, pop * (0.35 + 0.65 * (P.phase === 'cut' ? 1 : P.grow)) * cutK);
+      setInst(P.mesh, n, q.x, 0.06, q.z, sc, sc, sc, q.ry + Math.sin(gt * 1.5 + q.x) * 0.05);
+      P.mesh.setColorAt(n++, _col);
+    }
+    P.mesh.count = n; P.mesh.instanceMatrix.needsUpdate = true; if (P.mesh.instanceColor) P.mesh.instanceColor.needsUpdate = true;
+    // 管の中を流れる水
+    const [x0, z0, z1] = P.pipe;
+    for (let i = 0; i < 10; i++) { const u = ((P.t * 0.35 + i / 10) % 1); setInst(P.blobs, i, x0, 0.62, lerp(z0, z1, u), 1, 1, 1); }
+    P.blobs.count = P.t > 1 ? 10 : 0; P.blobs.instanceMatrix.needsUpdate = true;
+  }
+  function drawBales() {
+    const P = paddy, n = Math.min(P.nb, PADDY.cap);
+    for (let i = 0; i < n; i++) { const layer = Math.floor(i / 6), k = i % 6; setInst(P.bales, i, P.pile[0] + (k % 3 - 1) * 0.75 + (layer % 2) * 0.2, 0.27 + layer * 0.48, P.pile[1] + (Math.floor(k / 3) - 0.5) * 0.56, 1, 1, 1); }
+    P.bales.count = n; P.bales.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---- 弓兵台(木材置き場の裏の長い台。村人が上から矢を撃つ)と弓矢屋 ----
+  const DECK = { x: -12.0, z1: -7.0, z2: 5.0, y: 1.75, every: 0.9, range: 14 };
+  function onDeck(h) { return town.deck && Math.abs(h.x - DECK.x) < 1.3 && h.z > DECK.z1 && h.z < DECK.z2; }
+  // 弓矢屋で作った矢の数で、村人の矢が速くなる(最大で約1.7倍)
+  function bowBoost() { let n = 0; for (const b of town.bows || []) n += b.n; return 1 + n * 0.03; }
+  function updateArchery(dt) {
+    // 弓兵台の上から撃つ
+    for (const j of town.jobs) {
+      if (!j.deck || !j.h || !j.h.atJob) continue;
+      const h = j.h;
+      h.deckT = (h.deckT === undefined ? Math.random() : h.deckT) - dt;
+      if (h.deckT > 0) continue;
+      h.deckT = DECK.every / bowBoost();
+      let best = null, bd = DECK.range;
+      for (const zb of zs) { if (zb.dead || zb.appear < 0.6 || zb.targeted || insideCamp(zb.x, zb.z)) continue; const d = Math.abs(zb.x - h.x) + Math.abs(zb.z - h.z); if (d < bd) { bd = d; best = zb; } }
+      if (!best) { h.deckT = 0.3; continue; }
+      if (fireArrow(h.x, DECK.y + 1.3, h.z, best, null)) { best.targeted = true; h.face = Math.atan2(best.x - h.x, best.z - h.z); }
+    }
+    // 弓矢屋: 働く人がいると、矢が1束ずつ台に並ぶ(最大12)
+    for (const b of town.bows || []) {
+      const working = town.jobs.some(j => j.bow === b.id && j.h && j.h.atJob);
+      if (!working || b.n >= 12) continue;
+      b.t -= dt;
+      if (b.t > 0) continue;
+      b.t = 2.5; b.n++;
+      for (let i = 0; i < b.n; i++) setInst(b.mesh, i, b.x - 1.3 + (i % 6) * 0.5, 1.25 + Math.floor(i / 6) * 0.04, b.z - 0.95 + Math.floor(i / 6) * 0.15, 1, 1, 1, 0, -Math.PI / 2);
+      b.mesh.count = b.n; b.mesh.instanceMatrix.needsUpdate = true;
+      puff(b.x, 1.4, b.z - 0.95, 1, '#f3e6b0', 0.4, 0.4, 0.5);
+      if (!fastForwarding) tone(620 + b.n * 20, 0.06, 'triangle', 0.035, 1.2);
     }
   }
 
@@ -4450,7 +4649,7 @@
       let best = null, bd = sh.range;
       for (const zb of zs) { if (zb.dead || zb.appear < 0.6 || zb.targeted) continue; const d = Math.hypot(zb.x - tx, zb.z - tz); if (d < bd) { bd = d; best = zb; } }
       if (!best) { b.shootT = 0.15; continue; }
-      b.shootT = sh.every;
+      b.shootT = id.startsWith('archer') ? sh.every / bowBoost() : sh.every;
       best.targeted = true;
       if (arrows.length < 40) arrows.push({ sx: tx, sy: sh.y, sz: tz, zb: best, t: 0, dur: 0.12 + bd * 0.025 });
       if (!fastForwarding && sfx.whoosh >= 1) { sfx.whoosh--; tone(700, 0.06, 'triangle', 0.035, 0.6); }
@@ -4609,7 +4808,7 @@
     place: (a) => construct(a.building, true),
     spawn: (a) => a.at.forEach(([x, z]) => spawnTarget(a.what, x, z, a)),
     site: (a) => {
-      if ((a.requires && !a.requires.every(id => sites[id] && sites[id].done)) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done)) { pendingSites.push(a); return null; }
+      if ((a.requires && !a.requires.every(id => sites[id] && sites[id].done)) || (a.needPeople && villagerCount() < a.needPeople) || (a.needAnnex && !annex.done) || (a.needPlaza && !plazaA.done)) { pendingSites.push(a); return null; }
       return createSite(a);
     },
     unlock: (a) => unlockArea(a.area),
@@ -4637,7 +4836,7 @@
     farm: () => startFarm(),
     lab: () => startLab(),
     trap: () => startTrap(),
-    town: (a) => startTown(a.what),
+    town: (a) => startTown(a.what, a.id),
     stockpile: (a) => createSite({ id: 'stock', at: a.at, res: a.res, need: 1e9, build: [], deposit: a }),
   };
   function runActions(list) {
@@ -4826,7 +5025,7 @@
     const f = fences[fences.length - 1];
     if (f && f.gateLanded && !insideCamp(o.x, o.z) && !insideCamp(tx, tz)) {
       let B = [f.x - f.H, f.z - f.H, f.x + f.H, f.z + f.H]; const m = 1.9;
-      for (const A of [annex, pocket]) if (A.done) B = [Math.min(B[0], A.x1), Math.min(B[1], A.z1), Math.max(B[2], A.x2), Math.max(B[3], A.z2)];
+      for (const A of RECTS) if (A.done) B = [Math.min(B[0], A.x1), Math.min(B[1], A.z1), Math.max(B[2], A.x2), Math.max(B[3], A.z2)];
       const inner = [B[0] - 0.7, B[1] - 0.7, B[2] + 0.7, B[3] + 0.7];
       if (segHitsBox(o.x, o.z, tx, tz, inner)) {
         let best = null, bd = 1e9, near = null, nd = 1e9;
@@ -5137,7 +5336,7 @@
     safe('drops', () => updateDrops(dt));
     safe('stacks', () => updateStacks(dt));
     safe('sites', () => updateSites(dt));
-    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); updateTraining(dt); });
+    safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); updateTraining(dt); updatePaddy(dt); updateArchery(dt); });
     safe('night', () => updateNight(dt));
     safe('stumps', () => refreshStumps(dt));
     safe('dog', () => { updateDog(dt); updateGiant(dt); });
@@ -5206,6 +5405,8 @@
     igloos() { return { annex: annex.done, igloos: igloos.map(ig => ig.n + '/' + ig.pts.length + (ig.done ? '✓' : '')), max: LAB.max }; },
     night() { return { phase: night.phase, t: +night.t.toFixed(1), win: night.win, elapsed: Math.round(elapsed), corpses: corpseN, soldiers: humans.filter(h => h.soldier).length, posts: humans.filter(h => h.post).length, unlocked: allUnlocked(), missing: missingSites() }; },
     skipTime(sec) { started = true; elapsed += sec; },
+    paddy() { return paddy ? { phase: paddy.phase, grow: +paddy.grow.toFixed(2), bales: paddy.nb } : null; },
+    archery() { return { deck: !!town.deck, deckJobs: town.jobs.filter(j => j.deck).map(j => j.h ? (j.h.atJob ? '✓' : '…') : '×'), bows: (town.bows || []).map(b => b.n), boost: +bowBoost().toFixed(2) }; },
     village() { return { water: waterSys ? Math.round(waterSys.water) : null, food: farm ? farm.food : null, lab: labs[0] ? { heads: labs[0].nHeads, coal: labs[0].nCoal, made: labs[0].made } : null, humans: humans.map(h => h.st), corridor: extraWalls.length > 0 }; },
     killDog() { if (dog && dog.st !== 'dead') { dog.st = 'lost'; dog.hp = 0.001; dogBite(0.01); } return this.dog(); },
     dogTo(x, z) { if (dog) { dog.x = x; dog.z = z; } return this.dog(); }, // テスト用
