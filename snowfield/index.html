@@ -107,10 +107,10 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s53';
+  const GAME_VERSION = '2026.12.04-s54';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
-  const PLAYER_CFG = { speed: 11, accel: 16, radius: 0.4, reach: 1.35 };
+  const PLAYER_CFG = { speed: 10, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
   const STACK = {                                             // 背中の積荷(段ごとに向きを変えて井桁に積む)
     wood: { per: 3, gap: 0.29, layerH: 0.27, max: 150 },
@@ -271,7 +271,7 @@
           announce: i ? '' : '🪵 柵の外に「柵強化」を作れる! とがった丸太でゾンビを倒す' })),
         { do: 'site', id: 'garage', icon: '拠点UP5', padSize: 3.4, at: [38.0, -21.0], res: 'wood', need: 200, build: [], special: 'garage', requires: ['plaza'], needPlaza: true,
           announce: '🏗️ ロッジの裏から、発電所の裏の大きな倉庫まで通路を作れる!' },
-        { do: 'site', id: 'mech', icon: 'メカ', padSize: 3.6, at: [-2.4, -31.4], res: 'ice', need: 100, build: [], special: 'mech', requires: ['garage'], needGarage: true,
+        { do: 'site', id: 'mech', icon: 'メカ', padSize: 3.6, at: [-4.2, -31.4], res: 'ice', need: 150, build: [], special: 'mech', requires: ['garage'], needGarage: true,
           announce: '🤖 倉庫の中で、ゾンビの頭から「メカゾンビ」を作れる!' },
         ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
           requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
