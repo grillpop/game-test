@@ -101,7 +101,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.11.30-s35';
+  const GAME_VERSION = '2026.12.01-s36';
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -580,11 +580,11 @@
   const iceMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   // 札束(緑のお札を帯でとめた束)
   const cashGeo = mergeGeometries([
-    { geo: Box(0.5, 0.15, 0.28), m: M(0, 0, 0), color: '#5fbf5a' },
-    { geo: Box(0.46, 0.02, 0.24), m: M(0, 0.08, 0), color: '#8ee08a' },
-    { geo: Box(0.1, 0.16, 0.3), m: M(0, 0, 0), color: '#f2e6b0' },
-    { geo: Box(0.07, 0.03, 0.07), m: M(0.15, 0.085, 0), color: '#2f7a2a' },
-    { geo: Box(0.07, 0.03, 0.07), m: M(-0.15, 0.085, 0), color: '#2f7a2a' },
+    { geo: Box(0.5, 0.15, 0.28), m: M(0, 0, 0), color: '#9aa3ad' },
+    { geo: Box(0.46, 0.02, 0.24), m: M(0, 0.08, 0), color: '#cfd5dc' },
+    { geo: Box(0.1, 0.16, 0.3), m: M(0, 0, 0), color: '#e8c55a' },
+    { geo: Box(0.07, 0.03, 0.07), m: M(0.15, 0.085, 0), color: '#6c757f' },
+    { geo: Box(0.07, 0.03, 0.07), m: M(-0.15, 0.085, 0), color: '#6c757f' },
   ]);
   // 炭のブロック(黒いごつごつ・ところどころ赤く光る)
   const coalGeo = mergeGeometries([
@@ -1028,7 +1028,8 @@
   let treeN = 0;
   const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _ax = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
   function drawTree(t) {
-    setInst(treeStumps, t.idx, t.x, 0, t.z, 1, 1, 1, t.ry);
+    const st = t.noStump ? 0.0001 : 1;
+    setInst(treeStumps, t.idx, t.x, 0, t.z, st, st, st, t.ry);
     const s = t.gone ? 0.0001 : t.sc * Math.max(0.01, t.appear < 1 ? backOut(t.appear) : 1);
     _qa.setFromAxisAngle(_ax.set(t.axX, 0, t.axZ), t.ang).multiply(_qb.setFromAxisAngle(_up, t.ry));
     treeTops.setMatrixAt(t.idx, _m4.compose(_p.set(t.x, STUMP_H, t.z), _qa, _s.set(s, s, s)));
@@ -1037,6 +1038,22 @@
     treesDirty = true;
   }
   let treesDirty = false;
+  // 切り株を消す場所: 拠点の中・柵つき通路・建物の敷地(発電所・研究所・ゾンビ寄せタワーなど、まわりの木を倒して建てたもの)
+  function stumpHidden(t) {
+    if (insideCamp(t.x, t.z, 0.8)) return true;
+    if (corridorPath && extraWalls.length && polyDist(corridorPath, t.x, t.z) < CORRIDOR_W + 0.9) return true;
+    for (const id in built) {
+      const b = built[id]; if (!b.box || !b.info.clear) continue;
+      const m = b.info.clear + 0.6, [x1, z1, x2, z2] = b.box;
+      if (t.x > x1 - m && t.x < x2 + m && t.z > z1 - m && t.z < z2 + m) return true;
+    }
+    return false;
+  }
+  let stumpT = 0;
+  function refreshStumps(dt) {
+    stumpT -= dt; if (stumpT > 0) return; stumpT = 1.5;
+    for (const t of targets) if (t.type === 'tree' && (t.dead || t.gone) && !t.noStump && t.fall !== undefined && (t.gone || t.fall >= 1 || t.fall < 0) && stumpHidden(t)) { t.noStump = true; drawTree(t); }
+  }
   function spawnTarget(what, x, z, o) {
     const t = { type: what, x, z, tag: o.tag, hits: o.hits || 2, hp: o.hits || 2, drops: o.drops || {}, r: what === 'tree' ? 0.5 : what === 'wolf' ? 0.6 : 1.4,
       wob: 0, dead: false, gone: false, flash: 0, appear: 1, spin: Math.random() * 6, lastHit: -9 };
@@ -1604,11 +1621,47 @@
   }
   // 敷地の絵: 手前の角(画面の下)から奥へ明るい緑で塗られていく。まん中にアイコン、その下に「🪵 28」(あと何個)
   function padInfo(s) {
-    if (s.upgrade || (s.res === 'cash' && !s.pickup)) { const left = Math.max(0, s.need - s.paid); return { k: s.paid / s.need, text: '💰' + (left * CASH_UNIT).toLocaleString() }; }
+    if (s.upgrade || (s.res === 'cash' && !s.pickup)) { const left = Math.max(0, s.need - s.paid); return { k: s.paid / s.need, text: '💰' + (left * CASH_UNIT).toLocaleString(), res: 'cash', num: (left * CASH_UNIT).toLocaleString() }; }
     if (s.store || s.pickup) return { k: 0, text: '' };
     if (s.deposit) return { k: 0, text: RES_ICON[s.res] + ' ' + s.paid.toLocaleString() };
     const left = Math.max(0, s.need - s.paid);
-    return { k: s.paid / s.need, text: left > 0 ? RES_ICON[s.res] + ' ' + left : '✔' };
+    return { k: s.paid / s.need, text: left > 0 ? RES_ICON[s.res] + ' ' + left : '✔', res: left > 0 ? s.res : null, num: String(left) };
+  }
+  // 実物に合わせたアイコン(札束とゾンビの頭は絵で描く)
+  const DRAWN_ICON = { cash: true, ice: true };
+  if (!CanvasRenderingContext2D.prototype.roundRect) CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h) { this.rect(x, y, w, h); }; // 古いiPhone用
+  function drawResIcon(g, kind, x, y, sz) {
+    g.save(); g.translate(x, y); const k = sz / 100;
+    g.scale(k, k); g.lineJoin = 'round';
+    if (kind === 'cash') {
+      // 灰色の札束(3つ重ね)・金色の帯
+      for (let i = 2; i >= 0; i--) {
+        const ox = -i * 6, oy = i * 9;
+        g.fillStyle = i ? '#7d8690' : '#a3acb6'; g.strokeStyle = '#3e454c'; g.lineWidth = 5;
+        g.beginPath(); g.roundRect(-46 + ox, -24 + oy, 92, 48, 7); g.fill(); g.stroke();
+      }
+      g.fillStyle = '#d3d9e0'; g.beginPath(); g.roundRect(-38, -17, 76, 34, 5); g.fill();
+      g.fillStyle = '#6c757f'; g.beginPath(); g.arc(-27, 0, 5, 0, 7); g.arc(27, 0, 5, 0, 7); g.fill();
+      g.fillStyle = '#e8c55a'; g.strokeStyle = '#8a6a1a'; g.lineWidth = 4; g.fillRect(-9, -27, 18, 54); g.strokeRect(-9, -27, 18, 54);
+    } else if (kind === 'ice') {
+      // ゾンビの頭: 緑の四角・赤い目・口と歯・縫い目・雪の帽子
+      g.fillStyle = '#94d17c'; g.strokeStyle = '#2f5a25'; g.lineWidth = 6;
+      g.beginPath(); g.roundRect(-40, -30, 80, 70, 8); g.fill(); g.stroke();
+      g.fillStyle = '#7ab863'; g.fillRect(-36, -22, 30, 14);
+      g.fillStyle = '#ff3a3a'; g.fillRect(-26, -4, 15, 15); g.fillRect(11, -4, 15, 15);
+      g.fillStyle = '#2a3a20'; g.fillRect(-20, 20, 40, 8);
+      g.fillStyle = '#ffffff'; g.fillRect(-12, 20, 7, 6); g.fillRect(5, 20, 7, 6);
+      g.fillStyle = '#3a2a1a'; g.fillRect(27, -6, 4, 22); g.fillRect(22, 3, 14, 4);
+      g.fillStyle = '#f6fafd'; g.strokeStyle = '#9fb3c4'; g.lineWidth = 4;
+      g.beginPath(); g.roundRect(-44, -44, 88, 18, 8); g.fill(); g.stroke();
+    }
+    g.restore();
+  }
+  // 「アイコン + 数」を中央にそろえて描く
+  function drawIconNum(g, kind, num, y, iconSz, font) {
+    g.font = font; const w = g.measureText(num).width, gap = 8, total = iconSz + gap + w;
+    drawResIcon(g, kind, -total / 2 + iconSz / 2, y, iconSz);
+    g.textAlign = 'left'; g.strokeText(num, -total / 2 + iconSz + gap, y); g.fillText(num, -total / 2 + iconSz + gap, y); g.textAlign = 'center';
   }
   function drawPadFace(s) {
     const info = padInfo(s), key = Math.round(info.k * 60) + '|' + info.text;
@@ -1622,7 +1675,7 @@
       g.fillStyle = 'rgba(255,255,255,0.55)'; g.beginPath(); g.arc(0, 0, 118, 0, 7); g.fill();
       g.lineWidth = 8; g.strokeStyle = s.pickup ? 'rgba(60,170,70,0.9)' : 'rgba(255,255,255,0.95)'; g.stroke();
       g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalAlpha = 1; g.fillStyle = '#ffffff';
-      g.font = '150px sans-serif'; g.fillText(s.iconCh, 0, 8);
+      if (DRAWN_ICON[s.res]) drawResIcon(g, s.res, 0, 4, 150); else { g.font = '150px sans-serif'; g.fillText(s.iconCh, 0, 8); }
       g.restore();
       s.tex.needsUpdate = true;
       return;
@@ -1649,7 +1702,8 @@
       g.strokeText(s.iconCh, 0, -26); g.fillText(s.iconCh, 0, -26);
     } else if (s.iconCh) { g.globalAlpha = 1; g.fillStyle = '#ffffff'; g.font = '88px sans-serif'; g.fillText(s.iconCh, 0, -26); }
     g.font = 'bold 58px sans-serif'; g.lineWidth = 9; g.strokeStyle = 'rgba(20,60,30,0.85)'; g.fillStyle = '#ffffff';
-    g.strokeText(info.text, 0, s.iconCh ? 54 : 0); g.fillText(info.text, 0, s.iconCh ? 54 : 0);
+    if (info.res && DRAWN_ICON[info.res]) drawIconNum(g, info.res, info.num, s.iconCh ? 54 : 0, 62, 'bold 58px sans-serif');
+    else { g.strokeText(info.text, 0, s.iconCh ? 54 : 0); g.fillText(info.text, 0, s.iconCh ? 54 : 0); }
     g.restore();
     s.tex.needsUpdate = true;
   }
@@ -4603,14 +4657,22 @@
     supplyT = 1;
     for (const id in sites) {
       const s = sites[id];
-      if (s.building || s.done || s.deposit || s.store || s.pickup || s.upgrade || s.res === 'cash') continue;
+      if (s.building || s.done || s.deposit || s.store || s.pickup || s.upgrade || s.res === 'cash' || s.res === 'ice') continue;
       let have = s.paid + s.incoming + carried[s.res] + storeStock(s.res);
       for (const it of drops[s.res].items) if (it.st !== 'deliver') have++;
       for (const t of targets) if (!t.gone && t.drops[s.res] && (t.type !== 'bear')) have += t.drops[s.res];
       if (have >= s.need) continue;
       const area = s.res === 'meat' ? 'hunt' : unlocked.forest ? 'forest' : null;
       let x = -1 + Math.random() * 6, z = 4 + Math.random() * 3;
-      if (area) { const [x1, z1, x2, z2] = AREAS[area].rect; x = lerp(Math.max(x1, -6) + 2, Math.min(x2, 18) - 2, Math.random()); z = lerp(Math.max(z1, -15) + 2, Math.min(z2, 6) - 2, Math.random()); }
+      if (fences.length) {
+        // 拠点の外(柵の少し外の森)に生やす
+        const C = campInfo();
+        for (let k = 0; k < 30; k++) {
+          const a = Math.random() * Math.PI * 2, d = C.H + 4 + Math.random() * 6;
+          x = clamp(C.x + Math.cos(a) * d, WORLD.x1 + 3, WORLD.x2 - 3); z = clamp(C.z + Math.sin(a) * d, WORLD.z1 + 3, WORLD.z2 - 3);
+          if (!insideCamp(x, z, 2.5) && !(corridorPath && polyDist(corridorPath, x, z) < CORRIDOR_W + 2) && riverDist(x, z) > RIVER.w / 2 + 1 && !stumpHidden({ x, z })) break;
+        }
+      } else if (area) { const [x1, z1, x2, z2] = AREAS[area].rect; x = lerp(Math.max(x1, -6) + 2, Math.min(x2, 18) - 2, Math.random()); z = lerp(Math.max(z1, -15) + 2, Math.min(z2, 6) - 2, Math.random()); }
       spawnTarget(s.res === 'meat' ? 'wolf' : 'tree', x, z, { tag: 'extra', hits: 2, drops: { [s.res]: Math.min(10, s.need - have) }, grow: true });
     }
   }
@@ -5037,6 +5099,7 @@
     safe('sites', () => updateSites(dt));
     safe('build', () => { updateConstructions(dt); updateBuildings(dt); updateFences(dt); updateBonfires(dt); updateHelis(dt); updateVacuums(dt); updateYards(dt); updateTowers(dt); updateKilns(dt); updatePlants(dt); updateLamps(dt); updateGatlings(dt); updateLumbers(dt); updateWater(dt); updateFarms(dt); updateTrap(dt); updateTown(dt); updateLabs(dt); updateHumans(dt); updateCorridors(dt); updateIgloos(dt); updateTraining(dt); });
     safe('night', () => updateNight(dt));
+    safe('stumps', () => refreshStumps(dt));
     safe('dog', () => { updateDog(dt); updateGiant(dt); });
     safe('villagers', () => updateVillagers(dt));
     safe('areas', () => updateAreas(dt));
