@@ -104,7 +104,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.01-s39';
+  const GAME_VERSION = '2026.12.01-s40';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -1984,6 +1984,14 @@
     f.ground.rotation.x = -Math.PI / 2; f.ground.position.set(cx, 0.025, cz); f.ground.scale.set(0.01, 0.01, 1);
     scene.add(f.ground);
     fences.push(f); fenceBuilds.push(f);
+    // まだ助けていないワンコが柵の中にいたら、柵の外へ出す(たまたま中にいただけで保護にならないように)
+    if (dog && (dog.st === 'lost' || dog.st === 'run') && Math.abs(dog.x - cx) < cfg.H + 1.2 && Math.abs(dog.z - cz) < cfg.H + 1.2) {
+      const rx = dog.x - cx, rz = dog.z - cz, out = cfg.H + 2.2;
+      if (Math.abs(rx) > Math.abs(rz)) dog.x = cx + Math.sign(rx || 1) * out;
+      else { dog.z = cz + Math.sign(rz || 1) * out; if (rz > 0 && Math.abs(rx) < cfg.gw + 2.5) dog.x = cx + Math.sign(rx || 1) * (cfg.gw + 3); } // 入口の前はさける
+      if (dog.g) dog.g.position.set(dog.x, 0, dog.z);
+      puff(dog.x, 0.3, dog.z, 4, '#ffffff', 0.8, 0.6, 0.8);
+    }
     // 柵の中にいたゾンビは衝撃波で吹き飛ぶ
     for (const zb of zs) if (!zb.dead && Math.abs(zb.x - cx) < cfg.H + 0.8 && Math.abs(zb.z - cz) < cfg.H + 0.8) later(0.1 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
     built[id] = { id, info, def: { ridge: 3 }, g: f.gateG, box: null, door: [cx, cz + cfg.H + 1], smoke: null, done: false, squash: 0, site: site.id, fence: f };
@@ -5193,6 +5201,7 @@
     skipTime(sec) { started = true; elapsed += sec; },
     village() { return { water: waterSys ? Math.round(waterSys.water) : null, food: farm ? farm.food : null, lab: labs[0] ? { heads: labs[0].nHeads, coal: labs[0].nCoal, made: labs[0].made } : null, humans: humans.map(h => h.st), corridor: extraWalls.length > 0 }; },
     killDog() { if (dog && dog.st !== 'dead') { dog.st = 'lost'; dog.hp = 0.001; dogBite(0.01); } return this.dog(); },
+    dogTo(x, z) { if (dog) { dog.x = x; dog.z = z; } return this.dog(); }, // テスト用
     rescueDog() { if (dog && dog.st === 'lost') { dog.x = player.x - 1; dog.z = player.z; } return this.dog(); },
     lumber() { const L = lumbers[0]; return L ? { st: L.st, load: L.load, total: L.total, x: +L.x.toFixed(1), z: +L.z.toFixed(1) } : null; },
     giant() { return giant ? { phase: giant.phase, x: giant.x, z: giant.z } : null; },
