@@ -60,6 +60,9 @@
   #dog-label { position: fixed; left: 0; top: 0; display: none; pointer-events: none; transform: translate(-50%, -100%); padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #c0453a; font-size: 13px; font-weight: 900; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
   /* 上の表示はお金だけ(オーナーの希望)。ほかの数は中で数えているだけ */
   #wood-pill, #meat-pill, #ice-pill, #bld-pill, #pop-pill, #kill-pill { display: none !important; }
+  /* 説明文・お知らせ・浮かぶ文字は出さない(オーナーの希望) */
+  #toast, #combo { display: none !important; }
+  #hint:empty { display: none; }
   #error { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 60px); padding: 8px 10px; border-radius: 10px; background: rgba(180, 30, 30, .92); color: #fff; font-size: 12px; white-space: pre-wrap; display: none; pointer-events: none; }
 </style>
 </head>
@@ -77,7 +80,7 @@
   </div>
   <div id="toast"></div>
   <div id="combo"></div>
-  <div id="hint">なぞって移動(PCは WASD・矢印キー)</div>
+  <div id="hint"></div>
   <div id="arrow">➤</div>
   <div id="version"></div>
   <div id="debug"></div>
@@ -101,7 +104,8 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.01-s38';
+  const GAME_VERSION = '2026.12.01-s39';
+  const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
@@ -4919,7 +4923,7 @@
   const popEls = [];
   for (let i = 0; i < 10; i++) { const el = document.createElement('div'); el.className = 'pop'; document.body.appendChild(el); popEls.push({ el, t: 0 }); }
   let popI = 0;
-  function popText(text, x, z, color = '#fff', size = 18, y = 3) { const p = popEls[popI++ % popEls.length]; p.el.textContent = text; p.el.style.color = color; p.el.style.fontSize = size + 'px'; p.t = 1.1; p.x = x; p.z = z; p.y = y; p.el.style.display = 'block'; }
+  function popText(text, x, z, color = '#fff', size = 18, y = 3) { if (!SHOW_TEXT) return; const p = popEls[popI++ % popEls.length]; p.el.textContent = text; p.el.style.color = color; p.el.style.fontSize = size + 'px'; p.t = 1.1; p.x = x; p.z = z; p.y = y; p.el.style.display = 'block'; }
   { const c = document.createElement('canvas'); c.width = c.height = 64; drawResIcon(c.getContext('2d'), 'cash', 32, 30, 60); $('money-ico').src = c.toDataURL(); }
   const PILL = { ice: 'ice-pill', money: 'money-pill', cash: 'money-pill', wood: 'wood-pill', meat: 'meat-pill', bld: 'bld-pill', pop: 'pop-pill', kills: 'kill-pill' };
   function bumpPill(k) { const el = $(PILL[k]); if (!el) return; el.classList.remove('hide'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
