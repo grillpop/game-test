@@ -61,7 +61,7 @@
   #clear button { margin-top: 40px; padding: 10px 30px; border: 1px solid #ffd76a; border-radius: 4px; background: rgba(0, 0, 0, .25); color: #ffd76a; font-size: 16px; font-weight: 700; letter-spacing: .2em; }
   #dog-label { position: fixed; left: 0; top: 0; display: none; pointer-events: none; transform: translate(-50%, -100%); padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, .92); color: #c0453a; font-size: 13px; font-weight: 900; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
   /* 上の表示はお金だけ(オーナーの希望)。ほかの数は中で数えているだけ */
-  #wood-pill, #meat-pill, #ice-pill, #bld-pill, #pop-pill, #kill-pill { display: none !important; }
+  #meat-pill, #bld-pill, #pop-pill, #kill-pill { display: none !important; }
   /* 説明文・お知らせ・浮かぶ文字は出さない(オーナーの希望) */
   #toast, #combo { display: none !important; }
   #hint:empty { display: none; }
@@ -74,7 +74,7 @@
   <div id="hud">
     <div id="wood-pill" class="pill">🪵 <span id="wood">0</span></div>
     <div id="meat-pill" class="pill hide">🍖 <span id="meat">0</span></div>
-    <div id="ice-pill" class="pill hide">🧟 <span id="ice">0</span></div>
+    <div id="ice-pill" class="pill hide"><img id="ice-ico" alt="" style="width:22px;height:22px;vertical-align:-5px;margin-right:3px"><span id="ice">0</span></div>
     <div id="money-pill" class="pill hide" style="color:#ffe27a"><img id="money-ico" alt="" style="width:22px;height:22px;vertical-align:-5px;margin-right:3px"><span id="money">0</span></div>
     <div id="bld-pill" class="pill">🏠 <span id="bld">0</span></div>
     <div id="pop-pill" class="pill hide">👥 <span id="pop">0</span></div>
@@ -107,10 +107,10 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s52';
+  const GAME_VERSION = '2026.12.04-s53';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
-  const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
+  const PLAYER_CFG = { speed: 11, accel: 16, radius: 0.4, reach: 1.35 };
   const MAGNET = { radius: 7.5, settle: 0.38, gap: 0.03, minGap: 0.008 }; // 吸い寄せ: 範囲・地面で止まる時間・1個ずつの間隔
   const STACK = {                                             // 背中の積荷(段ごとに向きを変えて井桁に積む)
     wood: { per: 3, gap: 0.29, layerH: 0.27, max: 150 },
@@ -271,7 +271,7 @@
           announce: i ? '' : '🪵 柵の外に「柵強化」を作れる! とがった丸太でゾンビを倒す' })),
         { do: 'site', id: 'garage', icon: '拠点UP5', padSize: 3.4, at: [38.0, -21.0], res: 'wood', need: 200, build: [], special: 'garage', requires: ['plaza'], needPlaza: true,
           announce: '🏗️ ロッジの裏から、発電所の裏の大きな倉庫まで通路を作れる!' },
-        { do: 'site', id: 'mech', icon: 'メカ', padSize: 3.6, at: [-3.5, -33.0], res: 'ice', need: 200, build: [], special: 'mech', requires: ['garage'], needGarage: true,
+        { do: 'site', id: 'mech', icon: 'メカ', padSize: 3.6, at: [-2.4, -31.4], res: 'ice', need: 100, build: [], special: 'mech', requires: ['garage'], needGarage: true,
           announce: '🤖 倉庫の中で、ゾンビの頭から「メカゾンビ」を作れる!' },
         ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
           requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
@@ -4408,7 +4408,7 @@
   }
 
   // ---- 拠点UP5: ロッジの裏から研究所の裏を通って、発電所の裏の大きな木の倉庫へ。倉庫の中でメカゾンビを作る ----
-  const GARAGE = { x: -3.5, z: -33, w: 8, d: 6.4, door: 1.4, shutter: 3.2, h: 14, open: 11.5 }; // 正面(南)は幅8・高さ14の縦長。シャッターの口は幅6.4・高さ11.5
+  const GARAGE = { x: -4.5, z: -33, w: 14, d: 7.2, door: 1.4, shutter: 5.4, h: 14, open: 11.5 }; // 正面(南)は幅8・高さ14の縦長。シャッターの口は幅6.4・高さ11.5
   const garageRect = { x1: GARAGE.x - GARAGE.w / 2, z1: GARAGE.z - GARAGE.d / 2, x2: GARAGE.x + GARAGE.w / 2, z2: GARAGE.z + GARAGE.d / 2, started: false, done: false };
   let corridorPath2 = null, garageState = { open: false, shutter: null, k: 0 };
   const zombieWalls = []; // ゾンビだけ通れない線(倉庫のシャッター)
@@ -4423,10 +4423,10 @@
     const sl = hw - sw; parts.push(B(sl, H, 0.3, -sw - sl / 2, H / 2, hd - 0.15, wood, 'wall'), B(sl, H, 0.3, sw + sl / 2, H / 2, hd - 0.15, wood, 'wall'), B(sw * 2, H - OH, 0.3, 0, OH + (H - OH) / 2, hd - 0.15, wood, 'wall'));
     for (const y of [3.5, 7, 10.5]) parts.push(B(W + 0.1, 0.25, 0.1, 0, y, -hd - 0.05, dark, 'wall'), B(0.1, 0.25, D + 0.1, -hw - 0.05, y, 0, dark, 'wall'), B(0.1, 0.25, hd - dw, hw + 0.05, y, -(hd + dw) / 2, dark, 'wall'), B(0.1, 0.25, hd - dw, hw + 0.05, y, (hd + dw) / 2, dark, 'wall'));
     for (const y of [5.5, 9]) parts.push(B(0.06, 1.0, 1.2, hw + 0.06, y, 0, '#ffd88a', 'deco', { win: true }));
-    for (let i = 0; i < 7; i++) parts.push(B(0.08, H - 0.3, 0.05, -hw + 1 + i * 1.0, H / 2, -hd - 0.02, dark, 'wall'));
+    for (let i = 0; i < Math.floor(W - 1); i++) parts.push(B(0.08, H - 0.3, 0.05, -hw + 1 + i * 1.0, H / 2, -hd - 0.02, dark, 'wall'));
     parts.push(B(W + 0.6, 0.35, D + 0.6, 0, H + 0.18, 0, '#5a3a2a', 'roof'), B(W + 0.6, 0.45, D * 0.5, 0, H + 0.55, 0, '#6b4422', 'roof'));
     parts.push(B(sw * 2 + 0.4, 0.35, 0.1, 0, OH + 0.3, hd + 0.05, '#ffd23a', 'deco'));
-    for (let i = 0; i < 7; i++) parts.push(B(0.5, 0.35, 0.11, -sw + 0.5 + i * 0.9, OH + 0.3, hd + 0.06, '#2a2a2e', 'deco', { rz: 0.5 }));
+    for (let i = 0; i < Math.floor(sw * 2 / 0.9); i++) parts.push(B(0.5, 0.35, 0.11, -sw + 0.5 + i * 0.9, OH + 0.3, hd + 0.06, '#2a2a2e', 'deco', { rz: 0.5 }));
     parts.push(B(0.1, 2.6, dw * 0.9, hw + 0.05, 1.3, dw * 0.95, '#c0453a', 'deco', { ry: 1.2 }));
     parts.push(B(1.6, 0.7, 0.1, 0, H - 0.2, -hd - 0.08, '#2f343c', 'deco'));
     return { parts, size: [W, D], ridge: H + 1 };
@@ -4525,7 +4525,7 @@
   }
 
   // ---- メカゾンビ: ゾンビの頭を大量に使って、倉庫の中で組み上がる。昼はシャッターの前を守り、夜は外へ出て大暴れ ----
-  const MECH = { at: [GARAGE.x, GARAGE.z - 0.2], scale: 1.6, speed: 4.6, range: 12, every: 0.12, stomp: 2.6, stompR: 4.4 };
+  const MECH = { at: [GARAGE.x - 2.2, GARAGE.z - 0.4], scale: 1.6, speed: 4.6, range: 12, every: 0.12, stomp: 2.6, stompR: 4.4 };
   let mech = null;
   function mechParts() {
     const metal = '#7d8792', dark = '#3a3f47', skin = '#86e06a', skin2 = '#5fa84a';
@@ -5737,6 +5737,7 @@
   let popI = 0;
   function popText(text, x, z, color = '#fff', size = 18, y = 3) { if (!SHOW_TEXT) return; const p = popEls[popI++ % popEls.length]; p.el.textContent = text; p.el.style.color = color; p.el.style.fontSize = size + 'px'; p.t = 1.1; p.x = x; p.z = z; p.y = y; p.el.style.display = 'block'; }
   { const c = document.createElement('canvas'); c.width = c.height = 64; drawResIcon(c.getContext('2d'), 'cash', 32, 30, 60); $('money-ico').src = c.toDataURL(); }
+  { const c = document.createElement('canvas'); c.width = c.height = 64; drawResIcon(c.getContext('2d'), 'ice', 32, 32, 56); $('ice-ico').src = c.toDataURL(); }
   const PILL = { ice: 'ice-pill', money: 'money-pill', cash: 'money-pill', wood: 'wood-pill', meat: 'meat-pill', bld: 'bld-pill', pop: 'pop-pill', kills: 'kill-pill' };
   function bumpPill(k) { const el = $(PILL[k]); if (!el) return; el.classList.remove('hide'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
   const shownRes = { wood: -1, meat: -1, ice: -1 };
