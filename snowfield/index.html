@@ -104,7 +104,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.01-s40';
+  const GAME_VERSION = '2026.12.01-s41';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -3012,7 +3012,7 @@
       if (Math.hypot(bx - dog.x, bz - dog.z) > 0.4) dogMoveTo(bx, bz, 11, dt); else dog.sp = 0;
       if (Math.hypot(player.x - dog.x, player.z - dog.z) > 14) { dog.x = bx; dog.z = bz; }
       if (insideCamp(dog.x, dog.z, -0.4)) {
-        dog.st = 'saved'; dog.joy = 2.5; dog.escT = 10;
+        dog.st = 'saved'; dog.joy = 2.5; dog.escT = 10; dog.rescued = true; // 連れて帰ったときだけ「助けた」
         toast('🐶 ワンコを保護した!');
         popText('💕', dog.x, dog.z, '#ff8ab0', 26, 1.8); burstGibs(dog.x, 1, dog.z, 14, '#ff8ab0', 3, 5);
         SND.done();
@@ -3038,7 +3038,7 @@
       dog.runT += dt;
       dogMoveTo(dog.runTo[0], dog.runTo[1], 7.5, dt);
       const out = !insideCamp(dog.x, dog.z, 0.3);
-      if (out && Math.hypot(dog.runTo[0] - dog.x, dog.runTo[1] - dog.z) < 0.6) { dog.st = 'lost'; dog.escaped = true; }
+      if (out && Math.hypot(dog.runTo[0] - dog.x, dog.runTo[1] - dog.z) < 0.6) { dog.st = 'lost'; dog.escaped = true; dog.rescued = false; }
       // 扉が閉まって出られなかったら、あきらめる
       else if (!out && dog.runT > 3) { dog.st = 'saved'; dog.escT = 8; }
     }
@@ -4107,7 +4107,7 @@
       if (N.t > 2.0 && !N.said.cheer) { N.said.cheer = true; toast('🌅 朝が来た…!'); later(1.0, celebrate); }
       if (N.t > 7.5) {
         N.phase = 'end';
-        if (dog && (dog.st === 'saved' || dog.st === 'follow')) { $('clear').classList.add('show'); SND.done(); }
+        if (dog && dog.rescued && (dog.st === 'saved' || dog.st === 'follow')) { $('clear').classList.add('show'); SND.done(); } // 自分で逃げこんだだけでは助けたことにならない
         else { night.cheer = false; startGiant(null); }
       }
     }
@@ -5202,6 +5202,7 @@
     village() { return { water: waterSys ? Math.round(waterSys.water) : null, food: farm ? farm.food : null, lab: labs[0] ? { heads: labs[0].nHeads, coal: labs[0].nCoal, made: labs[0].made } : null, humans: humans.map(h => h.st), corridor: extraWalls.length > 0 }; },
     killDog() { if (dog && dog.st !== 'dead') { dog.st = 'lost'; dog.hp = 0.001; dogBite(0.01); } return this.dog(); },
     dogTo(x, z) { if (dog) { dog.x = x; dog.z = z; } return this.dog(); }, // テスト用
+    dogRescued(v) { if (dog && v !== undefined) dog.rescued = v; return !!(dog && dog.rescued); }, // テスト用(v で上書き)
     rescueDog() { if (dog && dog.st === 'lost') { dog.x = player.x - 1; dog.z = player.z; } return this.dog(); },
     lumber() { const L = lumbers[0]; return L ? { st: L.st, load: L.load, total: L.total, x: +L.x.toFixed(1), z: +L.z.toFixed(1) } : null; },
     giant() { return giant ? { phase: giant.phase, x: giant.x, z: giant.z } : null; },
