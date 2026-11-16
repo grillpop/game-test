@@ -104,7 +104,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.01-s41';
+  const GAME_VERSION = '2026.12.02-s42';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -124,12 +124,12 @@
   // 武器パワーアップ(お金で払う)。払うたびに次のレベルへ
   // 斧 2本 → 3 → 4 → 5本 → 剣(リーチが長い) → トゲ鉄球(鎖の先) → ロケットランチャー
   const WEAPON_LEVELS = [
-    { cost: 200, kind: 'axe', icon: '🪓', label: '斧が3本に', n: 3, radius: 1.9, speed: 1.9, hitR: 0.45 },
-    { cost: 400, kind: 'axe', icon: '🪓', label: '斧が4本に', n: 4, radius: 2.2, speed: 2.1, hitR: 0.45 },
-    { cost: 800, kind: 'axe', icon: '🪓', label: '斧が5本に', n: 5, radius: 2.5, speed: 2.3, hitR: 0.45 },
-    { cost: 1500, kind: 'sword', icon: '🗡️', label: '剣に進化! リーチがのびた', n: 4, radius: 3.2, speed: 2.0, hitR: 0.6 },
-    { cost: 2500, kind: 'flail', icon: '⛓️', label: 'トゲ鉄球に進化!', n: 2, radius: 3.9, speed: 1.45, hitR: 1.0 },
-    { cost: 4000, kind: 'rocket', icon: '🚀', label: 'ロケットランチャー!', n: 0, radius: 1, speed: 1, hitR: 0.45 },
+    { cost: 150, kind: 'axe', icon: '🪓', label: '斧が3本に', n: 3, radius: 1.9, speed: 1.9, hitR: 0.45 },
+    { cost: 250, kind: 'axe', icon: '🪓', label: '斧が4本に', n: 4, radius: 2.2, speed: 2.1, hitR: 0.45 },
+    { cost: 550, kind: 'axe', icon: '🪓', label: '斧が5本に', n: 5, radius: 2.5, speed: 2.3, hitR: 0.45 },
+    { cost: 1000, kind: 'sword', icon: '🗡️', label: '剣に進化! リーチがのびた', n: 4, radius: 3.2, speed: 2.0, hitR: 0.6 },
+    { cost: 1650, kind: 'flail', icon: '⛓️', label: 'トゲ鉄球に進化!', n: 2, radius: 3.9, speed: 1.45, hitR: 1.0 },
+    { cost: 2650, kind: 'rocket', icon: '🚀', label: 'ロケットランチャー!', n: 0, radius: 1, speed: 1, hitR: 0.45 },
   ];
   // ロケットランチャー: range 以内のゾンビ(いなければ木)へ every 秒ごとに発射。爆発の半径 blast
   const ROCKET = { range: 12, treeRange: 8, every: 0.2, blast: 2.6, speed: 26 };
@@ -201,66 +201,66 @@
         // ヘリポートができたら、アップデートエリアが全部開く(どれから建ててもいい。見張り台だけ薪、ほかはお金)
         { do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'wood', need: 80, build: ['tower'], delay: 1.6,
           onBuilt: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
-        { do: 'site', id: 'vacuum', icon: '🌀', at: [8.3, 3.9], res: 'cash', need: 60, build: ['vacuum'], delay: 1.8,
+        { do: 'site', id: 'vacuum', icon: '🌀', at: [8.3, 3.9], res: 'cash', need: 40, build: ['vacuum'], delay: 1.8,
           onBuilt: [{ do: 'toast', text: '🌀 バキューマー完成! 散らばったゾンビの頭を吸いこんで置き場へ' }] },
-        { do: 'site', id: 'kiln', icon: '🏭', at: [-6.8, 1.4], res: 'cash', need: 50, build: ['kiln'], delay: 2.0,
+        { do: 'site', id: 'kiln', icon: '🏭', at: [-6.8, 1.4], res: 'cash', need: 35, build: ['kiln'], delay: 2.0,
           onBuilt: [
             // 炭置き場(窯の前)。木材置き場の薪が3本ずつコンベアで窯へ → 炭1個。炭はヘリが高く買う
             { do: 'storage', id: 'coalpad', kind: 'deposit', icon: '⚫', res: 'coal', yard: 'coal', grid: { cols: 4, rows: 4, layers: 6, cx: 0.5, cz: 0.5, h: 0.44, y0: 0.52 } },
             { do: 'kilnline', kiln: 'kiln', from: 'woodpad', to: 'coalpad' },
             { do: 'toast', text: '🏭 炭焼き窯ができた! 薪が自動で炭になる(ヘリが高く買う)' },
           ] },
-        { do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 150, build: ['plant'], camera: [3, -16], delay: 2.2,
+        { do: 'site', id: 'plant', icon: '⚡', at: [-2.8, -5.0], res: 'cash', need: 100, build: ['plant'], camera: [3, -16], delay: 2.2,
           onBuilt: [
             { do: 'power', from: 'plant', lamps: [[3.2, -10.2], [10.0, -5.6], [9.6, 5.0], [2.6, 9.6], [-2.6, 9.6], [-6.4, 9.6], [-9.6, 4.6], [-9.6, -9.6]] },
             { do: 'toast', text: '⚡ ゾンビ発電所が動き出した! 拠点に電気が通った' },
           ] },
         { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 2.4 },
         // ガトリングは電気(発電所)と見張り台ができてから
-        { do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 80, build: ['gatling'], requires: ['plant', 'tower'],
+        { do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 55, build: ['gatling'], requires: ['plant', 'tower'],
           announce: '🔫 電気が来た! 見張り台にガトリングを積めるようになった',
           onBuilt: [{ do: 'toast', text: '🔫 ガトリング設置! 柵に来たゾンビをなぎ倒す' }] },
         // 電動木こりマシン(発電所ができてから)。勝手に森へ行って木を切り、木材置き場まで運ぶ
-        { do: 'site', id: 'lumber', icon: '🤖', at: [-8.3, 8.3], res: 'cash', need: 200, build: ['lumber'], requires: ['plant'],
+        { do: 'site', id: 'lumber', icon: '🤖', at: [-8.3, 8.3], res: 'cash', need: 135, build: ['lumber'], requires: ['plant'],
           announce: '🤖 電気で動く「木こりマシン」を作れるようになった!',
           onBuilt: [{ do: 'toast', text: '🤖 木こりマシン出動! 木を切って木材置き場へ運ぶ' }] },
         // 拠点拡大(木こりマシンとバキューマーで全自動になってから)。大金
-        { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 300, build: [], special: 'expand', requires: ['plant'],
+        { do: 'site', id: 'expand', icon: '拠点UP', padSize: 4.0, at: [3.4, 5.6], res: 'cash', need: 200, build: [], special: 'expand', requires: ['plant'],
           announce: '🏗️ 拠点を広げられるようになった!' },
         // 拠点を広げたら: 川の水くみ(→ 村の貯水槽)と、研究所
-        { do: 'site', id: 'water', icon: '💧', at: [12.0, 10.4], res: 'cash', need: 150, build: ['pump', 'cistern'], requires: ['expand'], delays: [0.2, 1.4],
+        { do: 'site', id: 'water', icon: '💧', at: [12.0, 10.4], res: 'cash', need: 100, build: ['pump', 'cistern'], requires: ['expand'], delays: [0.2, 1.4],
           announce: '💧 川から水をくめるようになった!',
           onBuilt: [{ do: 'water' }, { do: 'toast', text: '💧 水くみ完成! 川の水が村の貯水槽にたまっていく' }] },
-        { do: 'site', id: 'lab', icon: '🧪', at: [11.4, -9.0], res: 'cash', need: 350, build: ['lab'], requires: ['expand'], camera: [24, -24],
+        { do: 'site', id: 'lab', icon: '🧪', at: [11.4, -9.0], res: 'cash', need: 235, build: ['lab'], requires: ['expand'], camera: [24, -24],
           onBuilt: [{ do: 'lab' }] },
         // ゾンビ寄せタワー(拠点の外・左手前の空き地)。拠点の中のスイッチでオンにすると、ゾンビを集めて落とし穴へ
-        { do: 'site', id: 'pylon', icon: '📡', at: [-12.0, 9.6], res: 'cash', need: 250, build: ['pylon'], requires: ['expand'], camera: [-12, 22],
+        { do: 'site', id: 'pylon', icon: '📡', at: [-12.0, 9.6], res: 'cash', need: 165, build: ['pylon'], requires: ['expand'], camera: [-12, 22],
           announce: '📡 ゾンビ寄せタワーを作れるようになった!',
           onBuilt: [{ do: 'trap' }] },
         // 町づくり: 村人が増えると、町の建物が建てられるようになる
-        { do: 'site', id: 'houses', icon: '🏠', at: [-11.0, -1.0], res: 'cash', need: 150, build: ['town1', 'town2', 'town3', 'town4'], delays: [0.2, 0.9, 1.6, 2.3], requires: ['lab'], needPeople: 10,
+        { do: 'site', id: 'houses', icon: '🏠', at: [-11.0, -1.0], res: 'cash', need: 100, build: ['town1', 'town2', 'town3', 'town4'], delays: [0.2, 0.9, 1.6, 2.3], requires: ['lab'], needPeople: 10,
           announce: '🏘️ 村人が10人に! 村の家を建てられる',
           onBuilt: [{ do: 'town', what: 'houses' }, { do: 'toast', text: '🏠 村の家ができた! 研究所で作れる人が増える(60人)' }] },
-        { do: 'site', id: 'bakery', icon: '🍞', at: [4.2, 13.9], res: 'cash', need: 200, build: ['bakery'], requires: ['lab'], needPeople: 10,
+        { do: 'site', id: 'bakery', icon: '🍞', at: [4.2, 13.9], res: 'cash', need: 135, build: ['bakery'], requires: ['lab'], needPeople: 10,
           announce: '🍞 パン屋を建てられる! キャベツをパンにすると、おなかが長持ち',
           onBuilt: [{ do: 'town', what: 'bakery' }, { do: 'toast', text: '🍞 パン屋ができた! 村人がキャベツをパンに焼く' }] },
-        { do: 'site', id: 'market', icon: '🛒', at: [8.8, 13.9], res: 'cash', need: 250, build: ['market'], requires: ['lab'], needPeople: 20,
+        { do: 'site', id: 'market', icon: '🛒', at: [8.8, 13.9], res: 'cash', need: 165, build: ['market'], requires: ['lab'], needPeople: 20,
           announce: '🛒 村人が20人に! 市場を建てられる',
           onBuilt: [{ do: 'town', what: 'market' }, { do: 'toast', text: '🛒 市場ができた! 村人の数に応じてお金が入る' }] },
-        { do: 'site', id: 'archers', icon: '🏹', at: [3.6, 5.2], res: 'cash', need: 300, build: ['archer1', 'archer2', 'archer3', 'archer4'], delays: [0.2, 0.8, 1.4, 2.0], requires: ['lab'], needPeople: 20,
+        { do: 'site', id: 'archers', icon: '🏹', at: [-3.6, 12.0], res: 'cash', need: 200, build: ['archer1', 'archer2', 'archer3', 'archer4'], delays: [0.2, 0.8, 1.4, 2.0], requires: ['lab'], needPeople: 20,
           announce: '🏹 弓兵やぐらを建てられる! 村人がゾンビを撃つ',
           onBuilt: [{ do: 'town', what: 'archers' }, { do: 'toast', text: '🏹 弓兵やぐらができた! 村人が弓でゾンビを撃つ' }] },
         // 畑(水があると作れる)。作物が育つと食べ物がたまる
-        { do: 'site', id: 'farm', icon: '🌱', at: [-7.6, 14.2], res: 'cash', need: 150, build: ['farm'], requires: ['water'],
+        { do: 'site', id: 'farm', icon: '🌱', at: [-7.6, 14.2], res: 'cash', need: 100, build: ['farm'], requires: ['water'],
           announce: '🌱 水がたまった! 畑を作れるようになった',
           onBuilt: [{ do: 'farm' }, { do: 'toast', text: '🌱 畑ができた! 水で作物が育つ' }] },
         // 研究所から拠点までの柵つき通路
         { do: 'site', id: 'corridor', icon: '🚧', at: [12.0, -4.6], res: 'wood', need: 120, build: [], special: 'corridor', requires: ['lab'],
           announce: '🚧 研究所から拠点までの「柵つき通路」を作れる' },
         // 拠点UP 2: 通路の南の空き地(川の向こうまで)へ拠点を広げる → ゾンビの頭でカマクラ
-        { do: 'site', id: 'expand2', icon: '拠点UP2', padSize: 4.0, at: [11.6, 6.0], res: 'cash', need: 500, build: [], special: 'expand2', requires: ['corridor'],
+        { do: 'site', id: 'expand2', icon: '拠点UP2', padSize: 4.0, at: [11.6, 6.0], res: 'cash', need: 335, build: [], special: 'expand2', requires: ['corridor'],
           announce: '🏗️ 通路の南まで、拠点をもっと広げられる!' },
-        { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 400, build: [], special: 'train', requires: ['expand2'],
+        { do: 'site', id: 'train', icon: '拠点UP3', padSize: 3.4, at: [21.0, -7.2], res: 'cash', need: 265, build: [], special: 'train', requires: ['expand2'],
           announce: '🏹 通路の北の空き地に「弓の訓練所」を作れる!' },
         ...[[16.8, -2.4], [27.4, -2.6], [16.8, 8.8], [27.4, 3.4]].map((at, i) => ({ do: 'site', id: 'igloo' + (i + 1), icon: 'カマクラ', padSize: 3.6, at, res: 'ice', need: 60, build: [], special: 'igloo',
           requires: [i ? 'igloo' + i : 'expand2'], needAnnex: true, announce: i ? '' : '🧟 ゾンビの頭で「カマクラ」を作れる! 1つで村人の上限 +10人' })),
@@ -1145,7 +1145,14 @@
   }
   function spawnDrop(kind, x, y, z, tag, i, n, along) {
     const pool = drops[kind];
-    if (pool.items.length >= pool.max) { carried[kind]++; return; }
+    if (pool.items.length >= pool.max) {
+      // いっぱいなら、キャラクターからいちばん遠い「地面に落ちている資材」を片づけて場所をあける(前は背中に直接入ってしまい、木がまとめて倒れると急に背中がいっぱいになった)
+      let k = -1, bd = 14;
+      for (let j = 0; j < pool.items.length; j++) { const it = pool.items[j]; if (it.st !== 'ground') continue; const d = Math.abs(it.x - player.x) + Math.abs(it.z - player.z); if (d > bd) { bd = d; k = j; } }
+      if (k < 0) return;
+      const old = pool.items[k]; if (old.tag && dropsLeft[old.tag] > 0) dropsLeft[old.tag]--;
+      pool.items.splice(k, 1);
+    }
     // 放射状に勢いよく飛び出す(倒れた幹から外側へ)
     let a = (i / n) * Math.PI * 2 + Math.random() * 0.6, s = 2.6 + Math.random() * 2.8;
     if (along) { a = Math.atan2(along[1], along[0]) + (i % 2 ? 1 : -1) * (Math.PI / 2) * (0.5 + Math.random() * 0.6); s = 2 + Math.random() * 2.5; }
