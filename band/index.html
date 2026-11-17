@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#120a24">
+<title>10曲あつめて、自分だけのプレイリスト</title>
+<meta name="description" content="ミニゲームで曲をゲット。10曲そろえて、あなただけのプレイリストを友だちに共有しよう。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="10曲あつめて、自分だけのプレイリスト">
+<meta property="og:description" content="ミニゲームで曲をゲット。10曲そろえて、あなただけのプレイリストを友だちに共有しよう。">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    background: radial-gradient(ellipse at 50% -10%, #3a1a6e 0%, #1a0d33 45%, #0b0716 100%);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Segoe UI", sans-serif;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+  .screen {
+    position: fixed; inset: 0; display: none; flex-direction: column; align-items: center;
+    padding: calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 14px);
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .screen.on { display: flex; }
+  .wrap { width: 100%; max-width: 440px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+
+  .big-btn {
+    display: block; width: 100%; padding: 16px; border-radius: 16px;
+    background: linear-gradient(135deg, #ff3d9a, #ff8a3d); font-size: 20px; font-weight: 900; letter-spacing: .05em;
+    box-shadow: 0 6px 0 #a3205f, 0 10px 24px rgba(255, 61, 154, .35);
+  }
+  .big-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #a3205f; }
+  .sub-btn {
+    display: block; width: 100%; padding: 12px; border-radius: 12px; font-size: 15px; font-weight: 800;
+    background: rgba(255, 255, 255, .1); border: 1px solid rgba(255, 255, 255, .2);
+  }
+  .sub-btn:active { background: rgba(255, 255, 255, .2); }
+
+  /* タイトル */
+  #title { justify-content: center; text-align: center; }
+  .band-name {
+    font-size: 40px; font-weight: 900; letter-spacing: .06em; line-height: 1.1;
+    background: linear-gradient(90deg, #4ef2ff, #ff3d9a, #ffd23d); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 18px rgba(255, 61, 154, .5));
+  }
+  .tagline { font-size: 15px; opacity: .85; line-height: 1.7; }
+  .title-disc { width: 180px; height: 180px; margin: 10px auto; }
+  .rules { text-align: left; font-size: 14px; line-height: 1.8; background: rgba(255,255,255,.07); border-radius: 14px; padding: 12px 14px; }
+
+  /* レコード */
+  .disc {
+    border-radius: 50%; position: relative; flex-shrink: 0;
+    background: repeating-radial-gradient(circle, #151515 0 2px, #262626 2px 4px);
+    box-shadow: 0 0 0 3px #000, 0 10px 30px rgba(0,0,0,.6), inset 0 0 30px rgba(255,255,255,.08);
+  }
+  .disc::before { content: ''; position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(from 30deg, transparent 0 20%, rgba(255,255,255,.14) 25%, transparent 30% 70%, rgba(255,255,255,.1) 75%, transparent 80%); }
+  .disc .label { position: absolute; inset: 32%; border-radius: 50%; background: var(--c, #ff3d9a);
+    display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 12px; color: rgba(0,0,0,.6); }
+  .disc .label::after { content: ''; position: absolute; width: 10%; height: 10%; border-radius: 50%; background: #0b0716; }
+  .spin { animation: spin 1.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* トラックリスト */
+  .head { display: flex; align-items: baseline; justify-content: space-between; }
+  .head h1 { font-size: 20px; font-weight: 900; }
+  .head .count { font-size: 15px; font-weight: 800; color: #4ef2ff; }
+  .tracks { display: flex; flex-direction: column; gap: 7px; }
+  .track {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px;
+    background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .08); min-height: 54px;
+  }
+  .track .no { font-size: 13px; font-weight: 900; opacity: .55; width: 22px; font-variant-numeric: tabular-nums; }
+  .track .mini { width: 34px; height: 34px; }
+  .track .info { flex: 1; min-width: 0; }
+  .track .t { font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track .s { font-size: 12px; opacity: .7; margin-top: 2px; }
+  .track .stars { color: #ffd23d; letter-spacing: 1px; }
+  .track.locked .t { opacity: .4; }
+  .track.next { background: linear-gradient(90deg, rgba(255,61,154,.35), rgba(255,138,61,.2)); border-color: #ff3d9a; }
+  .track.next .t { opacity: 1; }
+  .track .go { padding: 8px 12px; border-radius: 10px; background: #ff3d9a; font-weight: 900; font-size: 14px; white-space: nowrap; }
+  .track .rank { font-weight: 900; font-size: 18px; width: 26px; text-align: center; }
+  .listen { font-size: 12px; font-weight: 800; padding: 6px 9px; border-radius: 8px; background: rgba(78,242,255,.18); color: #4ef2ff; text-decoration: none; white-space: nowrap; }
+  .rS { color: #ffd23d; } .rA { color: #ff3d9a; } .rB { color: #4ef2ff; } .rC { color: #b9b3c9; }
+
+  /* ミニゲーム */
+  #game { padding: 0; }
+  #cv { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  #intro {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 20px;
+    background: rgba(11, 7, 22, .78); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  #intro.on { display: flex; }
+  #intro .card { width: 100%; max-width: 380px; text-align: center; display: flex; flex-direction: column; gap: 12px; }
+  #intro .track-no { font-size: 14px; font-weight: 900; color: #4ef2ff; letter-spacing: .2em; }
+  #intro .gname { font-size: 30px; font-weight: 900; }
+  #intro .gicon { font-size: 64px; line-height: 1; }
+  #intro .gdesc { font-size: 15px; line-height: 1.7; opacity: .9; }
+  #intro .lv { font-size: 13px; font-weight: 800; color: #ffd23d; }
+
+  /* 結果 */
+  #result { justify-content: center; text-align: center; }
+  .rank-big { font-size: 96px; font-weight: 900; line-height: 1; animation: stamp .5s cubic-bezier(.2, 2, .4, 1) both; }
+  @keyframes stamp { from { transform: scale(3) rotate(-10deg); opacity: 0; } }
+  .score-line { font-size: 18px; font-weight: 800; }
+  #reveal { display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 290px; }
+  #reveal .disc { width: 190px; height: 190px; }
+  .drop-in { animation: dropin .7s cubic-bezier(.2, 1.4, .4, 1) both; }
+  @keyframes dropin { from { transform: translateY(-60px) scale(.6); opacity: 0; } }
+  .song-title { font-size: 24px; font-weight: 900; animation: fadeup .5s .2s both; }
+  .song-sub { font-size: 14px; opacity: .8; animation: fadeup .5s .3s both; }
+  .song-stars { font-size: 22px; color: #ffd23d; letter-spacing: 3px; animation: fadeup .5s .1s both; }
+  @keyframes fadeup { from { transform: translateY(12px); opacity: 0; } }
+  .rarity-tag { display: inline-block; font-size: 12px; font-weight: 900; padding: 3px 10px; border-radius: 99px; background: rgba(255,210,61,.2); color: #ffd23d; }
+
+  /* 完成 */
+  .done-title { text-align: center; font-size: 26px; font-weight: 900; }
+  .name-in { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.3); color: #fff; font-size: 16px; text-align: center; }
+  .share-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .share-row .sub-btn { padding: 12px 6px; }
+  #copied { text-align: center; font-size: 13px; color: #4ef2ff; height: 16px; }
+  .summary { text-align: center; font-size: 14px; opacity: .85; }
+
+  #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 20; }
+  #ver { position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom) + 4px); font-size: 10px; opacity: .45; pointer-events: none; z-index: 30; }
+  #err { position: fixed; left: 8px; right: 8px; bottom: 30px; display: none; z-index: 40; background: rgba(120, 0, 0, .9); border: 2px solid #f55; border-radius: 8px; padding: 8px; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<!-- タイトル -->
+<div id="title" class="screen">
+  <div class="wrap">
+    <div class="disc title-disc spin" style="--c:#ff3d9a"><div class="label"></div></div>
+    <div class="band-name" id="band-name"></div>
+    <div class="tagline">ミニゲームで曲をゲットして<br><b>10曲のプレイリスト</b>をつくろう!</div>
+    <div class="rules">
+      🎮 1曲ごとにミニゲームに挑戦<br>
+      ⭐ スコアが高いほどレアな曲が出る(どんなスコアでも1曲もらえる)<br>
+      📤 10曲そろったらプレイリストを友だちに共有
+    </div>
+    <button class="big-btn" id="start-btn">▶ はじめる</button>
+    <button class="sub-btn" id="reset-btn" style="display:none">最初からやり直す</button>
+  </div>
+</div>
+
+<!-- トラックリスト(10曲の枠) -->
+<div id="board" class="screen">
+  <div class="wrap">
+    <div class="head"><h1>🎧 あなたのプレイリスト</h1><div class="count" id="count">0 / 10</div></div>
+    <div class="tracks" id="tracks"></div>
+  </div>
+</div>
+
+<!-- ミニゲーム -->
+<div id="game" class="screen">
+  <canvas id="cv"></canvas>
+  <div id="intro">
+    <div class="card">
+      <div class="track-no" id="i-no">TRACK 01</div>
+      <div class="gicon" id="i-icon">🥁</div>
+      <div class="gname" id="i-name"></div>
+      <div class="lv" id="i-lv"></div>
+      <div class="gdesc" id="i-desc"></div>
+      <button class="big-btn" id="i-go">スタート!</button>
+    </div>
+  </div>
+</div>
+
+<!-- 結果と曲の発表 -->
+<div id="result" class="screen">
+  <div class="wrap">
+    <div class="track-no" id="r-no" style="text-align:center;font-weight:900;color:#4ef2ff;letter-spacing:.2em;font-size:14px"></div>
+    <div class="rank-big" id="r-rank">S</div>
+    <div class="score-line" id="r-score"></div>
+    <div id="reveal"></div>
+    <button class="big-btn" id="r-next" style="visibility:hidden">次へ ▶</button>
+  </div>
+</div>
+
+<!-- 完成と共有 -->
+<div id="done" class="screen">
+  <div class="wrap">
+    <div class="done-title" id="done-title">🎉 プレイリスト完成!</div>
+    <div class="summary" id="summary"></div>
+    <input class="name-in" id="name-in" maxlength="16" placeholder="あなたの名前(なくてもOK)">
+    <button class="big-btn" id="share-btn">📤 プレイリストを共有</button>
+    <div class="share-row">
+      <button class="sub-btn" id="share-x">𝕏 でポスト</button>
+      <button class="sub-btn" id="share-line">LINE で送る</button>
+    </div>
+    <button class="sub-btn" id="copy-btn">🔗 リンクをコピー</button>
+    <div id="copied"></div>
+    <div class="tracks" id="final-tracks"></div>
+    <a class="sub-btn" id="band-link" target="_blank" rel="noopener" style="text-align:center;text-decoration:none;display:none"></a>
+    <button class="sub-btn" id="again-btn">🔁 もう一度あそぶ(プレイリストは消えます)</button>
+  </div>
+</div>
+
+<!-- 共有されたプレイリストを見る -->
+<div id="shared" class="screen">
+  <div class="wrap">
+    <div class="done-title" id="shared-title"></div>
+    <div class="summary" id="shared-sum"></div>
+    <div class="tracks" id="shared-tracks"></div>
+    <button class="big-btn" id="shared-play">▶ わたしも10曲あつめる</button>
+  </div>
+</div>
+
+<canvas id="confetti"></canvas>
+<div id="ver"></div>
+<div id="err"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   設定(バンドの情報と曲はここを書きかえる)
+   - id は共有リンクに入るので、一度公開したら変えない(短い英数字)
+   - rarity: 4 = 代表曲(Sランク)/ 3 = 人気曲(A)/ 2 = アルバム曲(B)/ 1 = レア音源(C)
+   - url: 曲を聴けるページ(配信サービスや YouTube)。空なら「聴く」ボタンは出ない
+   ===================================================================== */
+const GAME_VERSION = '2026.11.17-b1';
+const BAND = {
+  name: 'MIDNIGHT SODA',          // 仮のバンド名
+  site: '',                        // 公式サイト(空なら出さない)
+  hashtag: 'ミッドナイトソーダ',   // 共有するときのハッシュタグ(# なし。空なら付けない)
+};
+const SONGS = [
+  // ★4 代表曲
+  { id: 'a1', title: '真夜中のソーダ水', rarity: 4, color: '#ff3d9a', url: '' },
+  { id: 'a2', title: 'ネオンシティ・ラン', rarity: 4, color: '#4ef2ff', url: '' },
+  { id: 'a3', title: '夏の終わりのファンファーレ', rarity: 4, color: '#ffd23d', url: '' },
+  { id: 'a4', title: 'ハロー、ハイウェイ', rarity: 4, color: '#ff8a3d', url: '' },
+  { id: 'a5', title: '星くずアンセム', rarity: 4, color: '#b28cff', url: '' },
+  { id: 'a6', title: 'ラストダンスは君と', rarity: 4, color: '#ff5d5d', url: '' },
+  // ★3 人気曲
+  { id: 'b1', title: 'coffee & rain', rarity: 3, color: '#c98b5a', url: '' },
+  { id: 'b2', title: 'ブルーモーメント', rarity: 3, color: '#3d7bff', url: '' },
+  { id: 'b3', title: 'ジェットコースター・ラブ', rarity: 3, color: '#ff6ec7', url: '' },
+  { id: 'b4', title: '屋上の天文台', rarity: 3, color: '#7be0a0', url: '' },
+  { id: 'b5', title: 'ミラーボール', rarity: 3, color: '#e0e0ff', url: '' },
+  { id: 'b6', title: 'サイダーガール', rarity: 3, color: '#6ff0d8', url: '' },
+  { id: 'b7', title: '24時のコンビニ', rarity: 3, color: '#ffe46b', url: '' },
+  { id: 'b8', title: 'リフレイン', rarity: 3, color: '#ff9fb0', url: '' },
+  // ★2 アルバム曲
+  { id: 'c1', title: '朝焼けトレイン', rarity: 2, color: '#ffb27a', url: '' },
+  { id: 'c2', title: 'ポケットの中の宇宙', rarity: 2, color: '#8f7bff', url: '' },
+  { id: 'c3', title: '午後3時のラジオ', rarity: 2, color: '#a5d86b', url: '' },
+  { id: 'c4', title: 'スニーカー', rarity: 2, color: '#f5f5f5', url: '' },
+  { id: 'c5', title: '雨上がりのパレード', rarity: 2, color: '#7ad0ff', url: '' },
+  { id: 'c6', title: 'ペーパームーン', rarity: 2, color: '#ffe9a8', url: '' },
+  { id: 'c7', title: 'ガラスの街', rarity: 2, color: '#a8f0ff', url: '' },
+  { id: 'c8', title: 'インスタントスター', rarity: 2, color: '#ffcf3d', url: '' },
+  // ★1 レア音源(デモ・ライブ版など)
+  { id: 'd1', title: '真夜中のソーダ水(デモ)', rarity: 1, color: '#9a8fb0', url: '' },
+  { id: 'd2', title: 'ネオンシティ・ラン(Live)', rarity: 1, color: '#8fb0a8', url: '' },
+  { id: 'd3', title: 'スタジオの片すみで', rarity: 1, color: '#b0a08f', url: '' },
+  { id: 'd4', title: 'はじめての曲', rarity: 1, color: '#a8a8a8', url: '' },
+  { id: 'd5', title: 'リハーサル#7', rarity: 1, color: '#b09a8f', url: '' },
+  { id: 'd6', title: 'アコースティック・ハイウェイ', rarity: 1, color: '#c0b090', url: '' },
+  { id: 'd7', title: 'ボイスメモ 0412', rarity: 1, color: '#9fa8c0', url: '' },
+  { id: 'd8', title: 'ひみつのボーナストラック', rarity: 1, color: '#c4a0c8', url: '' },
+];
+const RARITY_NAME = { 4: '代表曲', 3: '人気曲', 2: 'アルバム曲', 1: 'レア音源' };
+const RANKS = [ // スコア(0〜100)→ ランク → 出る曲の★
+  { rank: 'S', min: 85, rarity: 4 },
+  { rank: 'A', min: 65, rarity: 3 },
+  { rank: 'B', min: 40, rarity: 2 },
+  { rank: 'C', min: 0, rarity: 1 },
+];
+const SLOTS = 10;
+const SAVE_KEY = 'band-playlist-v1';
+
+/* ---------- エラー表示 ---------- */
+function reportError(e) {
+  const el = document.getElementById('err');
+  el.style.display = 'block';
+  el.textContent = '⚠️ エラー: ' + (e && (e.stack || e.message) || e) + '\n(v' + GAME_VERSION + ')';
+  (window.__errors = window.__errors || []).push(String(e && e.message || e));
+}
+window.addEventListener('error', ev => reportError(ev.error || ev.message));
+window.addEventListener('unhandledrejection', ev => reportError(ev.reason));
+document.getElementById('ver').textContent = '🎸 v' + GAME_VERSION;
+
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const songById = id => SONGS.find(s => s.id === id);
+const stars = r => '★'.repeat(r) + '<span style="opacity:.25">' + '★'.repeat(4 - r) + '</span>';
+const rankOf = score => RANKS.find(r => score >= r.min);
+
+/* ---------- 音(Web Audio でその場で作る) ---------- */
+let audio = null, audioPrimed = false;
+function unlockAudio() {
+  try {
+    if (!audio) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; audio = new AC(); }
+    if (audio.state !== 'running') audio.resume().catch(() => {});
+    if (!audioPrimed || audio.state !== 'running') {
+      const src = audio.createBufferSource();
+      src.buffer = audio.createBuffer(1, 1, 22050);
+      src.connect(audio.destination); src.start(0); audioPrimed = true;
+    }
+  } catch (e) { /* 何もしない */ }
+}
+['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'click', 'keydown'].forEach(ev =>
+  window.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden && audio && audio.state !== 'running') audio.resume().catch(() => {}); });
+function tone(freq, dur = 0.12, type = 'triangle', vol = 0.08, slide = 1, when = 0) {
+  if (!audio || audio.state !== 'running') return;
+  const t = audio.currentTime + when;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (slide !== 1) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(audio.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(dur = 0.08, vol = 0.12, freq = 3000, type = 'highpass', when = 0) {
+  if (!audio || audio.state !== 'running') return;
+  const t = audio.currentTime + when;
+  const buf = audio.createBuffer(1, Math.floor(audio.sampleRate * dur), audio.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
+  const src = audio.createBufferSource(), g = audio.createGain(), f = audio.createBiquadFilter();
+  f.type = type; f.frequency.value = freq; src.buffer = buf; g.gain.value = vol;
+  src.connect(f).connect(g).connect(audio.destination); src.start(t);
+}
+const sfx = {
+  kick: () => tone(120, 0.18, 'sine', 0.35, 0.35),
+  hat: () => noise(0.04, 0.05, 7000),
+  snare: () => { noise(0.12, 0.14, 1800); tone(220, 0.08, 'triangle', 0.06, 0.6); },
+  hit: (n = 0) => tone([523, 659, 784, 1047][n % 4], 0.14, 'square', 0.05),
+  miss: () => tone(160, 0.15, 'sawtooth', 0.05, 0.7),
+  good: () => { tone(880, 0.08, 'triangle', 0.07); tone(1320, 0.12, 'triangle', 0.06, 1, 0.06); },
+  bad: () => tone(110, 0.25, 'sawtooth', 0.07, 0.6),
+  pad: i => tone([262, 330, 392, 523][i], 0.35, 'triangle', 0.12),
+  tap: () => tone(rand(500, 700), 0.05, 'square', 0.035, 1.4),
+  go: () => { tone(523, 0.1, 'square', 0.06); tone(784, 0.18, 'square', 0.06, 1, 0.1); },
+  count: () => tone(440, 0.08, 'square', 0.05),
+  fanfare: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'triangle', 0.08, 1, i * 0.09)),
+  rank: r => r === 'S' || r === 'A' ? sfx.fanfare() : tone(392, 0.25, 'triangle', 0.08),
+  scratch: () => noise(0.25, 0.1, 1200, 'bandpass'),
+};
+
+/* ---------- セーブ ---------- */
+let save = { songs: Array(SLOTS).fill(null), scores: Array(SLOTS).fill(null), name: '' };
+try {
+  const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+  if (s && Array.isArray(s.songs) && s.songs.length === SLOTS) save = Object.assign(save, s);
+} catch (e) { /* 読めなければ最初から */ }
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 保存できなくても続ける */ } }
+const filled = () => save.songs.filter(Boolean).length;
+const nextSlot = () => save.songs.findIndex(s => !s);
+
+/* スコアに合った★の曲を、まだ持っていない中から選ぶ(なければ下の★、それもなければ上の★) */
+function pickSong(rarity) {
+  const owned = new Set(save.songs.filter(Boolean));
+  const order = [rarity];
+  for (let r = rarity - 1; r >= 1; r--) order.push(r);
+  for (let r = rarity + 1; r <= 4; r++) order.push(r);
+  for (const r of order) {
+    const pool = SONGS.filter(s => s.rarity === r && !owned.has(s.id));
+    if (pool.length) return pool[Math.floor(Math.random() * pool.length)];
+  }
+  return SONGS[Math.floor(Math.random() * SONGS.length)];
+}
+
+/* ---------- 画面の切りかえ ---------- */
+function show(id) {
+  document.querySelectorAll('.screen').forEach(el => el.classList.toggle('on', el.id === id));
+  window.scrollTo(0, 0);
+}
+
+/* ===================================================================== */
+/*                               ミニゲーム                               */
+/* ===================================================================== */
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 0, H = 0;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize); resize();
+
+function txt(s, x, y, size, color = '#fff', align = 'center', weight = 900) {
+  ctx.font = `${weight} ${size}px -apple-system, "Hiragino Sans", sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+function stageBg(hue = 280) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, `hsl(${hue},55%,14%)`); g.addColorStop(1, '#07040e');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // スポットライト
+  const t = performance.now() / 1000;
+  for (let i = 0; i < 3; i++) {
+    const x = W * (0.2 + i * 0.3) + Math.sin(t * 0.7 + i * 2) * W * 0.12;
+    const gr = ctx.createLinearGradient(x, 0, x, H);
+    gr.addColorStop(0, `hsla(${[320, 190, 45][i]},100%,65%,.18)`); gr.addColorStop(1, 'transparent');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(x - 10, 0); ctx.lineTo(x + 10, 0); ctx.lineTo(x + W * 0.25, H); ctx.lineTo(x - W * 0.25, H); ctx.fill();
+  }
+}
+function hud(c, label, frac) {
+  const y = 22 + safeTop;
+  txt(label, 16, y, 15, '#fff', 'left', 800);
+  txt(Math.round(c.score) + ' pt', W - 16, y, 18, '#ffd23d', 'right');
+  if (frac != null) {
+    rrect(16, y + 16, W - 32, 6, 3); ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fill();
+    rrect(16, y + 16, (W - 32) * clamp(1 - frac, 0, 1), 6, 3); ctx.fillStyle = '#4ef2ff'; ctx.fill();
+  }
+}
+let safeTop = 0;
+(() => { // セーフエリアの上の高さを測る
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden';
+  document.body.appendChild(d); safeTop = d.getBoundingClientRect().height || 0; d.remove();
+})();
+const pops = []; // 浮かぶ文字
+function pop(s, x, y, color = '#fff', size = 26) { pops.push({ s, x, y, color, size, t: 0 }); }
+function drawPops(dt) {
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i]; p.t += dt;
+    if (p.t > 0.7) { pops.splice(i, 1); continue; }
+    ctx.globalAlpha = 1 - p.t / 0.7;
+    txt(p.s, p.x, p.y - p.t * 50, p.size * (1 + Math.max(0, 0.15 - p.t)), p.color);
+    ctx.globalAlpha = 1;
+  }
+}
+
+const GAMES = [
+  /* ---------- 1. リズムタップ ---------- */
+  {
+    name: 'リズムでタップ', icon: '🥁',
+    desc: '落ちてくる音符が線に重なった瞬間に、その列をタップ!<br>(PCは ← ↓ → キー)',
+    init(c) {
+      c.bpm = c.lv ? 128 : 108; c.beat = 60 / c.bpm; c.travel = c.lv ? 1.05 : 1.35;
+      c.notes = []; let b = 4;
+      const count = c.lv ? 26 : 18;
+      while (c.notes.length < count) {
+        const half = c.lv && Math.random() < 0.35;
+        c.notes.push({ t: b * c.beat, lane: Math.floor(Math.random() * 3), j: null });
+        if (half) c.notes.push({ t: (b + 0.5) * c.beat, lane: Math.floor(Math.random() * 3), j: null });
+        b += Math.random() < 0.25 ? 2 : 1;
+      }
+      c.notes = c.notes.slice(0, count);
+      c.end = c.notes[c.notes.length - 1].t + 1.2;
+      c.pts = 0; c.lastBeat = -1; c.combo = 0; c.flash = [0, 0, 0];
+    },
+    update(c, dt) {
+      const bi = Math.floor(c.t / c.beat);
+      if (bi !== c.lastBeat) { c.lastBeat = bi; if (bi % 2 === 0) sfx.kick(); else sfx.snare(); sfx.hat(); }
+      for (const n of c.notes) if (!n.j && c.t > n.t + 0.2) { n.j = 'miss'; c.combo = 0; pop('MISS', this.laneX(n.lane), this.hitY() - 40, '#888', 20); }
+      c.score = c.pts / c.notes.length;
+      for (let i = 0; i < 3; i++) c.flash[i] = Math.max(0, c.flash[i] - dt * 4);
+      if (c.t > c.end) c.done = true;
+    },
+    laneX: l => W / 6 + l * W / 3, hitY: () => H * 0.8,
+    press(c, lane) {
+      c.flash[lane] = 1;
+      let best = null;
+      for (const n of c.notes) if (!n.j && n.lane === lane && Math.abs(n.t - c.t) < 0.2 && (!best || Math.abs(n.t - c.t) < Math.abs(best.t - c.t))) best = n;
+      if (!best) return;
+      const d = Math.abs(best.t - c.t);
+      const x = this.laneX(lane), y = this.hitY() - 40;
+      if (d < 0.07) { best.j = 'p'; c.pts += 100; c.combo++; pop('PERFECT', x, y, '#ffd23d'); sfx.hit(c.combo); }
+      else if (d < 0.14) { best.j = 'g'; c.pts += 65; c.combo++; pop('GOOD', x, y, '#4ef2ff'); sfx.hit(c.combo); }
+      else { best.j = 'b'; c.pts += 25; c.combo = 0; pop('BAD', x, y, '#ff8a3d', 22); }
+    },
+    down(c, x) { this.press(c, clamp(Math.floor(x / (W / 3)), 0, 2)); },
+    key(c, k) { const m = { ArrowLeft: 0, ArrowDown: 1, ArrowRight: 2, a: 0, s: 1, d: 2 }; if (k in m) this.press(c, m[k]); },
+    draw(c, dt) {
+      stageBg(285);
+      const hy = this.hitY(), top = 70 + safeTop, cols = ['#ff3d9a', '#4ef2ff', '#ffd23d'];
+      for (let l = 0; l < 3; l++) {
+        const x = this.laneX(l);
+        ctx.fillStyle = `rgba(255,255,255,${0.04 + c.flash[l] * 0.18})`; ctx.fillRect(x - W / 6 + 3, top, W / 3 - 6, H - top);
+      }
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, hy - 2, W, 4);
+      for (let l = 0; l < 3; l++) {
+        ctx.beginPath(); ctx.arc(this.laneX(l), hy, 26 + c.flash[l] * 6, 0, 7);
+        ctx.strokeStyle = cols[l]; ctx.lineWidth = 4; ctx.stroke();
+      }
+      for (const n of c.notes) {
+        if (n.j && n.j !== 'miss') continue;
+        const y = hy - (n.t - c.t) / c.travel * (hy - top);
+        if (y < top - 30 || y > H + 30) continue;
+        ctx.globalAlpha = n.j === 'miss' ? 0.3 : 1;
+        ctx.beginPath(); ctx.arc(this.laneX(n.lane), y, 22, 0, 7); ctx.fillStyle = cols[n.lane]; ctx.fill();
+        txt('♪', this.laneX(n.lane), y + 1, 24, '#1a0d33');
+        ctx.globalAlpha = 1;
+      }
+      if (c.combo >= 3) txt(c.combo + ' COMBO', W / 2, H * 0.4, 30, 'rgba(255,255,255,.8)');
+      hud(c, '🥁 リズムでタップ', c.t / c.end);
+      drawPops(dt);
+    },
+    bot(c) { for (const n of c.notes) if (!n.j && Math.abs(n.t - c.t) < 0.03) this.press(c, n.lane); },
+  },
+
+  /* ---------- 2. 連打 ---------- */
+  {
+    name: 'コール&レスポンス', icon: '🙌',
+    desc: '6秒間、画面を連打して会場を盛り上げよう!<br>(PCはスペースキー)',
+    init(c) { c.dur = 6; c.taps = 0; c.target = c.lv ? 56 : 46; c.hype = 0; c.heads = Array.from({ length: 28 }, (_, i) => ({ x: Math.random(), row: i % 3, ph: Math.random() * 6, c: `hsl(${Math.random() * 360},60%,60%)` })); },
+    update(c, dt) {
+      c.hype = Math.max(0, c.hype - dt * 1.4);
+      c.score = Math.min(100, c.taps / c.target * 100);
+      if (c.t > c.dur) c.done = true;
+    },
+    down(c, x, y) {
+      c.taps++; c.hype = Math.min(1.5, c.hype + 0.12); sfx.tap();
+      if (c.taps % 10 === 0) { sfx.good(); pop(c.taps + '!', W / 2, H * 0.32, '#ffd23d', 40); }
+      else pop('+1', x + rand(-20, 20), y, 'rgba(255,255,255,.8)', 18);
+    },
+    key(c, k) { if (k === ' ' || k === 'Enter') this.down(c, W / 2 + rand(-80, 80), H * 0.5); },
+    draw(c, dt) {
+      stageBg(330 - c.hype * 40);
+      const t = performance.now() / 1000;
+      // ステージとメンバー(シルエット)
+      ctx.fillStyle = '#1b1030'; ctx.fillRect(0, H * 0.18 + safeTop, W, H * 0.05);
+      for (let i = 0; i < 3; i++) {
+        const x = W * (0.25 + i * 0.25), y = H * 0.18 + safeTop - Math.abs(Math.sin(t * (4 + c.hype * 6) + i)) * 8 * c.hype;
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(x, y - 40, 12, 0, 7); ctx.fill(); ctx.fillRect(x - 12, y - 28, 24, 30);
+      }
+      // 盛り上がりメーター
+      const mx = 24, my = H * 0.3, mw = W - 48;
+      rrect(mx, my, mw, 26, 13); ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fill();
+      const f = clamp(c.taps / c.target, 0, 1);
+      const g = ctx.createLinearGradient(mx, 0, mx + mw, 0); g.addColorStop(0, '#4ef2ff'); g.addColorStop(0.6, '#ff3d9a'); g.addColorStop(1, '#ffd23d');
+      rrect(mx, my, Math.max(26, mw * f), 26, 13); ctx.fillStyle = g; ctx.fill();
+      txt('盛り上がり ' + Math.round(f * 100) + '%', W / 2, my + 13, 14, '#fff');
+      // 観客
+      for (const h of c.heads) {
+        const base = H * (0.62 + h.row * 0.11);
+        const jump = Math.abs(Math.sin(t * (5 + c.hype * 7) + h.ph)) * (6 + c.hype * 34);
+        const x = h.x * W;
+        ctx.fillStyle = h.c; ctx.beginPath(); ctx.arc(x, base - jump, 16, 0, 7); ctx.fill();
+        if (c.hype > 0.5) { ctx.strokeStyle = h.c; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x - 10, base - jump + 10); ctx.lineTo(x - 18, base - jump - 22); ctx.moveTo(x + 10, base - jump + 10); ctx.lineTo(x + 18, base - jump - 22); ctx.stroke(); }
+      }
+      txt(c.taps, W / 2, H * 0.47, 64, '#fff');
+      txt('タップ!タップ!', W / 2, H * 0.53, 16, 'rgba(255,255,255,.7)', 'center', 800);
+      hud(c, '🙌 コール&レスポンス', c.t / c.dur);
+      drawPops(dt);
+    },
+    bot(c) { if (Math.random() < 0.6) this.down(c, W / 2, H / 2); },
+  },
+
+  /* ---------- 3. チューニング ---------- */
+  {
+    name: 'チューニング', icon: '🎸',
+    desc: 'ゆれる針が緑のまん中に来た瞬間にタップ!<br>全部で5回。だんだん速くなる。',
+    init(c) { c.round = 0; c.rounds = 5; c.res = []; this.next(c); },
+    next(c) {
+      c.ph = Math.random() * 6; c.speed = (c.lv ? 2.7 : 2.0) + c.round * 0.45; c.target = rand(-0.45, 0.45);
+      c.zone = (c.lv ? 0.13 : 0.17) - c.round * 0.012; c.wait = 0; c.stopped = null; c.rt = 0;
+    },
+    needle: c => Math.sin(c.ph),
+    update(c, dt) {
+      if (c.stopped == null) { c.ph += dt * c.speed; c.rt += dt; if (c.rt > 5) this.judge(c); }
+      else { c.wait += dt; if (c.wait > 0.8) { c.round++; if (c.round >= c.rounds) c.done = true; else this.next(c); } }
+      c.score = c.res.reduce((a, b) => a + b, 0) / c.rounds;
+    },
+    judge(c) {
+      const p = this.needle(c); c.stopped = p;
+      const d = Math.abs(p - c.target);
+      let pts = d <= c.zone * 0.35 ? 100 : d <= c.zone ? 80 - (d - c.zone * 0.35) / (c.zone * 0.65) * 20 : Math.max(0, 50 - (d - c.zone) / 0.3 * 50);
+      pts = Math.round(pts); c.res.push(pts);
+      const word = pts >= 100 ? 'PERFECT' : pts >= 60 ? 'GOOD' : pts > 0 ? 'おしい' : 'MISS';
+      pop(word, W / 2, H * 0.3, pts >= 100 ? '#ffd23d' : pts >= 60 ? '#4ef2ff' : '#ff8a3d', 34);
+      pts >= 60 ? sfx.good() : sfx.miss();
+    },
+    down(c) { if (c.stopped == null) this.judge(c); },
+    key(c, k) { if (k === ' ' || k === 'Enter') this.down(c); },
+    draw(c, dt) {
+      stageBg(200);
+      const cx = W / 2, cy = H * 0.68, r = Math.min(W * 0.42, 220);
+      const ang = p => -Math.PI / 2 + p * 1.1;
+      // 目盛り
+      ctx.lineWidth = 18; ctx.strokeStyle = 'rgba(255,255,255,.12)';
+      ctx.beginPath(); ctx.arc(cx, cy, r, ang(-1), ang(1)); ctx.stroke();
+      ctx.strokeStyle = '#3dff8a'; ctx.beginPath(); ctx.arc(cx, cy, r, ang(c.target - c.zone), ang(c.target + c.zone)); ctx.stroke();
+      ctx.strokeStyle = '#eaffef'; ctx.lineWidth = 18; ctx.beginPath(); ctx.arc(cx, cy, r, ang(c.target - c.zone * 0.35), ang(c.target + c.zone * 0.35)); ctx.stroke();
+      // 針
+      const p = c.stopped != null ? c.stopped : this.needle(c);
+      ctx.strokeStyle = c.stopped != null ? '#ffd23d' : '#ff3d9a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(ang(p)) * (r + 14), cy + Math.sin(ang(p)) * (r + 14)); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, 12, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+      // ラウンド
+      for (let i = 0; i < c.rounds; i++) {
+        const x = W / 2 + (i - 2) * 34, y = H * 0.82;
+        ctx.beginPath(); ctx.arc(x, y, 11, 0, 7);
+        ctx.fillStyle = i < c.res.length ? (c.res[i] >= 100 ? '#ffd23d' : c.res[i] >= 60 ? '#4ef2ff' : '#ff8a3d') : 'rgba(255,255,255,.2)'; ctx.fill();
+      }
+      txt('🎸 弦 ' + Math.min(c.round + 1, c.rounds) + ' / ' + c.rounds, W / 2, H * 0.2 + safeTop, 22);
+      txt('緑のまん中でタップ!', W / 2, H * 0.89, 15, 'rgba(255,255,255,.7)', 'center', 800);
+      hud(c, '🎸 チューニング', null);
+      drawPops(dt);
+    },
+    bot(c) { if (c.stopped == null && Math.abs(this.needle(c) - c.target) < c.zone * 0.2) this.judge(c); },
+  },
+
+  /* ---------- 4. 音符キャッチ ---------- */
+  {
+    name: '音符キャッチ', icon: '🎶',
+    desc: '指を左右に動かして、落ちてくる音符をキャッチ!<br>💀 ノイズはさけてね。(PCは ← → キー)',
+    init(c) { c.dur = 14; c.x = W / 2; c.tx = W / 2; c.items = []; c.spawn = 0; c.good = 0; c.bad = 0; c.total = 0; },
+    update(c, dt) {
+      c.spawn -= dt;
+      if (c.spawn <= 0 && c.t < c.dur - 0.8) {
+        c.spawn = (c.lv ? 0.3 : 0.4) * rand(0.7, 1.2);
+        const bad = Math.random() < (c.lv ? 0.27 : 0.2);
+        if (!bad) c.total++;
+        c.items.push({ x: rand(30, W - 30), y: 60 + safeTop, v: (c.lv ? 1.0 : 0.8) * H * rand(0.38, 0.55), bad, s: ['♪', '♫', '♬'][Math.floor(Math.random() * 3)] });
+      }
+      if (c.keyDir) c.tx = clamp(c.tx + c.keyDir * W * 1.4 * dt, 30, W - 30);
+      c.x += (c.tx - c.x) * Math.min(1, dt * 18);
+      const py = H * 0.84;
+      for (let i = c.items.length - 1; i >= 0; i--) {
+        const it = c.items[i]; it.y += it.v * dt;
+        if (Math.abs(it.y - py) < 26 && Math.abs(it.x - c.x) < 46) {
+          c.items.splice(i, 1);
+          if (it.bad) { c.bad++; sfx.bad(); pop('ノイズ!', c.x, py - 50, '#ff5d5d', 22); }
+          else { c.good++; sfx.hit(c.good); pop('+1', c.x, py - 50, '#ffd23d', 20); }
+        } else if (it.y > H + 30) c.items.splice(i, 1);
+      }
+      c.score = clamp((c.good - c.bad * 1.5) / Math.max(1, c.total) * 100 * 1.1, 0, 100);
+      if (c.t > c.dur) c.done = true;
+    },
+    down(c, x) { c.tx = clamp(x, 30, W - 30); },
+    move(c, x) { c.tx = clamp(x, 30, W - 30); },
+    key(c, k, up) {
+      if (k === 'ArrowLeft' || k === 'a') c.keyDir = up ? 0 : -1;
+      if (k === 'ArrowRight' || k === 'd') c.keyDir = up ? 0 : 1;
+    },
+    draw(c, dt) {
+      stageBg(250);
+      for (const it of c.items) {
+        if (it.bad) txt('💀', it.x, it.y, 32);
+        else { ctx.beginPath(); ctx.arc(it.x, it.y, 20, 0, 7); ctx.fillStyle = '#ff3d9a'; ctx.fill(); txt(it.s, it.x, it.y + 1, 24, '#fff'); }
+      }
+      // キャッチする人(ギターケース)
+      const py = H * 0.84;
+      rrect(c.x - 46, py - 12, 92, 28, 12); ctx.fillStyle = '#4ef2ff'; ctx.fill();
+      rrect(c.x - 40, py - 6, 80, 8, 4); ctx.fillStyle = '#1a0d33'; ctx.fill();
+      txt('🎸', c.x, py + 30, 26);
+      txt('🎶 ' + c.good + '   💀 ' + c.bad, W / 2, 70 + safeTop, 18, '#fff', 'center', 800);
+      hud(c, '🎶 音符キャッチ', c.t / c.dur);
+      drawPops(dt);
+    },
+    bot(c) {
+      const py = H * 0.84;
+      const good = c.items.filter(i => !i.bad && i.y < py).sort((a, b) => b.y - a.y)[0];
+      if (good) c.tx = good.x;
+    },
+  },
+
+  /* ---------- 5. セッション記憶 ---------- */
+  {
+    name: 'セッション記憶', icon: '🎹',
+    desc: '光った楽器の順番をおぼえて、同じ順にタップ!<br>5ラウンド。だんだん長くなる。',
+    init(c) { c.base = c.lv ? 4 : 3; c.round = 0; c.rounds = 5; c.seq = []; c.lit = [0, 0, 0, 0]; c.okIn = 0; this.newRound(c); },
+    newRound(c) {
+      while (c.seq.length < c.base + c.round) c.seq.push(Math.floor(Math.random() * 4));
+      c.phase = 'show'; c.si = 0; c.st = -0.6; c.inp = 0;
+    },
+    pads() {
+      const s = Math.min(W * 0.42, 180), gap = 14, x0 = W / 2 - s - gap / 2, y0 = H * 0.36;
+      return [0, 1, 2, 3].map(i => ({ x: x0 + (i % 2) * (s + gap), y: y0 + Math.floor(i / 2) * (s + gap), s }));
+    },
+    update(c, dt) {
+      for (let i = 0; i < 4; i++) c.lit[i] = Math.max(0, c.lit[i] - dt * 3);
+      const step = c.lv ? 0.45 : 0.55;
+      if (c.phase === 'show') {
+        c.st += dt;
+        if (c.st >= step) {
+          c.st = 0;
+          if (c.si < c.seq.length) { const p = c.seq[c.si++]; c.lit[p] = 1; sfx.pad(p); }
+          else c.phase = 'input';
+        }
+      } else if (c.phase === 'clear') {
+        c.st += dt; if (c.st > 0.7) { c.round++; if (c.round >= c.rounds) c.done = true; else this.newRound(c); }
+      } else if (c.phase === 'fail') { c.st += dt; if (c.st > 1) c.done = true; }
+      const part = c.phase === 'fail' || c.phase === 'input' ? c.inp / c.seq.length : 0;
+      c.score = Math.min(100, (c.round + (c.phase === 'clear' ? 1 : part * 0.6)) / c.rounds * 100);
+    },
+    press(c, i) {
+      if (c.phase !== 'input') return;
+      c.lit[i] = 1; sfx.pad(i);
+      if (c.seq[c.inp] === i) {
+        c.inp++;
+        if (c.inp >= c.seq.length) { c.phase = 'clear'; c.st = 0; sfx.good(); pop('NICE!', W / 2, H * 0.27, '#ffd23d', 34); }
+      } else { c.phase = 'fail'; c.st = 0; sfx.bad(); pop('ちがう…', W / 2, H * 0.27, '#ff5d5d', 30); }
+    },
+    down(c, x, y) {
+      this.pads().forEach((p, i) => { if (x >= p.x && x <= p.x + p.s && y >= p.y && y <= p.y + p.s) this.press(c, i); });
+    },
+    key(c, k) { const m = { '1': 0, '2': 1, '3': 2, '4': 3 }; if (k in m) this.press(c, m[k]); },
+    draw(c, dt) {
+      stageBg(170);
+      const cols = ['#ff3d9a', '#4ef2ff', '#ffd23d', '#7be06b'], icons = ['🥁', '🎸', '🎹', '🎤'];
+      this.pads().forEach((p, i) => {
+        rrect(p.x, p.y, p.s, p.s, 22);
+        ctx.fillStyle = cols[i]; ctx.globalAlpha = 0.28 + c.lit[i] * 0.72; ctx.fill(); ctx.globalAlpha = 1;
+        if (c.lit[i] > 0.3) { ctx.shadowColor = cols[i]; ctx.shadowBlur = 30; ctx.fill(); ctx.shadowBlur = 0; }
+        txt(icons[i], p.x + p.s / 2, p.y + p.s / 2, p.s * 0.38);
+      });
+      const msg = c.phase === 'show' ? 'よく見て…' : c.phase === 'input' ? `同じ順にタップ! ${c.inp} / ${c.seq.length}` : '';
+      txt('ラウンド ' + Math.min(c.round + 1, c.rounds) + ' / ' + c.rounds, W / 2, H * 0.17 + safeTop, 22);
+      txt(msg, W / 2, H * 0.23 + safeTop, 16, 'rgba(255,255,255,.8)', 'center', 800);
+      hud(c, '🎹 セッション記憶', null);
+      drawPops(dt);
+    },
+    bot(c) { if (c.phase === 'input' && Math.random() < 0.15) this.press(c, c.seq[c.inp]); },
+  },
+];
+// 10曲の枠ごとのミニゲーム(前半5つは「ふつう」、後半5つは同じゲームの「むずかしい」)
+const gameFor = slot => GAMES[slot % GAMES.length];
+const levelFor = slot => slot >= GAMES.length ? 1 : 0;
+
+let cur = null, running = false, last = 0, botOn = false;
+function openGame(slot) {
+  const g = gameFor(slot), lv = levelFor(slot);
+  $('i-no').textContent = 'TRACK ' + String(slot + 1).padStart(2, '0');
+  $('i-icon').textContent = g.icon;
+  $('i-name').textContent = g.name;
+  $('i-lv').textContent = lv ? '🔥 むずかしい' : 'ふつう';
+  $('i-desc').innerHTML = g.desc;
+  cur = { slot, g, lv, t: 0, score: 0, done: false, ready: 0 };
+  pops.length = 0;
+  show('game'); resize();
+  $('intro').classList.add('on');
+  running = false;
+  drawIdle();
+}
+function drawIdle() { stageBg(280); }
+function beginGame() {
+  $('intro').classList.remove('on');
+  cur.g.init(cur);
+  cur.ready = 2.4; cur.lastCount = 4;
+  running = true;
+}
+$('i-go').addEventListener('click', beginGame);
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+  if (!running || !cur) return;
+  try { step(dt); } catch (e) { reportError(e); }
+}
+function step(dt) {
+  const c = cur;
+  if (c.ready > 0) {
+    c.ready -= dt;
+    c.g.draw(c, dt);
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, W, H);
+    const n = Math.ceil(c.ready / 0.8);
+    if (n !== c.lastCount) { c.lastCount = n; n > 0 ? sfx.count() : sfx.go(); }
+    txt(n > 0 ? String(n) : 'GO!', W / 2, H / 2, 90, n > 0 ? '#fff' : '#ffd23d');
+    return;
+  }
+  c.t += dt;
+  if (botOn && c.g.bot) c.g.bot(c);
+  c.g.update(c, dt);
+  c.g.draw(c, dt);
+  if (c.done) { running = false; setTimeout(() => finishSlot(Math.round(clamp(c.score, 0, 100))), 500); }
+}
+requestAnimationFrame(frame);
+
+function canvasPos(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+cv.addEventListener('pointerdown', e => { if (!running || !cur || cur.ready > 0) return; e.preventDefault(); const [x, y] = canvasPos(e); cur.g.down && cur.g.down(cur, x, y); });
+cv.addEventListener('pointermove', e => { if (!running || !cur || cur.ready > 0 || !e.buttons && e.pointerType === 'mouse') return; const [x, y] = canvasPos(e); cur.g.move && cur.g.move(cur, x, y); });
+window.addEventListener('keydown', e => {
+  if ($('title').classList.contains('on') && (e.key === 'Enter' || e.key === ' ')) { $('start-btn').click(); return; }
+  if (!running || !cur || cur.ready > 0 || e.repeat) return;
+  cur.g.key && cur.g.key(cur, e.key, false); if (e.key === ' ' || e.key.startsWith('Arrow')) e.preventDefault();
+});
+window.addEventListener('keyup', e => { if (running && cur && cur.g.key) cur.g.key(cur, e.key, true); });
+
+/* ===================================================================== */
+/*                        結果 → 曲の発表 → 一覧                         */
+/* ===================================================================== */
+function discHTML(song, size, spin) {
+  return `<div class="disc ${spin ? 'spin' : ''}" style="--c:${song ? song.color : '#444'};width:${size}px;height:${size}px"><div class="label"></div></div>`;
+}
+function finishSlot(score) {
+  const slot = cur.slot;
+  const r = rankOf(score);
+  const song = pickSong(r.rarity);
+  save.songs[slot] = song.id; save.scores[slot] = score; persist();
+  $('r-no').textContent = 'TRACK ' + String(slot + 1).padStart(2, '0');
+  const rk = $('r-rank'); rk.textContent = r.rank; rk.className = 'rank-big r' + r.rank;
+  rk.style.animation = 'none'; void rk.offsetWidth; rk.style.animation = '';
+  $('r-score').textContent = 'スコア ' + score + ' 点';
+  $('reveal').innerHTML = `<div style="opacity:.7;font-weight:800;margin-top:20px">♪ 曲をえらんでいます…</div>${discHTML(null, 190, true)}`;
+  $('r-next').style.visibility = 'hidden';
+  $('r-next').textContent = filled() >= SLOTS ? '🎉 プレイリストを見る' : '次へ ▶';
+  show('result');
+  sfx.rank(r.rank);
+  setTimeout(() => { sfx.scratch(); }, 900);
+  setTimeout(() => {
+    $('reveal').innerHTML = `
+      <div class="drop-in">${discHTML(song, 190, true)}</div>
+      <div class="song-stars">${stars(song.rarity)}</div>
+      <div><span class="rarity-tag">${RARITY_NAME[song.rarity]}</span></div>
+      <div class="song-title">${esc(song.title)}</div>
+      <div class="song-sub">${esc(BAND.name)}</div>`;
+    sfx.fanfare();
+    if (song.rarity >= 4) confetti(80);
+    $('r-next').style.visibility = 'visible';
+  }, 1500);
+}
+$('r-next').addEventListener('click', () => { filled() >= SLOTS ? showDone() : showBoard(); });
+
+function trackRow(i, song, opts = {}) {
+  const no = String(i + 1).padStart(2, '0');
+  if (!song) {
+    const g = gameFor(i);
+    if (opts.next) return `<div class="track next"><div class="no">${no}</div><div class="mini" style="font-size:26px;text-align:center">${g.icon}</div>
+      <div class="info"><div class="t">??? </div><div class="s">${g.name}${levelFor(i) ? '(むずかしい)' : ''}</div></div>
+      <button class="go" data-play="${i}">PLAY ▶</button></div>`;
+    return `<div class="track locked"><div class="no">${no}</div><div class="mini" style="font-size:22px;text-align:center;opacity:.35">🔒</div>
+      <div class="info"><div class="t">? ? ?</div><div class="s" style="opacity:.4">${g.name}</div></div></div>`;
+  }
+  const r = opts.score != null ? rankOf(opts.score).rank : '';
+  return `<div class="track"><div class="no">${no}</div>${discHTML(song, 34, false).replace('class="disc ', 'class="disc mini ')}
+    <div class="info"><div class="t">${esc(song.title)}</div><div class="s"><span class="stars">${stars(song.rarity)}</span> ${RARITY_NAME[song.rarity]}</div></div>
+    ${song.url ? `<a class="listen" href="${esc(song.url)}" target="_blank" rel="noopener">▶ 聴く</a>` : r ? `<div class="rank r${r}">${r}</div>` : ''}</div>`;
+}
+function showBoard() {
+  const n = nextSlot();
+  $('count').textContent = filled() + ' / ' + SLOTS;
+  $('tracks').innerHTML = save.songs.map((id, i) => trackRow(i, id && songById(id), { next: i === n, score: save.scores[i] })).join('');
+  show('board');
+}
+$('tracks').addEventListener('click', e => { const b = e.target.closest('[data-play]'); if (b) openGame(+b.dataset.play); });
+
+/* ---------- 完成と共有 ---------- */
+function shareURL(ids, name) {
+  const u = new URL(location.href); u.search = ''; u.hash = '';
+  u.searchParams.set('p', ids.join('.'));
+  if (name) u.searchParams.set('n', name);
+  return u.toString();
+}
+function summaryText(ids) {
+  const c4 = ids.filter(id => (songById(id) || {}).rarity === 4).length;
+  return `★4(代表曲)${c4}曲 をふくむ10曲`;
+}
+function shareText() {
+  const name = save.name.trim();
+  return `${name ? name + 'の' : 'わたしの'}「${BAND.name}」プレイリストができた!(${summaryText(save.songs)})` + (BAND.hashtag ? ` #${BAND.hashtag}` : '');
+}
+function showDone() {
+  $('done-title').textContent = '🎉 プレイリスト完成!';
+  $('summary').textContent = summaryText(save.songs);
+  $('name-in').value = save.name || '';
+  $('final-tracks').innerHTML = save.songs.map((id, i) => trackRow(i, songById(id), { score: save.scores[i] })).join('');
+  if (BAND.site) { $('band-link').style.display = 'block'; $('band-link').href = BAND.site; $('band-link').textContent = '🌐 ' + BAND.name + ' 公式サイト'; }
+  $('copied').textContent = '';
+  show('done');
+  sfx.fanfare(); confetti(160);
+}
+$('name-in').addEventListener('input', e => { save.name = e.target.value.slice(0, 16); persist(); });
+$('share-btn').addEventListener('click', async () => {
+  const url = shareURL(save.songs, save.name.trim());
+  if (navigator.share) {
+    try { await navigator.share({ title: BAND.name + ' プレイリスト', text: shareText(), url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  copyLink();
+});
+async function copyLink() {
+  const url = shareURL(save.songs, save.name.trim());
+  try { await navigator.clipboard.writeText(shareText() + '\n' + url); $('copied').textContent = '✅ コピーしました'; }
+  catch (e) { prompt('このリンクをコピーしてください', url); }
+}
+$('copy-btn').addEventListener('click', copyLink);
+$('share-x').addEventListener('click', () => {
+  const u = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText()) + '&url=' + encodeURIComponent(shareURL(save.songs, save.name.trim()));
+  window.open(u, '_blank', 'noopener');
+});
+$('share-line').addEventListener('click', () => {
+  const u = 'https://social-plugins.line.me/lineit/share?url=' + encodeURIComponent(shareURL(save.songs, save.name.trim()));
+  window.open(u, '_blank', 'noopener');
+});
+function resetAll() { save = { songs: Array(SLOTS).fill(null), scores: Array(SLOTS).fill(null), name: '' }; persist(); }
+$('again-btn').addEventListener('click', () => { if (confirm('プレイリストを消して、最初からあそびますか?')) { resetAll(); showTitle(); } });
+
+/* ---------- 共有されたリンクを開いたとき ---------- */
+function showShared(ids, name) {
+  $('shared-title').textContent = `🎧 ${name ? name + ' の' : ''}プレイリスト`;
+  $('shared-sum').textContent = `${BAND.name} ・ ${summaryText(ids)}`;
+  $('shared-tracks').innerHTML = ids.map((id, i) => trackRow(i, songById(id))).join('');
+  show('shared');
+}
+$('shared-play').addEventListener('click', () => {
+  history.replaceState(null, '', location.pathname);
+  showTitle();
+});
+
+/* ---------- タイトル ---------- */
+function showTitle() {
+  $('band-name').textContent = BAND.name;
+  const n = filled();
+  $('start-btn').textContent = n >= SLOTS ? '🎧 プレイリストを見る' : n > 0 ? `▶ つづきから(${n} / ${SLOTS})` : '▶ はじめる';
+  $('reset-btn').style.display = n > 0 ? 'block' : 'none';
+  show('title');
+}
+$('start-btn').addEventListener('click', () => { filled() >= SLOTS ? showDone() : showBoard(); });
+$('reset-btn').addEventListener('click', () => { if (confirm('集めた曲を消して、最初からやり直しますか?')) { resetAll(); showTitle(); } });
+
+/* ---------- 紙吹雪 ---------- */
+const cf = $('confetti'), cfx = cf.getContext('2d'); let bits = [], cfOn = false;
+function confetti(n) {
+  cf.width = innerWidth; cf.height = innerHeight;
+  for (let i = 0; i < n; i++) bits.push({ x: Math.random() * cf.width, y: -20 - Math.random() * cf.height * 0.5, vx: rand(-40, 40), vy: rand(120, 260), r: Math.random() * 6, vr: rand(-6, 6), c: `hsl(${Math.random() * 360},90%,65%)`, w: rand(6, 10), h: rand(10, 16) });
+  if (!cfOn) { cfOn = true; let lt = performance.now(); const tick = now => {
+    const dt = Math.min(0.05, (now - lt) / 1000); lt = now;
+    cfx.clearRect(0, 0, cf.width, cf.height);
+    bits = bits.filter(b => b.y < cf.height + 30);
+    for (const b of bits) { b.x += b.vx * dt; b.y += b.vy * dt; b.r += b.vr * dt; cfx.save(); cfx.translate(b.x, b.y); cfx.rotate(b.r); cfx.fillStyle = b.c; cfx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); cfx.restore(); }
+    if (bits.length) requestAnimationFrame(tick); else { cfOn = false; cfx.clearRect(0, 0, cf.width, cf.height); }
+  }; requestAnimationFrame(tick); }
+}
+
+/* ---------- はじまり ---------- */
+(function boot() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('p')) {
+    const ids = q.get('p').split('.').filter(id => songById(id)).slice(0, SLOTS);
+    if (ids.length) { showShared(ids, (q.get('n') || '').slice(0, 16)); return; }
+  }
+  showTitle();
+})();
+
+/* ---------- 自動テスト用 ---------- */
+window.__game = {
+  get state() { return { songs: save.songs.slice(), scores: save.scores.slice(), filled: filled(), running, slot: cur && cur.slot, score: cur && cur.score, t: cur && cur.t, errors: (window.__errors || []).slice(), screen: (document.querySelector('.screen.on') || {}).id }; },
+  bot(v = true) { botOn = v; },
+  finish(score) { if (cur) { running = false; finishSlot(score); } }, // 今のミニゲームをそのスコアで終える
+  shareURL: () => shareURL(save.songs, save.name.trim()),
+  reset: resetAll,
+};
+</script>
+</body>
+</html>
