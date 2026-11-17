@@ -40,7 +40,7 @@
   .site-label.full b { background: rgba(230, 150, 20, .85); }
   #arrow { position: fixed; display: none; width: 40px; height: 40px; margin: -20px 0 0 -20px; font-size: 28px; line-height: 40px; text-align: center; color: #ffd23f; text-shadow: 0 0 3px #000; pointer-events: none; }
   #version { position: fixed; left: 8px; bottom: calc(env(safe-area-inset-bottom) + 6px); color: rgba(30, 50, 70, .5); font-size: 11px; pointer-events: none; }
-  #debug { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 38px); padding: 4px 8px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font: 11px/1.4 monospace; white-space: pre; pointer-events: none; display: none; }
+  #debug { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 4px 8px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font: 11px/1.4 monospace; white-space: pre; pointer-events: none; display: none; }
   #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: #000; z-index: 10; }
   #over.show { display: flex; animation: overIn 1.6s ease-in; }
   #over .go { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(44px, 13vw, 84px); font-weight: 700; letter-spacing: .08em; color: #d11a1a; text-shadow: 0 0 18px rgba(200, 0, 0, .55); }
@@ -48,8 +48,6 @@
   @keyframes overIn { from { opacity: 0; } }
   #over .card { text-align: center; }
   /* 一時的な10分タイマー(あとで消す) */
-  #timer { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 3px 10px; border-radius: 999px; background: rgba(20, 30, 45, .55); color: #fff; font: 700 14px/1.4 monospace; pointer-events: auto; cursor: pointer; z-index: 5; user-select: none; -webkit-user-select: none; }
-  #timer.stop { background: rgba(200, 40, 40, .8); }
   #spot { position: fixed; inset: 0; display: none; pointer-events: none; z-index: 8; }
   /* タイトル画面(10 MINUTES APOCALYPSE) */
   #title { position: fixed; inset: 0; z-index: 50; background: #0b1830 url(title/background.jpg) center / cover no-repeat; display: flex; flex-direction: column; align-items: center; transition: opacity .6s ease; touch-action: none; -webkit-user-select: none; user-select: none; }
@@ -105,7 +103,6 @@
     <div class="go">GAME OVER</div>
     <button id="over-retry" type="button">最初から</button>
   </div></div>
-  <div id="timer">⏱ 0:00 / 10:00</div>
   <div id="spot"></div>
   <div id="fade"></div>
   <div id="clear"><div class="card">
@@ -120,7 +117,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s56';
+  const GAME_VERSION = '2026.12.04-s57';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -4204,19 +4201,8 @@
       if (i % 4 === 0) { SND.done(); shake(0.15); }
     });
   }
-  // 一時的な10分タイマー(あとで消す)
-  let timerKey = '';
-  // アイデア検討用: 右上のタイマーをタップすると時間が止まる(夜が来ない)。もう一度タップで動く
-  let timeStop = false;
-  $('timer').addEventListener('click', (e) => { e.stopPropagation(); timeStop = !timeStop; $('timer').classList.toggle('stop', timeStop); timerKey = ''; });
-  function updateTimer() {
-    const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
-    const key = night.phase === 'day' ? '⏱ ' + fmt(Math.min(elapsed, NIGHT.at)) + ' / ' + fmt(NIGHT.at) : '🌙 ' + fmt(NIGHT.at) + ' / ' + fmt(NIGHT.at);
-    const k2 = (timeStop ? '⏸ ' : '') + key;
-    if (k2 !== timerKey) { timerKey = k2; $('timer').textContent = k2; }
-  }
+  const timeStop = false; // (前は右上のタイマーをタップで時間を止められた。タイマーは消した)
   function updateNight(dt) {
-    updateTimer();
     const N = night;
     if (N.phase === 'day') {
       if (!started) return;
