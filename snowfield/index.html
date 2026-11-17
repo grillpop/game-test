@@ -83,10 +83,10 @@
   <div id="stick-base" class="stick"></div>
   <div id="stick-knob" class="stick"></div>
   <div id="hud">
+    <div id="money-pill" class="pill hide" style="color:#ffe27a"><img id="money-ico" alt="" style="width:22px;height:22px;vertical-align:-5px;margin-right:3px"><span id="money">0</span></div>
     <div id="wood-pill" class="pill">🪵 <span id="wood">0</span></div>
     <div id="meat-pill" class="pill hide">🍖 <span id="meat">0</span></div>
     <div id="ice-pill" class="pill hide"><img id="ice-ico" alt="" style="width:22px;height:22px;vertical-align:-5px;margin-right:3px"><span id="ice">0</span></div>
-    <div id="money-pill" class="pill hide" style="color:#ffe27a"><img id="money-ico" alt="" style="width:22px;height:22px;vertical-align:-5px;margin-right:3px"><span id="money">0</span></div>
     <div id="bld-pill" class="pill">🏠 <span id="bld">0</span></div>
     <div id="pop-pill" class="pill hide">👥 <span id="pop">0</span></div>
     <div id="kill-pill" class="pill hide">⚔️ <span id="kills">0</span></div>
@@ -117,7 +117,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s57';
+  const GAME_VERSION = '2026.12.04-s58';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
