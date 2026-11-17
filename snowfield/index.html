@@ -51,6 +51,18 @@
   #timer { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 3px 10px; border-radius: 999px; background: rgba(20, 30, 45, .55); color: #fff; font: 700 14px/1.4 monospace; pointer-events: auto; cursor: pointer; z-index: 5; user-select: none; -webkit-user-select: none; }
   #timer.stop { background: rgba(200, 40, 40, .8); }
   #spot { position: fixed; inset: 0; display: none; pointer-events: none; z-index: 8; }
+  /* タイトル画面(10 MINUTES APOCALYPSE) */
+  #title { position: fixed; inset: 0; z-index: 50; background: #0b1830 url(title/background.jpg) center / cover no-repeat; display: flex; flex-direction: column; align-items: center; transition: opacity .6s ease; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #title.hide { opacity: 0; pointer-events: none; }
+  #title img { display: block; pointer-events: none; -webkit-user-drag: none; }
+  #title .t-logo { width: min(94vw, 600px); margin-top: calc(env(safe-area-inset-top) + 2.5vh); filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45)); animation: tLogo 1.1s cubic-bezier(.2, 1.4, .4, 1) both; }
+  #title .t-sub { width: min(72vw, 430px); margin-top: .5vh; animation: tFade 1s .5s both; }
+  #title button { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 5vh); width: min(86vw, 540px); padding: 0; border: 0; background: none; transform: translateX(-50%); cursor: pointer; -webkit-tap-highlight-color: transparent; animation: tFade .8s .9s both; }
+  #title button img { width: 100%; animation: tPulse 1.6s 1.8s ease-in-out infinite; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .4)); }
+  #title button:active img { transform: scale(.95); animation: none; }
+  @keyframes tLogo { from { opacity: 0; transform: translateY(-30px) scale(.85); } to { opacity: 1; transform: none; } }
+  @keyframes tFade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes tPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 2.4s ease; z-index: 9; }
   #fade.on { opacity: 1; }
   #clear { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: linear-gradient(rgba(255, 236, 190, .12), rgba(0, 0, 0, .45)); z-index: 10; }
@@ -69,6 +81,7 @@
 </style>
 </head>
 <body>
+<div id="title"><img class="t-logo" src="title/logo.webp" alt="10 MINUTES APOCALYPSE"><img class="t-sub" src="title/subtitle.webp" alt="10ミニッツアポカリプス"><button id="start-btn" type="button" aria-label="START"><img src="title/start_button.webp" alt="START"></button></div>
   <div id="stick-base" class="stick"></div>
   <div id="stick-knob" class="stick"></div>
   <div id="hud">
@@ -107,7 +120,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s55';
+  const GAME_VERSION = '2026.12.04-s56';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -5957,6 +5970,7 @@
     requestAnimationFrame(frame);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    if (titleOn) { if (!titleDrawn) { titleDrawn = true; safe('render', () => renderer.render(scene, camera)); } return; } // タイトル中はゲームを止める
     logic(dt);
     safe('camera', () => updateCamera(dt));
     safe('snow', () => updateSnow(dt));
@@ -5983,6 +5997,18 @@
   document.addEventListener('visibilitychange', () => { last = performance.now(); qStart = last; qFrames = 0; });
   renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); $('hint').textContent = '画面が止まりました。ページを再読み込みしてください'; $('hint').style.opacity = 1; });
   updateCamera(1);
+  // タイトル画面: START をタップしたらゲーム開始(このタップで音も鳴らせるようにする)
+  let titleOn = !/[?&](notitle|debug|noadapt)/.test(location.search), titleDrawn = false;
+  if (!titleOn) $('title').style.display = 'none';
+  $('start-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!titleOn) return;
+    unlockAudio();
+    titleOn = false; last = performance.now(); qStart = last; qFrames = 0;
+    $('title').classList.add('hide'); setTimeout(() => { $('title').style.display = 'none'; }, 700);
+    setTimeout(() => { SND.done(); }, 120);
+  });
+  window.addEventListener('keydown', (e) => { if (titleOn && (e.key === 'Enter' || e.key === ' ')) $('start-btn').click(); });
   requestAnimationFrame(frame);
 
   // 自動テスト・デバッグ用(URL に ?debug を付けると、右上に進み具合が出る)
