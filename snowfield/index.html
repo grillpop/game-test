@@ -159,7 +159,7 @@
   </div></div>
   <div id="rank"><div class="box">
     <h2>🏆 RANKING</h2>
-    <div class="note">全エリア解放タイム(はやい順)・この端末の記録</div>
+    <div class="note" id="rank-note"></div>
     <ol id="rank-list"></ol>
     <button class="close" id="rank-close" type="button">とじる</button>
   </div></div>
@@ -170,7 +170,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.07-s65';
+  const GAME_VERSION = '2026.12.08-s66';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -6090,18 +6090,49 @@
     allDoneT += dt; if (allDoneT < 0.5) return; allDoneT = 0;
     if (allUnlocked()) allDoneAt = elapsed;
   }
-  let myEntry = null;
-  function showRanking() {
-    const list = loadRank(), ol = $('rank-list');
+  // s66: みんなのランキング(Firebase の Firestore。REST で読み書きする。設定の文字列は公開してよいもの。
+  // 守りは Firestore のルール: 読むのはだれでも・追加だけ・名前1〜10文字・タイム60〜600秒・書きかえ/消すのは不可)
+  // つながらないときは、この端末の記録(RANK_KEY)を出す
+  const FB = { project: 'minutes-apocalypse', key: 'AIzaSyCojEFNlNjW6F1voq2KFE8JCUv6lWOo2hY' };
+  const FB_DOCS = 'https://firestore.googleapis.com/v1/projects/' + FB.project + '/databases/(default)/documents';
+  const fbId = () => { const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'; let r = ''; for (let i = 0; i < 20; i++) r += c[Math.floor(Math.random() * c.length)]; return r; };
+  async function fbTop(n) {
+    const res = await fetch(FB_DOCS + ':runQuery?key=' + FB.key, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'scores' }], orderBy: [{ field: { fieldPath: 'time' }, direction: 'ASCENDING' }], limit: n } }) });
+    if (!res.ok) throw new Error('rank ' + res.status);
+    const rows = await res.json();
+    return rows.filter(r => r.document).map(r => { const f = r.document.fields || {}; return { id: r.document.name.split('/').pop(), name: (f.name && f.name.stringValue) || '?', time: +((f.time && (f.time.doubleValue ?? f.time.integerValue)) || 0) }; });
+  }
+  async function fbAdd(id, name, time) {
+    const res = await fetch(FB_DOCS + ':commit?key=' + FB.key, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writes: [{ update: { name: 'projects/' + FB.project + '/databases/(default)/documents/scores/' + id,
+        fields: { name: { stringValue: name }, time: { doubleValue: time }, ver: { stringValue: GAME_VERSION } } },
+        updateTransforms: [{ fieldPath: 'at', setToServerValue: 'REQUEST_TIME' }], currentDocument: { exists: false } }] }) });
+    if (!res.ok) throw new Error('rank add ' + res.status);
+  }
+  let myEntry = null, mySent = null;
+  function drawRankList(list, note) {
+    const ol = $('rank-list');
     ol.innerHTML = list.length ? '' : '<div class="empty">まだ記録がありません</div>';
     list.slice(0, RANK_MAX).forEach((e, i) => {
       const li = document.createElement('li'); if (myEntry && e.id === myEntry) li.className = 'me';
-      const nm = document.createElement('span'); nm.textContent = e.name;
-      li.innerHTML = '<span class="n">' + (i + 1) + '</span>'; li.appendChild(nm);
+      li.innerHTML = '<span class="n">' + (i + 1) + '</span>';
+      const nm = document.createElement('span'); nm.textContent = e.name; li.appendChild(nm);
       const t = document.createElement('span'); t.className = 't'; t.textContent = fmtTime(e.time); li.appendChild(t);
       ol.appendChild(li);
     });
+    $('rank-note').textContent = note;
+  }
+  async function showRanking() {
     $('rank').classList.add('show');
+    $('rank-list').innerHTML = '<div class="empty">読みこみ中…</div>'; $('rank-note').textContent = '全エリア解放タイム(はやい順)';
+    try {
+      if (mySent) await mySent;   // 登録したばかりなら、送り終わってから読む
+      const list = await fbTop(RANK_MAX);
+      drawRankList(list, '全エリア解放タイム(はやい順)・みんなの記録');
+    } catch (e) {
+      drawRankList(loadRank(), 'つながらないので、この端末の記録を表示中');
+    }
   }
   $('rank-close').addEventListener('click', () => $('rank').classList.remove('show'));
   $('title-rank').addEventListener('click', (e) => { e.stopPropagation(); showRanking(); });
@@ -6113,10 +6144,12 @@
     const name = ($('reg-name').value || '').trim().slice(0, 10) || 'ななし';
     if (allDoneAt === null || myEntry) return;
     try { localStorage.setItem(RANK_NAME, name); } catch (e) {}
-    myEntry = Date.now().toString(36);
-    const list = loadRank(); list.push({ id: myEntry, name, time: +allDoneAt.toFixed(1), at: Date.now() });
+    myEntry = fbId();
+    const time = Math.min(600, Math.max(60, +allDoneAt.toFixed(1)));
+    const list = loadRank(); list.push({ id: myEntry, name, time, at: Date.now() });
     list.sort((a, b) => a.time - b.time);
     try { localStorage.setItem(RANK_KEY, JSON.stringify(list.slice(0, RANK_MAX))); } catch (e) {}
+    mySent = fbAdd(myEntry, name, time).catch(() => {});
     $('reg').classList.remove('show'); $('rank-btn').textContent = 'ランキングを見る';
     showRanking();
   });
