@@ -127,7 +127,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.05-s60';
+  const GAME_VERSION = '2026.12.06-s61';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -1387,10 +1387,10 @@
     if (best) { best.rk = gt + 0.35; return [best.x, best.z]; }
     return null;
   }
-  function explode(x, z) {
+  function explode(x, z, showOnly) {
     const r = ROCKET.blast;
-    for (const zb of zs) if (!zb.dead && Math.abs(zb.x - x) < r && Math.abs(zb.z - z) < r && Math.hypot(zb.x - x, zb.z - z) < r) { zb.hp = 1; hitZombie(zb, x, z); }
-    for (const t of targets) if (targetable(t) && Math.hypot(t.x - x, t.z - z) < r + t.r && gt - t.lastHit > 0.12) { t.lastHit = gt; hitTarget(t, x, z); }
+    if (!showOnly) for (const zb of zs) if (!zb.dead && Math.abs(zb.x - x) < r && Math.abs(zb.z - z) < r && Math.hypot(zb.x - x, zb.z - z) < r) { zb.hp = 1; hitZombie(zb, x, z); }
+    if (!showOnly) for (const t of targets) if (targetable(t) && Math.hypot(t.x - x, t.z - z) < r + t.r && gt - t.lastHit > 0.12) { t.lastHit = gt; hitTarget(t, x, z); }
     ring(x, z, r, 0.32, '#ffb030');
     burstGibs(x, 0.7, z, 12, '#ffb030', 5, 6); burstGibs(x, 0.7, z, 6, '#fff2a0', 3, 5);
     puff(x, 0.4, z, 2, '#a8adb5', 1.3, 0.9, 1);
@@ -1399,14 +1399,24 @@
   }
   function updateRockets(dt) {
     boomSfx = Math.min(3, boomSfx + dt * 8);
-    const on = AXES.kind === 'rocket' && !axesOff;
+    const on = AXES.kind === 'rocket' && (!axesOff || gt < weaponShow);
     launcher.visible = on;
     if (on) {
       const a = launcherFace;
       launcher.position.set(player.x + Math.cos(a + Math.PI / 2) * 0.45, 1.75 + player.bob, player.z - Math.sin(a + Math.PI / 2) * 0.45);
       launcher.rotation.y = a;
       rocketT -= dt;
-      if (rocketT <= 0) {
+      if (rocketT <= 0 && axesOff) {
+        // 拠点の中(強くした直後の見せ場): 空へ向けて3発。爆発は見た目だけ
+        if (rocketShowN > 0) {
+          rocketShowN--; rocketT = 0.35;
+          launcherFace += 2.1;
+          const sx = player.x + Math.sin(launcherFace) * 0.8, sz = player.z + Math.cos(launcherFace) * 0.8;
+          rockets.push({ sx, sy: 1.8, sz, tx: player.x + Math.sin(launcherFace) * 5, tz: player.z + Math.cos(launcherFace) * 5, t: 0, dur: 0.55, arc: 4.5, side: rocketSide = -rocketSide, show: true });
+          puff(sx, 1.8, sz, 1, '#ffffff', 0.5, 0.4, 0.3);
+          if (!fastForwarding) { noise(0.12, 0.08, 1800); tone(520, 0.12, 'sawtooth', 0.03, 0.5); }
+        }
+      } else if (rocketT <= 0) {
         const tg = rocketTarget();
         if (tg) {
           rocketT = ROCKET.every;
@@ -1423,7 +1433,7 @@
     for (let i = rockets.length - 1; i >= 0; i--) {
       const r = rockets[i]; r.t += dt;
       const e = Math.min(1, r.t / r.dur);
-      if (e >= 1) { rockets.splice(i, 1); explode(r.tx, r.tz); continue; }
+      if (e >= 1) { rockets.splice(i, 1); explode(r.tx, r.tz, r.show); continue; }
       const x = lerp(r.sx, r.tx, e), z = lerp(r.sz, r.tz, e), y = lerp(r.sy, 0.5, e) + Math.sin(e * Math.PI) * r.arc;
       const vy = (0.5 - r.sy) + Math.cos(e * Math.PI) * Math.PI * r.arc, hd = Math.hypot(r.tx - r.sx, r.tz - r.sz) || 1;
       setInst(rocketMesh, n++, x, y, z, 1, 1, 1, Math.atan2(r.tx - r.sx, r.tz - r.sz), -Math.atan2(vy, hd));
@@ -1433,12 +1443,15 @@
   }
   const nearT = [];
   let axesOff = false;
+  // s61: 武器を強くした直後は、拠点の中でも少しだけ(2〜3回転)武器を見せる。攻撃はしない
+  let weaponShow = -1, rocketShowN = 0;
   function updateAxes(dt) {
     // 拠点の中では斧は引っこんで止まる(中から外は攻撃できない)
     const off = insideCamp(player.x, player.z, -0.2) || inCorridor(player.x, player.z); // 柵つき通路の中も止める
     if (off !== axesOff) { axesOff = off; if (!fastForwarding) tone(off ? 300 : 520, 0.12, 'triangle', 0.05, off ? 0.6 : 1.6); if (!off) axeGrow = 0.6; }
     updateRockets(dt);
-    if (axesOff || AXES.kind === 'rocket') {
+    const show = gt < weaponShow;
+    if ((axesOff && !show) || AXES.kind === 'rocket') {
       axeR += (0.2 - axeR) * Math.min(1, dt * 8);
       axeInst.count = 0; axeGhost.count = 0; chainMesh.count = 0; axeTrail.visible = false;
       return;
@@ -1455,7 +1468,7 @@
     for (let i = 0; i < n; i++) {
       const a = axeAng + i * Math.PI * 2 / n, ax = px + Math.cos(a) * axeR, az = pz + Math.sin(a) * axeR;
       // 斧は中心から輪まで「掃く」ように当たる(すぐ隣の木にも届く)
-      for (const t of nearT) {
+      if (!axesOff) for (const t of nearT) {
         if (t.dead) continue;
         const d = Math.hypot(t.x - px, t.z - pz), w = t.r + AXES.hitR;
         if (d > axeR + w) continue;
@@ -1466,7 +1479,7 @@
         t.lastHit = gt;
         hitTarget(t, ax, az);
       }
-      for (const zb of zs) {
+      if (!axesOff) for (const zb of zs) {
         if (zb.dead || zb.appear < 0.5 || Math.abs(zb.x - px) > reach || Math.abs(zb.z - pz) > reach) continue;
         const d = Math.hypot(zb.x - px, zb.z - pz), w = zb.r + AXES.hitR;
         if (d > axeR + w) continue;
@@ -1487,8 +1500,10 @@
         for (let k = 1; k <= 3; k++) { const b = a - k * 0.12; const ks = s * (1 - k * 0.15); setInst(axeGhost, gi++, px + Math.cos(b) * axeR, y + 0.25, pz + Math.sin(b) * axeR, ks, ks, ks, spin * 0.4, 0); }
         for (let k = 1; k <= 9; k++) { const f = k / 10; setInst(chainMesh, ci++, lerp(px, ax, f), lerp(1.2 + player.bob, y + 0.25, f) + Math.sin(f * Math.PI) * 0.15, lerp(pz, az, f), 1, 1, 1, -a + k, k * 0.7); }
       } else {
-        setInst(axeInst, i, ax, y + 0.15, az, s, s, s, spin, 0.35);
-        for (let k = 1; k <= 3; k++) { const b = a - k * 0.16; const ks = s * (1 - k * 0.18); setInst(axeGhost, gi++, px + Math.cos(b) * axeR, y, pz + Math.sin(b) * axeR, ks, ks, ks, spin + k * 0.7, 0.35); }
+        // s61: 柄は中心から外へ、刃(頭)は外側。刃先は回る向きを向く(ry = π/2 - a で柄が外向き、rz = π で刃先が進む向き)
+        const rc = Math.max(0.3, axeR - 0.55 * s);
+        setInst(axeInst, i, px + Math.cos(a) * rc, y + 0.15, pz + Math.sin(a) * rc, s, s, s, Math.PI / 2 - a, 0, Math.PI);
+        for (let k = 1; k <= 3; k++) { const b = a - k * 0.16; const ks = s * (1 - k * 0.18); setInst(axeGhost, gi++, px + Math.cos(b) * rc, y + 0.15, pz + Math.sin(b) * rc, ks, ks, ks, Math.PI / 2 - b, 0, Math.PI); }
       }
     }
     chainMesh.count = ci; chainMesh.instanceMatrix.needsUpdate = true;
@@ -2004,6 +2019,7 @@
     const lv = s.upgrade.levels[s.level];
     s.level++;
     setAxes(lv);
+    weaponShow = gt + (lv.kind === 'rocket' ? 1.5 : Math.min(2.4, 2.5 / AXES.speed + 0.2)); rocketShowN = lv.kind === 'rocket' ? 3 : 0;
     popText((lv.icon || '⚔️') + ' 武器 Lv' + (s.level + 1) + '! ' + (lv.label || ''), s.x, s.z, '#ffe27a', 22, 3);
     toast((lv.icon || '⚔️') + ' ' + (lv.label || '武器が強くなった'));
     ring(s.x, s.z, 4, 0.5, '#ffe27a'); burstGibs(s.x, 1, s.z, 26, '#ffd23a', 4, 7);
@@ -6073,6 +6089,7 @@
     giant() { return giant ? { phase: giant.phase, x: giant.x, z: giant.z } : null; },
     camp() { return campInfo(); },
     setWeapon(i) { const lv = WEAPON_LEVELS[i]; if (lv) setAxes(lv); return AXES.kind; },
+    axes() { return { n: axeInst.count, show: +(weaponShow - gt).toFixed(2), r: +axeR.toFixed(2), off: axesOff, launcher: launcher.visible }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
 </script>
