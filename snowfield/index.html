@@ -170,7 +170,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.08-s66';
+  const GAME_VERSION = '2026.12.08-s67';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -398,6 +398,7 @@
   scene.add(sun);
 
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  const DECOR = [];   // s67: 雪のこんもり・岩(飾り)の一覧
   const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), tmpA = new THREE.Vector3(), _col = new THREE.Color();
   function setInst(mesh, i, x, y, z, sx, sy, sz, ry = 0, rx = 0, rz = 0) {
     _q.setFromEuler(_e.set(rx, ry, rz, 'YXZ'));
@@ -513,11 +514,11 @@
     for (let x = WORLD.x1 - 2; x <= WORLD.x2 + 2; x += 1.3) mounds.push([x + Math.random() * 0.4, WORLD.z2 + 0.9 + Math.random() * 0.4, 0.6 + Math.random() * 0.25]);
     for (let z = WORLD.z1 - 2; z <= WORLD.z2 + 2; z += 1.3) mounds.push([WORLD.x2 + 0.9 + Math.random() * 0.4, z + Math.random() * 0.4, 0.6 + Math.random() * 0.25]);
     const mm = new THREE.InstancedMesh(Sph(1, 12, 6), new THREE.MeshLambertMaterial({ color: '#f6fafd' }), mounds.length);
-    mounds.forEach(([x, z, s], i) => setInst(mm, i, x, -0.1, z, s * 1.4, s * 0.45, s));
+    mounds.forEach(([x, z, s], i) => { setInst(mm, i, x, -0.1, z, s * 1.4, s * 0.45, s); if (z < WORLD.z2 && x < WORLD.x2) DECOR.push({ m: mm, i, x, z, r: s * 1.4 }); });
     scene.add(mm);
     const rg = mergeGeometries([{ geo: new THREE.DodecahedronGeometry(0.6), m: M(0, 0.2, 0), color: '#8a96a3' }, { geo: Sph(0.48, 8, 4), m: M(0, 0.48, 0, 1, 0.35, 1), color: '#f6fafd' }]);
     const rm = new THREE.InstancedMesh(rg, vcMat, rocks.length);
-    rocks.forEach(([x, z, s], i) => setInst(rm, i, x, 0, z, s, s * 0.8, s, Math.random() * 6));
+    rocks.forEach(([x, z, s], i) => { setInst(rm, i, x, 0, z, s, s * 0.8, s, Math.random() * 6); DECOR.push({ m: rm, i, x, z, r: s * 0.9 }); });
     scene.add(rm);
   }
   // 踏み固めた雪の広場(村が育つと広がる)
@@ -1196,6 +1197,18 @@
   }
   let treesDirty = false;
   // 切り株を消す場所: 拠点の中・柵つき通路・建物の敷地(発電所・研究所・ゾンビ寄せタワーなど、まわりの木を倒して建てたもの)
+  // s67: 雪のこんもり・岩(飾り)。アップデートエリア・置き場・拠点の中・建物の敷地にかかったら、ふっと消す
+  function hideDecor(d) {
+    if (d.hidden) return; d.hidden = true;
+    d.m.setMatrixAt(d.i, _m4.makeScale(0.0001, 0.0001, 0.0001)); d.m.instanceMatrix.needsUpdate = true;
+    if (!fastForwarding) puff(d.x, 0.3, d.z, 1, '#f6fafd', 0.8, 0.4, 0.6);
+  }
+  function clearDecor(x1, z1, x2, z2) {
+    for (const d of DECOR) if (!d.hidden && d.x + d.r > x1 && d.x - d.r < x2 && d.z + d.r > z1 && d.z - d.r < z2) hideDecor(d);
+  }
+  function refreshDecor() {
+    for (const d of DECOR) if (!d.hidden && stumpHidden(d)) hideDecor(d);
+  }
   function stumpHidden(t) {
     if (insideCamp(t.x, t.z, 0.8)) return true;
     if (extraWalls.length && corrDist(t.x, t.z) < CORRIDOR_W + 0.9) return true;
@@ -1209,6 +1222,7 @@
   let stumpT = 0;
   function refreshStumps(dt) {
     stumpT -= dt; if (stumpT > 0) return; stumpT = 1.5;
+    refreshDecor();
     for (const t of targets) if (t.type === 'tree' && (t.dead || t.gone) && !t.noStump && t.fall !== undefined && (t.gone || t.fall >= 1 || t.fall < 0) && stumpHidden(t)) { t.noStump = true; drawTree(t); }
   }
   function spawnTarget(what, x, z, o) {
@@ -1905,7 +1919,7 @@
     s.tex = new THREE.CanvasTexture(s.cv); s.tex.colorSpace = THREE.SRGBColorSpace;
     s.pad = new THREE.Mesh(new THREE.PlaneGeometry(a.padSize || 3.2, a.padSize || 3.2), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
     // エリアの上に生えている木は、出たときに倒す(見えるように)
-    { const hr = (a.padSize || 3.2) / 2 + 0.9; for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && Math.abs(t.x - at[0]) < hr && Math.abs(t.z - at[1]) < hr) later(0.05 + Math.random() * 0.3, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); }); }
+    { const hr = (a.padSize || 3.2) / 2 + 0.9; clearDecor(at[0] - hr, at[1] - hr, at[0] + hr, at[1] + hr); for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && Math.abs(t.x - at[0]) < hr && Math.abs(t.z - at[1]) < hr) later(0.05 + Math.random() * 0.3, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); }); }
     s.iconCh = a.icon || ''; s.padKey = '';
     s.title = a.title || ''; s.delays = a.delays || null; s.camera = a.camera || null; s.onBuilt = a.onBuilt || null; s.special = a.special || null;
     if (a.grid) {
@@ -2636,6 +2650,7 @@
   // 木の床(置き場)。ふちの色で何の置き場かわかる
   const YARD_COL = { wood: '#c98a4a', ice: '#86c46e', cash: '#5fbf5a', coal: '#3a3a3a' };
   function makeYardMesh(key) {
+    { const p = yardPos(key), hr = YARD_SIZE / 2 + 0.6; clearDecor(p[0] - hr, p[1] - hr, p[0] + hr, p[1] + hr); }
     const Y = YARD_SIZE, h = Y / 2 - 0.05, col = YARD_COL[key] || '#ffffff';
     // お金置き場は受け取り場: コンクリートの床(目地・黄色い縁石)
     const g = new THREE.Mesh(mergeGeometries(key === 'cash' ? [
@@ -2885,6 +2900,7 @@
   function clearArea(box, m, at) {
     const [x1, z1, x2, z2] = box;
     const inBox = (x, z) => x > x1 - m && x < x2 + m && z > z1 - m && z < z2 + m;
+    clearDecor(x1 - m, z1 - m, x2 + m, z2 + m);
     let k = 0;
     for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && inBox(t.x, t.z)) {
       const dx = t.x - at[0], dz = t.z - at[1], d = Math.hypot(dx, dz) || 1;
@@ -6286,6 +6302,7 @@
     fire() { return { on: fireOn(), left: +(fireUntil - gt).toFixed(1), burning: zs.filter(z => z.burn && !z.dead).length }; },
     allDoneAt() { return allDoneAt; },
     rates() { return { ...buildRates(), end: night.end || null }; },
+    decor() { return { all: DECOR.length, hidden: DECOR.filter(d => d.hidden).length }; },
     axes() { return { n: axeInst.count, show: +(weaponShow - gt).toFixed(2), r: +axeR.toFixed(2), off: axesOff, launcher: launcher.visible }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
