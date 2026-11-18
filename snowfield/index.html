@@ -82,7 +82,30 @@
   #fade.on { opacity: 1; }
   #clear { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: linear-gradient(rgba(255, 236, 190, .12), rgba(0, 0, 0, .45)); z-index: 10; }
   #clear.show { display: flex; animation: overIn 2.2s ease-in; }
-  #clear .card { text-align: center; }
+  #clear .card { text-align: center; width: min(84vw, 380px); }
+  /* s65: 全エリア解放タイムとランキング */
+  #clear .time { margin-top: 22px; color: #fff4d6; font-size: 13px; letter-spacing: .2em; text-shadow: 0 1px 4px #000; }
+  #clear .time b { display: block; margin-top: 4px; font-family: Georgia, serif; font-size: 40px; letter-spacing: .06em; color: #ffd76a; text-shadow: 0 0 14px rgba(255, 190, 60, .6), 0 2px 0 #7a4a10; }
+  #clear .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
+  #clear .btns button { margin-top: 0; }
+  #clear #rank-btn { background: #ffd76a; color: #5a3a10; }
+  #reg { margin-top: 22px; display: none; gap: 8px; justify-content: center; }
+  #reg.show { display: flex; }
+  #reg input { width: 11em; padding: 9px 10px; border: 1px solid #ffd76a; border-radius: 4px; background: rgba(0, 0, 0, .5); color: #fff; font-size: 16px; }
+  #reg button { margin-top: 0 !important; padding: 9px 16px !important; }
+  #rank { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; background: rgba(5, 10, 20, .82); }
+  #rank.show { display: flex; }
+  #rank .box { width: min(88vw, 380px); max-height: 80vh; overflow: auto; padding: 18px 16px 14px; border: 1px solid #ffd76a; border-radius: 8px; background: #141a26; color: #fff4d6; text-align: center; }
+  #rank h2 { margin: 0 0 4px; font-family: Georgia, serif; font-size: 22px; letter-spacing: .12em; color: #ffd76a; }
+  #rank .note { font-size: 11px; color: #9aa3b5; margin-bottom: 10px; }
+  #rank ol { list-style: none; margin: 0; padding: 0; text-align: left; }
+  #rank li { display: grid; grid-template-columns: 2em 1fr auto; gap: 8px; padding: 7px 6px; border-bottom: 1px solid #263044; font-size: 15px; }
+  #rank li.me { background: rgba(255, 215, 106, .18); }
+  #rank li .n { color: #ffd76a; font-weight: 700; }
+  #rank li .t { font-family: Georgia, serif; font-weight: 700; }
+  #rank .empty { padding: 18px 0; color: #9aa3b5; font-size: 14px; }
+  #rank .close { margin-top: 14px; padding: 8px 26px; border: 1px solid #ffd76a; border-radius: 4px; background: transparent; color: #ffd76a; font-size: 15px; font-weight: 700; letter-spacing: .2em; }
+  #title-rank { position: absolute; right: 50% !important; top: auto; margin-right: -5em; width: 10em !important; white-space: nowrap; height: auto; bottom: calc(env(safe-area-inset-bottom) + 5vh + min(86vw, 540px) * 0.25 + 14px) !important; padding: 6px 12px !important; left: auto !important; transform: none !important; border: 1px solid rgba(255, 215, 106, .8) !important; border-radius: 16px; background: rgba(0, 0, 0, .45) !important; color: #ffd76a; font-size: 13px; font-weight: 700; letter-spacing: .1em; }
   #clear .cl { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(48px, 15vw, 92px); font-weight: 700; letter-spacing: .1em; color: #ffd76a; text-shadow: 0 0 22px rgba(255, 190, 60, .7), 0 2px 0 #7a4a10; }
   #clear .sub { margin-top: 6px; color: #fff4d6; font-size: 16px; letter-spacing: .3em; text-shadow: 0 1px 4px #000; }
   #clear button { margin-top: 40px; padding: 10px 30px; border: 1px solid #ffd76a; border-radius: 4px; background: rgba(0, 0, 0, .25); color: #ffd76a; font-size: 16px; font-weight: 700; letter-spacing: .2em; }
@@ -96,7 +119,7 @@
 </style>
 </head>
 <body>
-<div id="title"><img class="t-logo" src="title/logo.webp" alt="10 MINUTES APOCALYPSE"><img class="t-sub" src="title/subtitle.webp" alt="10ミニッツアポカリプス"><button id="start-btn" type="button" aria-label="START"><img src="title/start_button.webp" alt="START"></button></div>
+<div id="title"><img class="t-logo" src="title/logo.webp" alt="10 MINUTES APOCALYPSE"><img class="t-sub" src="title/subtitle.webp" alt="10ミニッツアポカリプス"><button id="title-rank" type="button">🏆 ランキング</button><button id="start-btn" type="button" aria-label="START"><img src="title/start_button.webp" alt="START"></button></div>
   <div id="stick-base" class="stick"></div>
   <div id="stick-knob" class="stick"></div>
   <div id="hud">
@@ -130,7 +153,15 @@
   <div id="clear"><div class="card">
     <div class="cl">CLEAR</div>
     <div class="sub">朝が来た</div>
-    <button id="clear-retry" type="button">最初から</button>
+    <div class="time">全エリア解放タイム<b id="clear-time">--:--</b></div>
+    <div class="btns"><button id="rank-btn" type="button">ランキングに登録</button><button id="clear-retry" type="button">最初から</button></div>
+    <div id="reg"><input id="reg-name" maxlength="10" placeholder="ニックネーム" autocomplete="off"><button id="reg-ok" type="button">登録</button></div>
+  </div></div>
+  <div id="rank"><div class="box">
+    <h2>🏆 RANKING</h2>
+    <div class="note">全エリア解放タイム(はやい順)・この端末の記録</div>
+    <ol id="rank-list"></ol>
+    <button class="close" id="rank-close" type="button">とじる</button>
   </div></div>
 
 <script type="module">
@@ -139,7 +170,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.07-s64';
+  const GAME_VERSION = '2026.12.07-s65';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -4351,7 +4382,7 @@
       if (N.t > 7.5) {
         if (N.end === 'buried') { startBuried(); return; }
         N.phase = 'end';
-        if (dog && dog.rescued && (dog.st === 'saved' || dog.st === 'follow')) { $('clear').classList.add('show'); SND.done(); startFireworks(); } // 自分で逃げこんだだけでは助けたことにならない
+        if (dog && dog.rescued && (dog.st === 'saved' || dog.st === 'follow')) { showClear(); SND.done(); startFireworks(); } // 自分で逃げこんだだけでは助けたことにならない
         else { night.cheer = false; startGiant(null); }
       }
     }
@@ -6047,7 +6078,53 @@
     breach: 'ヒント: 守りが足りなかった…<br>装備を100%にしよう',
     zombify: 'ヒント: 食べ物が足りなかった…<br>ポンプ・田んぼ・食堂を作ろう',
     buried: 'ヒント: 暮らしの建物がまだ残っていた…<br>暮らしを100%にしよう',
+    dawn: 'ヒント: ワンコを助けましたか…?',
   };
+  // ---- s65: 全エリア解放タイムとランキング(今はこの端末の中に保存。RANK_KEY) ----
+  let allDoneAt = null, allDoneT = 0;
+  const RANK_KEY = 'apoc10-rank-v1', RANK_NAME = 'apoc10-name-v1', RANK_MAX = 20;
+  const fmtTime = (sec) => { const m = Math.floor(sec / 60), s = sec - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(1); };
+  const loadRank = () => { try { return JSON.parse(localStorage.getItem(RANK_KEY) || '[]'); } catch (e) { return []; } };
+  function checkAllDone(dt) {
+    if (allDoneAt !== null || !started) return;
+    allDoneT += dt; if (allDoneT < 0.5) return; allDoneT = 0;
+    if (allUnlocked()) allDoneAt = elapsed;
+  }
+  let myEntry = null;
+  function showRanking() {
+    const list = loadRank(), ol = $('rank-list');
+    ol.innerHTML = list.length ? '' : '<div class="empty">まだ記録がありません</div>';
+    list.slice(0, RANK_MAX).forEach((e, i) => {
+      const li = document.createElement('li'); if (myEntry && e.id === myEntry) li.className = 'me';
+      const nm = document.createElement('span'); nm.textContent = e.name;
+      li.innerHTML = '<span class="n">' + (i + 1) + '</span>'; li.appendChild(nm);
+      const t = document.createElement('span'); t.className = 't'; t.textContent = fmtTime(e.time); li.appendChild(t);
+      ol.appendChild(li);
+    });
+    $('rank').classList.add('show');
+  }
+  $('rank-close').addEventListener('click', () => $('rank').classList.remove('show'));
+  $('title-rank').addEventListener('click', (e) => { e.stopPropagation(); showRanking(); });
+  $('rank-btn').addEventListener('click', () => {
+    if (myEntry) { showRanking(); return; }
+    $('reg').classList.add('show'); $('reg-name').value = localStorage.getItem(RANK_NAME) || ''; $('reg-name').focus();
+  });
+  $('reg-ok').addEventListener('click', () => {
+    const name = ($('reg-name').value || '').trim().slice(0, 10) || 'ななし';
+    if (allDoneAt === null || myEntry) return;
+    try { localStorage.setItem(RANK_NAME, name); } catch (e) {}
+    myEntry = Date.now().toString(36);
+    const list = loadRank(); list.push({ id: myEntry, name, time: +allDoneAt.toFixed(1), at: Date.now() });
+    list.sort((a, b) => a.time - b.time);
+    try { localStorage.setItem(RANK_KEY, JSON.stringify(list.slice(0, RANK_MAX))); } catch (e) {}
+    $('reg').classList.remove('show'); $('rank-btn').textContent = 'ランキングを見る';
+    showRanking();
+  });
+  function showClear() {
+    $('clear-time').textContent = allDoneAt !== null ? fmtTime(allDoneAt) : '--:--';
+    if (allDoneAt === null) $('rank-btn').style.display = 'none';
+    $('clear').classList.add('show');
+  }
   function showGameOver(title, sub) {
     gameOver = true;
     const R = buildRates();
@@ -6064,6 +6141,7 @@
     if (gameOver) return;
     gt += dt;
     if (started && !timeStop) elapsed += dt;
+    safe('alldone', () => checkAllDone(dt));
     sfxTick(dt);
     for (let i = timers.length - 1; i >= 0; i--) if (gt >= timers[i].at) { const t = timers[i]; timers.splice(i, 1); safe('timer', t.fn); }
     safe('scenario', updateScenario);
@@ -6173,6 +6251,7 @@
     camp() { return campInfo(); },
     setWeapon(i) { const lv = WEAPON_LEVELS[i]; if (lv) setAxes(lv); return AXES.kind; },
     fire() { return { on: fireOn(), left: +(fireUntil - gt).toFixed(1), burning: zs.filter(z => z.burn && !z.dead).length }; },
+    allDoneAt() { return allDoneAt; },
     rates() { return { ...buildRates(), end: night.end || null }; },
     axes() { return { n: axeInst.count, show: +(weaponShow - gt).toFixed(2), r: +axeR.toFixed(2), off: axesOff, launcher: launcher.visible }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
