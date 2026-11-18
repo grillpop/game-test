@@ -127,7 +127,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.06-s61';
+  const GAME_VERSION = '2026.12.06-s62';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -147,6 +147,9 @@
   // 武器パワーアップ(お金で払う)。払うたびに次のレベルへ
   // 斧 2本 → 3 → 4 → 5本 → 剣(リーチが長い) → トゲ鉄球(鎖の先) → ロケットランチャー
   const WEAPON_COOL = 20;   // 武器パワーアップのあと、次を買えるようになるまでの秒数(オーナーの希望)
+  // s62 火の武器(オーナーが選んだ案B): キャンプファイアーのそば(warmR 以内)で温まると、dur 秒のあいだ武器が燃える。
+  // 燃える武器で倒したゾンビのまわり(spreadR 以内・spreadN 体まで)に火が移り、burn 秒で燃えつきて倒れ、さらに次へ移る(gens 回まで)
+  const FIRE = { warmR: 4.6, dur: 30, burn: 1.1, spreadR: 2.6, spreadN: 3, gens: 4 };
   const WEAPON_LEVELS = [
     { cost: 150, kind: 'axe', icon: '🪓', label: '斧が3本に', n: 3, radius: 1.9, speed: 1.9, hitR: 0.45 },
     { cost: 250, kind: 'axe', icon: '🪓', label: '斧が4本に', n: 4, radius: 2.2, speed: 2.1, hitR: 0.45 },
@@ -1389,7 +1392,7 @@
   }
   function explode(x, z, showOnly) {
     const r = ROCKET.blast;
-    if (!showOnly) for (const zb of zs) if (!zb.dead && Math.abs(zb.x - x) < r && Math.abs(zb.z - z) < r && Math.hypot(zb.x - x, zb.z - z) < r) { zb.hp = 1; hitZombie(zb, x, z); }
+    if (!showOnly) for (const zb of zs) if (!zb.dead && Math.abs(zb.x - x) < r && Math.abs(zb.z - z) < r && Math.hypot(zb.x - x, zb.z - z) < r) { zb.hp = 1; weaponHitZombie(zb, x, z); }
     if (!showOnly) for (const t of targets) if (targetable(t) && Math.hypot(t.x - x, t.z - z) < r + t.r && gt - t.lastHit > 0.12) { t.lastHit = gt; hitTarget(t, x, z); }
     ring(x, z, r, 0.32, '#ffb030');
     burstGibs(x, 0.7, z, 12, '#ffb030', 5, 6); burstGibs(x, 0.7, z, 6, '#fff2a0', 3, 5);
@@ -1449,6 +1452,7 @@
     // 拠点の中では斧は引っこんで止まる(中から外は攻撃できない)
     const off = insideCamp(player.x, player.z, -0.2) || inCorridor(player.x, player.z); // 柵つき通路の中も止める
     if (off !== axesOff) { axesOff = off; if (!fastForwarding) tone(off ? 300 : 520, 0.12, 'triangle', 0.05, off ? 0.6 : 1.6); if (!off) axeGrow = 0.6; }
+    updateFireWeapon(dt);
     updateRockets(dt);
     const show = gt < weaponShow;
     if ((axesOff && !show) || AXES.kind === 'rocket') {
@@ -1487,7 +1491,7 @@
         da = Math.atan2(Math.sin(da), Math.cos(da));
         if (Math.abs(da) * Math.max(d, 0.6) > w || gt - zb.lastHit < 0.15) continue;
         zb.lastHit = gt;
-        hitZombie(zb, ax, az);
+        weaponHitZombie(zb, ax, az);
       }
       if (kind === 'sword') {
         // 刃が外向き。先が輪のところ
@@ -1507,6 +1511,14 @@
       }
     }
     chainMesh.count = ci; chainMesh.instanceMatrix.needsUpdate = true;
+    // 燃えている武器はオレンジに光り、火の粉が散る(終わりの5秒はちらちら)
+    const fire = fireOn() && (fireUntil - gt > 5 || Math.sin(gt * 22) > 0);
+    _col.set(fire ? '#ff9a4a' : '#ffffff'); if (fire) _col.multiplyScalar(1.5);
+    for (let i = 0; i < n; i++) axeInst.setColorAt(i, _col);
+    if (axeInst.instanceColor) axeInst.instanceColor.needsUpdate = true;
+    axeGhost.material.color.set(fire ? '#ff7a1a' : '#ffffff'); axeGhost.material.opacity = fire ? 0.5 : 0.28;
+    axeTrail.material.color.set(fire ? '#ff9a30' : '#ffffff');
+    if (fire && !fastForwarding) for (let i = 0; i < n; i++) if (Math.random() < dt * 12) { const a = axeAng + i * Math.PI * 2 / n; puff(px + Math.cos(a) * axeR, y + 0.3, pz + Math.sin(a) * axeR, 1, Math.random() < 0.5 ? '#ff6a1a' : '#ffc23a', 0.3, 0.45, 0.6); }
     axeInst.count = n; axeGhost.count = gi;
     axeInst.instanceMatrix.needsUpdate = axeGhost.instanceMatrix.needsUpdate = true;
     axeTrail.position.set(px, 0.06, pz);
@@ -2258,6 +2270,35 @@
       zs.push({ nt: night.phase === 'fight' ? nightGoal() : null, x, z, hp: ZOMBIES.hp, speed: lerp(ZOMBIES.speed[0], ZOMBIES.speed[1], Math.random()), r: 0.4, face: 0, hit: 0, appear: -i * 0.12, ph: Math.random() * 6, lastHit: -9, tint: Z_TINTS[Math.floor(Math.random() * Z_TINTS.length)] });
     }
   }
+  // ---- 火の武器(s62) ----
+  let fireUntil = -1;
+  const fireOn = () => gt < fireUntil;
+  function updateFireWeapon(dt) {
+    const bf = bonfires.find(f => f.lit);
+    if (bf && night.phase === 'day' && Math.hypot(player.x - bf.flame.position.x, player.z - bf.flame.position.z) < FIRE.warmR) {
+      if (!fireOn()) {
+        // ボッと武器に火がつく(拠点の中でも少しだけ武器を見せる)
+        weaponShow = gt + 1.4; rocketShowN = 0;
+        ring(player.x, player.z, 2.6, 0.4, '#ff9a30'); burstGibs(player.x, 1.2, player.z, 16, '#ff9a30', 4, 6);
+        if (!fastForwarding) { noise(0.35, 0.12, 700); tone(160, 0.25, 'sawtooth', 0.05, 2.2); }
+      }
+      fireUntil = gt + FIRE.dur;
+    }
+    if (fireOn() && !axesOff && !fastForwarding && Math.random() < dt * 6) puff(player.x + (Math.random() - 0.5), 1.6, player.z + (Math.random() - 0.5), 1, '#ff8a2a', 0.3, 0.6, 0.5);
+  }
+  // 武器(斧・剣・鉄球・ロケット)で倒したとき: 燃えている武器なら、まわりに火が移る
+  function weaponHitZombie(zb, x, z) {
+    hitZombie(zb, x, z);
+    if (zb.dead && fireOn()) { burstGibs(zb.x, 1.0, zb.z, 6, '#ff8a2a', 4, 5); igniteNear(zb.x, zb.z, 1); }
+  }
+  function igniteNear(x, z, gen) {
+    let k = 0;
+    for (const o of zs) {
+      if (k >= FIRE.spreadN) break;
+      if (o.dead || o.burn || o.appear < 0.5 || Math.abs(o.x - x) > FIRE.spreadR || Math.abs(o.z - z) > FIRE.spreadR || Math.hypot(o.x - x, o.z - z) > FIRE.spreadR) continue;
+      o.burn = gt + FIRE.burn * (0.7 + Math.random() * 0.6); o.burnGen = gen; k++;
+    }
+  }
   function hitZombie(zb, ax, az) {
     zb.hp--; zb.hit = 0.08;
     const dx = zb.x - player.x, dz = zb.z - player.z, d = Math.hypot(dx, dz) || 1;
@@ -2281,6 +2322,14 @@
     for (const zb of zs) {
       zb.appear = Math.min(1, zb.appear + dt * 2);
       zb.hit = Math.max(0, zb.hit - dt);
+      if (zb.burn) {
+        if (gt > zb.burn) {
+          const g = zb.burnGen; zb.burn = 0; zb.hp = 1; hitZombie(zb, zb.x, zb.z);
+          burstGibs(zb.x, 1.0, zb.z, 8, '#ff8a2a', 4, 5);
+          if (g < FIRE.gens) igniteNear(zb.x, zb.z, g + 1);
+          if (zb.dead) continue;
+        } else if (!fastForwarding && Math.random() < dt * 10) puff(zb.x + (Math.random() - 0.5) * 0.6, 1.5, zb.z + (Math.random() - 0.5) * 0.6, 1, Math.random() < 0.5 ? '#ff6a1a' : '#ffc23a', 0.35, 0.5, 0.7);
+      }
       let dx = player.x - zb.x, dz = player.z - zb.z, d = Math.hypot(dx, dz) || 1;
       const pd = d;
       // ワンコが近くにいれば、ワンコを襲いに行く
@@ -2329,7 +2378,7 @@
       const s = Math.max(0.01, backOut(zb.appear)) * (zb.hit > 0 ? 1.15 : 1);
       const w = Math.sin(gt * 8 + zb.ph);
       setInst(zombieMesh, n, zb.x, Math.abs(w) * 0.08, zb.z, s, s, s, zb.face, 0, w * 0.12);
-      zombieMesh.setColorAt(n++, zb.hit > 0 ? _col.set('#ffffff').multiplyScalar(2.2) : zb.tint);
+      zombieMesh.setColorAt(n++, zb.hit > 0 ? _col.set('#ffffff').multiplyScalar(2.2) : zb.burn ? _col.set(Math.sin(gt * 30 + zb.ph * 9) > 0 ? '#ff7a2a' : '#ffb84a') : zb.tint);
     }
     zombieMesh.count = n;
     zombieMesh.instanceMatrix.needsUpdate = true;
@@ -6089,6 +6138,7 @@
     giant() { return giant ? { phase: giant.phase, x: giant.x, z: giant.z } : null; },
     camp() { return campInfo(); },
     setWeapon(i) { const lv = WEAPON_LEVELS[i]; if (lv) setAxes(lv); return AXES.kind; },
+    fire() { return { on: fireOn(), left: +(fireUntil - gt).toFixed(1), burning: zs.filter(z => z.burn && !z.dead).length }; },
     axes() { return { n: axeInst.count, show: +(weaponShow - gt).toFixed(2), r: +axeR.toFixed(2), off: axesOff, launcher: launcher.visible }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
