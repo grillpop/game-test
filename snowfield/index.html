@@ -170,7 +170,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.08-s67';
+  const GAME_VERSION = '2026.12.08-s68';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -2372,7 +2372,18 @@
     $('kill-pill').classList.remove('hide'); $('kills').textContent = zKills; bumpPill('kills');
     if (zKills % 25 === 0) popText('🧟 ' + zKills + '体 撃退!', player.x, player.z, '#b6ff8a', 20, 3.4);
   }
+  // s68: 昼のあいだ、拠点の中(柵の内側・通路)に入りこんだゾンビはポンッと倒す(拠点UPで柵を建て直すすき間などから入るため)
+  let insideSweepT = 0, insideSwept = 0;
+  function sweepInside(dt) {
+    insideSweepT -= dt; if (insideSweepT > 0) return; insideSweepT = 0.4;
+    if (night.phase !== 'day') return;
+    for (const zb of zs) {
+      if (zb.dead || zb.appear < 1) continue;
+      if (insideCamp(zb.x, zb.z, -0.7) || (extraWalls.length && corrDist(zb.x, zb.z) < CORRIDOR_W - 0.4)) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); ring(zb.x, zb.z, 1.6, 0.3, '#ffe066'); insideSwept++; }
+    }
+  }
   function updateZombies(dt) {
+    safe('sweepInside', () => sweepInside(dt));
     if (ZOMBIES.on) { zSpawnT -= dt; if (zSpawnT <= 0) { zSpawnT = ZOMBIES.interval; spawnZombies(Math.round(lerp(ZOMBIES.group[0], ZOMBIES.group[1], Math.random()))); } }
     for (let i = zs.length - 1; i >= 0; i--) if (zs[i].dead) { zs[i] = zs[zs.length - 1]; zs.pop(); }
     let n = 0;
@@ -6302,6 +6313,8 @@
     fire() { return { on: fireOn(), left: +(fireUntil - gt).toFixed(1), burning: zs.filter(z => z.burn && !z.dead).length }; },
     allDoneAt() { return allDoneAt; },
     rates() { return { ...buildRates(), end: night.end || null }; },
+    swept() { return insideSwept; },
+    pullZombie(x, z) { const zb = zs.find(o => !o.dead && o.appear >= 1); if (!zb) return false; zb.x = x; zb.z = z; return true; },
     decor() { return { all: DECOR.length, hidden: DECOR.filter(d => d.hidden).length }; },
     axes() { return { n: axeInst.count, show: +(weaponShow - gt).toFixed(2), r: +axeR.toFixed(2), off: axesOff, launcher: launcher.visible }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
