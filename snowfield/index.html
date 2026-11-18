@@ -127,7 +127,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.06-s62';
+  const GAME_VERSION = '2026.12.07-s63';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -3109,7 +3109,7 @@
     ZOMBIES.safe = 3; ZOMBIES.dist = [26, 40];
     // 拠点が広がると、ゾンビも増える
     ZOMBIES.max = 130; ZOMBIES.group = [5, 9]; ZOMBIES.interval = 1.8;
-    zoomTarget = Math.max(zoomTarget, 1.85);
+    zoomTarget = Math.max(zoomTarget, 1.7);
     camFocus(cx, cz, 4, 0.6);
     toast('🏗️ 拠点が広くなった!');
     if (dog) { dog.joy = 2; popText('🐶 ワンワン!', dog.x, dog.z, '#ffe27a', 18, 2); }
@@ -3980,7 +3980,7 @@
     corridorBuilds.push({ posts, railSegs, mesh, rails, planks: [], plankMesh: null, t: 0, sides: [side], path: [[cx, cz], [cx, cz]], s, end: 0.5 + posts.length * 0.04 + 0.5, onDone: annexDone });
     // 川には木の橋
     later(1.2, () => safe('bridge', buildBridge));
-    zoomTarget = Math.max(zoomTarget, 2.1);
+    zoomTarget = Math.max(zoomTarget, 1.75);
     camFocus(cx - 2, cz, 5, 0.8);
     toast('🏗️ 拠点を川の向こうまで広げる!');
   }
@@ -4129,7 +4129,7 @@
     later(1.4, () => yardPops.push({ g: fac, t: 0 }));
     training = { targetsX, tz, slots: [], ready: false, t: 0 };
     for (const z of [-14.3, -13.0]) for (let k = 0; k < 7; k++) training.slots.push({ x: 16.9 + k * 1.45 + (z > -14 ? 0.7 : 0), z, h: null });
-    zoomTarget = Math.max(zoomTarget, 2.1);
+    zoomTarget = Math.max(zoomTarget, 1.75);
     camFocus(cx, cz, 5, 0.6);
     toast('🏹 弓の訓練所をつくる!');
   }
@@ -4445,7 +4445,7 @@
     const mesh = new THREE.InstancedMesh(postGeo, vcMat, posts.length); mesh.count = 0; mesh.frustumCulled = false; scene.add(mesh);
     const rails = new THREE.InstancedMesh(railGeo, vcMat, railSegs.length * 2); rails.count = 0; rails.frustumCulled = false; scene.add(rails);
     corridorBuilds.push({ posts, railSegs, mesh, rails, planks: [], plankMesh: null, t: 0, sides: [side], path: [[cx, cz], [cx, cz]], s, end: 0.5 + posts.length * 0.03 + 0.5, onDone: plazaDone });
-    zoomTarget = Math.max(zoomTarget, 2.3);
+    zoomTarget = Math.max(zoomTarget, 1.8);
     camFocus(cx, cz, 5, 0.9);
     toast('🏗️ 研究所の前に大きな広場をつくる!');
   }
@@ -4567,7 +4567,7 @@
     });
     for (const t of targets) if (t.type === 'tree' && !t.dead && !t.gone && polyDist(path, t.x, t.z) < CORRIDOR_W + 1.2) later(0.1 + Math.random() * 0.8, () => { if (!t.dead && !t.gone) fellTree(t, Math.random() - 0.5, Math.random() - 0.5); });
     for (const zb of zs) if (!zb.dead && polyDist(path, zb.x, zb.z) < CORRIDOR_W + 0.5) later(0.2 + Math.random() * 0.3, () => { if (!zb.dead) { zb.hp = 1; hitZombie(zb, zb.x, zb.z); } });
-    zoomTarget = Math.max(zoomTarget, 2.3);
+    zoomTarget = Math.max(zoomTarget, 1.8);
     camFocus(25, -36, 5, 0.9);
   }
   // 柵つき通路(床の板と両側の柵)を作る。できたら after を呼ぶ
