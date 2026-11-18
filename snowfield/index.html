@@ -127,7 +127,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.04-s59';
+  const GAME_VERSION = '2026.12.05-s60';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -176,7 +176,7 @@
   const TOWN = { bakeryEvery: 3, breadCap: 40, breadHunger: 2.5, marketEvery: 6, marketPer: 3, houseMax: 60 };
   const LAB = { heads: 4, coal: 2, every: 7, max: 40, startHeads: 420, startCoal: 250 };
   const HUMAN = { speed: 3.2, notice: 10, hp: 1.2, hunger: 28, starve: 7 };
-  const ZOOM_BASE = 12;
+  const ZOOM_BASE = 10;
   const DOG_NOTICE = 12; // ゾンビがワンコに気づく距離(キャラクターより6以上遠くなければ、ワンコを追う)
   const DOG_FLEE = 1.9; // ワンコがゾンビから逃げる速さ(ゾンビは 1.3〜2.1) // カメラの距離(オーナーの希望で 14 から寄せた)
   const RES_ICON = { wood: '🪵', meat: '🍖', ice: '🧟', cash: '💵', coal: '⚫' };
@@ -205,7 +205,7 @@
       ],
       goal: { type: 'gather', res: 'wood', count: 6 } },
     { id: 'scene_02', title: 'キャンプ場の立ち上げ', after: 'scene_01',
-      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence', 'hut'], delays: [0.1, 2.8] }],
+      enter: [{ do: 'site', id: 'camp', title: '⛺ キャンプ場をつくる', icon: '⛺', at: [0, 0], res: 'wood', need: 40, build: ['fence'], delays: [0.1] }],
       goal: { type: 'build', site: 'camp' },
       exit: [
         { do: 'toast', text: '🎉 キャンプ場ができた!' },
@@ -224,7 +224,7 @@
         // 木材置き場: 木の床に乗ると、背中の薪がどんどん積まれる
         { do: 'storage', id: 'woodpad', kind: 'deposit', icon: '🪵', res: 'wood', yard: 'wood', grid: { cols: 3, rows: 7, layers: 12, cx: 0.66, cz: 0.29, h: 0.27, y0: 0.45 }, delay: 0.7 },
         // ヘリポートができたら、アップデートエリアが全部開く(どれから建ててもいい。見張り台だけ薪、ほかはお金)
-        { do: 'site', id: 'tower', icon: '🗼', at: [8.3, 8.3], res: 'wood', need: 80, build: ['tower'], delay: 1.6,
+        { do: 'site', id: 'tower', icon: '🗼', at: [-6.5, -7.6], res: 'wood', need: 80, build: ['tower'], delay: 1.6,
           onBuilt: [{ do: 'toast', text: '🗼 見張り台ができた! 近くのゾンビを自動で撃つ' }] },
         { do: 'site', id: 'vacuum', icon: '🌀', at: [8.3, 3.9], res: 'cash', need: 40, build: ['vacuum'], delay: 1.8,
           onBuilt: [{ do: 'toast', text: '🌀 バキューマー完成! 散らばったゾンビの頭を吸いこんで置き場へ' }] },
@@ -242,7 +242,7 @@
           ] },
         { do: 'upgrade', id: 'weapon', icon: '⚔️', at: [-3.0, 7.6], res: 'cash', levels: WEAPON_LEVELS, delay: 2.4 },
         // ガトリングは電気(発電所)と見張り台ができてから
-        { do: 'site', id: 'gatling', icon: '🔫', at: [5.0, 8.4], res: 'cash', need: 55, build: ['gatling'], requires: ['plant', 'tower'],
+        { do: 'site', id: 'gatling', icon: '🔫', at: [-3.6, -9.2], res: 'cash', need: 55, build: ['gatling'], requires: ['plant', 'tower'],
           announce: '🔫 電気が来た! 見張り台にガトリングを積めるようになった',
           onBuilt: [{ do: 'toast', text: '🔫 ガトリング設置! 柵に来たゾンビをなぎ倒す' }] },
         // 電動木こりマシン(発電所ができてから)。勝手に森へ行って木を切り、木材置き場まで運ぶ
@@ -614,26 +614,49 @@
     { geo: Box(0.36, 0.08, 0.34), m: M(0, -0.26, 0), color: '#8f7a62' },
   ]);
   const iceMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  // 札束(緑のお札を帯でとめた束)
-  const cashGeo = mergeGeometries([
-    { geo: Box(0.5, 0.15, 0.28), m: M(0, 0, 0), color: '#9aa3ad' },
-    { geo: Box(0.46, 0.02, 0.24), m: M(0, 0.08, 0), color: '#cfd5dc' },
-    { geo: Box(0.1, 0.16, 0.3), m: M(0, 0, 0), color: '#e8c55a' },
-    { geo: Box(0.07, 0.03, 0.07), m: M(0.15, 0.085, 0), color: '#6c757f' },
-    { geo: Box(0.07, 0.03, 0.07), m: M(-0.15, 0.085, 0), color: '#6c757f' },
-  ]);
+  // 札束(s60: お札だと分かるように。クリーム色のお札に大きな「$」と金額、青い帯封。側面は紙が重なったしま模様)
+  // 1枚の絵(上半分 = お札の表、下 = 側面)を、箱の面ごとに貼りわける
+  const cashMat = (() => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 512; const g = c.getContext('2d');
+    // お札の表(0〜256)
+    g.fillStyle = '#f3e3ae'; g.fillRect(0, 0, 512, 256);
+    g.strokeStyle = '#6b4a1a'; g.lineWidth = 14; g.strokeRect(14, 14, 484, 228);
+    g.lineWidth = 4; g.strokeRect(34, 34, 444, 188);
+    g.fillStyle = '#e2c77a'; g.beginPath(); g.ellipse(256, 128, 74, 74, 0, 0, 7); g.fill();
+    g.strokeStyle = '#6b4a1a'; g.lineWidth = 6; g.stroke();
+    g.fillStyle = '#5a3a10'; g.font = 'bold 120px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 256, 134);
+    g.font = 'bold 44px sans-serif'; g.fillText('100', 96, 80); g.fillText('100', 416, 176);
+    // 帯封(青)
+    g.fillStyle = '#2f62c8'; g.fillRect(150, 0, 34, 256); g.fillRect(328, 0, 34, 256);
+    // 側面: 紙が重なったしま(256〜512)。長い側面は帯つき
+    for (const [y0, band] of [[256, true], [384, false]]) {
+      g.fillStyle = '#efe2bd'; g.fillRect(0, y0, 512, 128);
+      g.fillStyle = '#b89a5a'; for (let i = 0; i < 9; i++) g.fillRect(0, y0 + 6 + i * 14, 512, 3);
+      g.fillStyle = '#6b4a1a'; g.fillRect(0, y0, 512, 8); g.fillRect(0, y0 + 120, 512, 8);
+      if (band) { g.fillStyle = '#2f62c8'; g.fillRect(150, y0, 34, 128); g.fillRect(328, y0, 34, 128); }
+    }
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    return new THREE.MeshLambertMaterial({ map: tex });
+  })();
+  const cashGeo = (() => {
+    const geo = new THREE.BoxGeometry(0.62, 0.17, 0.33), uv = geo.attributes.uv;
+    // 面の順: +x, -x, +y, -y, +z, -z(1面4頂点)。v の範囲: 表 0.5〜1、長い側面 0.25〜0.5、短い側面 0〜0.25
+    const rng = [[0, 0.25], [0, 0.25], [0.5, 1], [0.5, 1], [0.25, 0.5], [0.25, 0.5]];
+    for (let f = 0; f < 6; f++) for (let i = 0; i < 4; i++) { const k = f * 4 + i, v = uv.getY(k); uv.setY(k, rng[f][0] + v * (rng[f][1] - rng[f][0])); }
+    return geo;
+  })();
   // 炭のブロック(黒いごつごつ・ところどころ赤く光る)
   const coalGeo = mergeGeometries([
     { geo: new THREE.DodecahedronGeometry(0.26), m: M(0, 0, 0, 1.1, 0.85, 1.1), color: '#2a2a2e' },
     { geo: new THREE.DodecahedronGeometry(0.12), m: M(0.12, 0.1, 0.12), color: '#4a4a52' },
     { geo: Box(0.08, 0.05, 0.08), m: M(-0.1, 0.18, 0.05), color: '#ff7a2a' },
   ]);
-  const drops = { wood: makePool(woodGeo, vcMat, 700), meat: makePool(meatGeo, vcMat, 140), ice: makePool(iceGeo, iceMat, 320), cash: makePool(cashGeo, vcMat, 260), coal: makePool(coalGeo, vcMat, 120) };
+  const drops = { wood: makePool(woodGeo, vcMat, 700), meat: makePool(meatGeo, vcMat, 140), ice: makePool(iceGeo, iceMat, 320), cash: makePool(cashGeo, cashMat, 260), coal: makePool(coalGeo, vcMat, 120) };
   const stackMesh = {
     wood: new THREE.InstancedMesh(woodGeo, vcMat, STACK.wood.max),
     meat: new THREE.InstancedMesh(meatGeo, vcMat, STACK.meat.max),
     ice: new THREE.InstancedMesh(iceGeo, iceMat, STACK.ice.max),
-    cash: new THREE.InstancedMesh(cashGeo, vcMat, STACK.cash.max),
+    cash: new THREE.InstancedMesh(cashGeo, cashMat, STACK.cash.max),
   };
   for (const k in stackMesh) { stackMesh[k].count = 0; stackMesh[k].frustumCulled = false; scene.add(stackMesh[k]); }
 
@@ -948,13 +971,13 @@
     fence: { name: 'キャンプの柵', at: [0, 0], fence: { H: 11, gw: 1.7, spacing: 1.3 } }, // 四角い柵(半分の幅 H、入口は手前の辺のまん中、幅 2×gw)
     woodyard: { name: '木材置き場', at: [-6.5, -3.4], yard: 'wood' },
     kiln: { name: '炭焼き窯', at: [-6.8, 1.4], rot: 0, def: kilnDef },
-    tower: { name: '見張り台', at: [8.3, 8.3], rot: Math.PI / 4, def: towerDef, shoot: { range: 13, every: 0.28, y: 5.2 } },
+    tower: { name: '見張り台', at: [-6.5, -7.6], rot: Math.PI / 4, def: towerDef, shoot: { range: 13, every: 0.28, y: 5.2 } },
     // ゾンビ発電所: 回し車の中をゾンビが走って発電。every 秒ごとに札束 bundles 個がお金置き場へ
     // ゾンビ発電所: every 秒ごとに、働いているゾンビ1体につき 💰perWorker。満員で入ったゾンビは 💰bonus
     plant: { name: 'ゾンビ発電所', at: [0, -18.6], rot: 0, def: plantDef, clear: 2.5,
       plant: { every: 3, perWorker: 5, bonus: 15, lure: 0.7, intake: [9.9, 0], pylon: [7.6, 7.4, -13.7] } },
     // ガトリング: 見張り台の屋根の上に積む(電気で動く)
-    gatling: { name: 'ガトリング', at: [8.3, 8.3], gatling: { range: 17, every: 0.08, y: 7.55 } },
+    gatling: { name: 'ガトリング', at: [-6.5, -7.6], gatling: { range: 17, every: 0.08, y: 7.55 } },
     // 電動木こりマシンの車庫。マシンは森へ行って木を切り、積んで、木材置き場へ運ぶ
     lumber: { name: '木こりマシン', at: [-8.3, 8.3], rot: 0, def: garageDef, lumber: { speed: 6.5, cap: 36, saw: 0.2, collectR: 6 } },
     deck: { name: '弓打ち場', at: [-7.0, 15.3], rot: Math.PI / 2, def: () => deckDef(8.4) },
@@ -1729,15 +1752,16 @@
     g.save(); g.translate(x, y); const k = sz / 100;
     g.scale(k, k); g.lineJoin = 'round';
     if (kind === 'cash') {
-      // 灰色の札束(3つ重ね)・金色の帯
+      // お札の束(3枚重ね): クリーム色のお札・大きな「$」・青い帯封
       for (let i = 2; i >= 0; i--) {
-        const ox = -i * 6, oy = i * 9;
-        g.fillStyle = i ? '#7d8690' : '#a3acb6'; g.strokeStyle = '#3e454c'; g.lineWidth = 5;
-        g.beginPath(); g.roundRect(-46 + ox, -24 + oy, 92, 48, 7); g.fill(); g.stroke();
+        const ox = -i * 6, oy = i * 8;
+        g.fillStyle = i ? '#d8c48a' : '#f3e3ae'; g.strokeStyle = '#5a3a10'; g.lineWidth = 5;
+        g.beginPath(); g.roundRect(-48 + ox, -26 + oy, 96, 52, 6); g.fill(); g.stroke();
       }
-      g.fillStyle = '#d3d9e0'; g.beginPath(); g.roundRect(-38, -17, 76, 34, 5); g.fill();
-      g.fillStyle = '#6c757f'; g.beginPath(); g.arc(-27, 0, 5, 0, 7); g.arc(27, 0, 5, 0, 7); g.fill();
-      g.fillStyle = '#e8c55a'; g.strokeStyle = '#8a6a1a'; g.lineWidth = 4; g.fillRect(-9, -27, 18, 54); g.strokeRect(-9, -27, 18, 54);
+      g.strokeStyle = '#6b4a1a'; g.lineWidth = 3; g.strokeRect(-40, -18, 80, 36);
+      g.fillStyle = '#e2c77a'; g.beginPath(); g.arc(0, 0, 15, 0, 7); g.fill();
+      g.fillStyle = '#5a3a10'; g.font = 'bold 30px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 0, 2);
+      g.fillStyle = '#2f62c8'; g.fillRect(-30, -27, 10, 54); g.fillRect(20, -27, 10, 54);
     } else if (kind === 'ice') {
       // ゾンビの頭: 緑の四角・赤い目・口と歯・縫い目・雪の帽子
       g.fillStyle = '#94d17c'; g.strokeStyle = '#2f5a25'; g.lineWidth = 6;
@@ -1823,7 +1847,7 @@
       s.grid = a.grid; s.fx = yard[0]; s.fz = yard[1]; s.gx = yard[0] - 0.45; s.gz = yard[1] - 0.45; s.stock = 0; s.lastIn = -99; s.kind = a.kind;
       s.cap = a.grid.cols * a.grid.rows * a.grid.layers;
       const geo = { ice: iceGeo, cash: cashGeo, wood: woodGeo, coal: coalGeo }[a.res];
-      s.pileMesh = new THREE.InstancedMesh(geo, a.res === 'ice' ? iceMat : vcMat, s.cap);
+      s.pileMesh = new THREE.InstancedMesh(geo, a.res === 'ice' ? iceMat : a.res === 'cash' ? cashMat : vcMat, s.cap);
       s.decal = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7), new THREE.MeshBasicMaterial({ map: s.tex, transparent: true, depthWrite: false }));
       s.decal.rotation.x = -Math.PI / 2; s.decal.position.set(yard[0], 0.33, yard[1]); s.decal.renderOrder = 3;
       scene.add(s.decal);
@@ -2190,7 +2214,7 @@
     { geo: Box(0.26, 0.07, 0.05), m: M(0, 1.33, 0.27), color: '#2a3a20' },
     { geo: Box(0.52, 0.1, 0.5), m: M(0, 1.74, 0.02), color: '#f6fafd' },
   ]);
-  const ZMAX = 320;
+  const ZMAX = 520;
   const zombieMesh = new THREE.InstancedMesh(zombieGeo, vcMat, ZMAX);
   zombieMesh.count = 0; zombieMesh.frustumCulled = false;
   scene.add(zombieMesh);
@@ -2278,7 +2302,7 @@
         if (od < 0.78 && od > 1e-4) { vx += ox / od * (0.78 - od) * 8; vz += oz / od * (0.78 - od) * 8; }
       }
       zb.x = clamp(zb.x + vx * dt, WORLD.x1 + 0.5, WORLD.x2 - 0.5); zb.z = clamp(zb.z + vz * dt, WORLD.z1 + 0.5, WORLD.z2 - 0.5);
-      for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && (f.doorOpen < 0.7 || !f.playerOpen)) segPush(zb, f.door, 0.55); }
+      for (const f of fences) { for (const w of f.walls) segPush(zb, w, 0.55); if (f.gateLanded && (night.phase === 'day' || f.doorOpen < 0.7 || !f.playerOpen)) segPush(zb, f.door, 0.55); }
       // 発電所の建物には入れない(吸い込み口からだけ)
       for (const id of ['lab', 'pump', 'cistern', 'pylon']) { const b = built[id]; if (!b || !b.box) continue; const [x1, z1, x2, z2] = b.box; if (zb.x > x1 && zb.x < x2 && zb.z > z1 && zb.z < z2) { const m = [zb.x - x1, x2 - zb.x, zb.z - z1, z2 - zb.z]; if (id === 'lab' && Math.abs(zb.x - b.info.at[0]) < 2.8) m[3] = 99; /* 扉の側(通路)へは押し出さない */ const k = m.indexOf(Math.min(...m)); if (k === 0) zb.x = x1; else if (k === 1) zb.x = x2; else if (k === 2) zb.z = z1; else zb.z = z2; } }
       for (const w of extraWalls) segPush(zb, w, 0.55);
@@ -4156,7 +4180,7 @@
     toast('🌙 大群の夜!! みんなで拠点を守れ!');
     shake(0.6); SND.boom();
     if (!fastForwarding) { tone(70, 1.2, 'sawtooth', 0.08, 0.5); noise(0.8, 0.12, 300); }
-    Object.assign(ZOMBIES, { on: true, max: 240, interval: 0.45, group: [6, 12], spread: Math.PI * 2, front: 0.3, dist: [24, 36], speed: [1.6, 2.4], drop: {} });
+    Object.assign(ZOMBIES, { on: true, max: 460, interval: 0.2, group: [10, 18], spread: Math.PI * 2, front: 0.3, dist: [24, 36], speed: [1.6, 2.4], drop: {} });
     zSpawnT = 0;
     for (const zb of zs) zb.nt = nightGoal();
     // 仕事はお休みして、みんな柵ぞいの持ち場へ(弓兵やぐらはそのまま)
