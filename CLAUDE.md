@@ -1,11 +1,26 @@
 # game-test
 
-iPhone向けゲーム開発の練習用リポジトリです。今は4つのゲームが入っています。
+iPhone向けゲーム開発の練習用リポジトリです。今は5つのゲームが入っています。
 
+- 🎸 **バンドのプレイリストゲーム**(いちばん新しい。バンドの販促用): `band/` フォルダ。公開ページは https://grillpop.github.io/game-test/band/
 - ❄️ **雪原開拓(仮)**(いちばん新しいゲーム): `snowfield/` フォルダ。公開ページは https://grillpop.github.io/game-test/snowfield/
 - 🧟 **ZOMBIE DISMANTLER(ゾンビ解体工場)**(寄り道で作った新しいゲーム): `zombie/` フォルダ。公開ページは https://grillpop.github.io/game-test/zombie/
 - 🐤 **ひよこ100万羽**(新しく作っているゲーム): `hiyoko/` フォルダ。公開ページは https://grillpop.github.io/game-test/hiyoko/
 - ⛺ **雪のキャンプ**: ルートの `index.html`(と保管用の `snow-camp-v1/`)。下の「今のゲーム「雪のキャンプ」」を参照。
+
+## バンドのプレイリストゲーム(`band/index.html`)
+
+- オーナーの案: バンドの販促用のブラウザゲーム。ユーザーは10曲の枠を持ち、1曲目から順にミニゲームをして、スコアで曲が決まる(どんなスコアでも何かしらの曲はもらえる)。10曲そろったらプレイリストとして共有できる。
+- 技術: Three.js は使わず、1ファイルの HTML + canvas 2D。効果音は Web Audio でその場で作る(`unlockAudio` はほかのゲームから流用)。
+- **バンドと曲は仮**(ファイルの最初の「設定」で書きかえる): `BAND`(名前・公式サイト `site`・ハッシュタグ)、`SONGS`(30曲。`id` は共有リンクに入るので公開後は変えない・`title`・`rarity` 4〜1・レーベルの色 `color`・聴けるページ `url`。`url` があると「▶ 聴く」ボタンが出る)。今は仮のバンド名「MIDNIGHT SODA」と仮の曲名。
+- 流れ: タイトル → トラックリスト(10枠。次の枠に「PLAY ▶」)→ ミニゲームの説明 → 3・2・1 → ミニゲーム → ランク(S/A/B/C)→ レコードが回って曲の発表 → 10曲そろうと完成画面(名前を入れて共有)。
+- ミニゲーム(`GAMES`。1〜5曲目は「ふつう」、6〜10曲目は同じ順で「むずかしい」`levelFor`): 🥁リズムでタップ(3列の音符)・🙌コール&レスポンス(6秒連打)・🎸チューニング(針を緑で止める×5)・🎶音符キャッチ(💀ノイズはさける)・🎹セッション記憶(光った順にタップ×5ラウンド)。スコアはどれも0〜100。
+- スコア → 曲(`RANKS`・`pickSong`): S(85〜)→★4 代表曲、A(65〜)→★3 人気曲、B(40〜)→★2 アルバム曲、C → ★1 レア音源。同じ曲は2回出ない。その★の曲が残っていなければ下の★、それもなければ上の★から。
+- 共有: リンクは `?p=曲のid.曲のid…&n=名前`。開くと「○○ のプレイリスト」の画面と「わたしも10曲あつめる」ボタン。共有ボタンは iPhone の共有シート(`navigator.share`)、なければリンクをコピー。𝕏・LINE のボタンもある。
+- セーブ: localStorage のキー `band-playlist-v1`(集めた曲・スコア・名前)。途中でやめても「つづきから」。同じ枠はやり直せない。
+- 版の番号は `GAME_VERSION`(例: `2026.11.17-b1`。左下に「🎸 v…」)。
+- 自動テスト用に `window.__game`: `state`(曲・スコア・今の画面 `screen`・エラー)、`bot(true)`(ミニゲームを自動で遊ぶ)、`finish(点)`(今のミニゲームをその点で終える)、`shareURL()`、`reset()`。
+- まだないもの: 本物のバンド名・曲名・聴けるリンク・リンクを貼ったときの画像(`og:image`)。
 
 ## 雪原開拓(仮)(`snowfield/index.html`)
 
@@ -215,6 +230,7 @@ iPhone向けゲーム開発の練習用リポジトリです。今は4つのゲ�
 - `vendor/three.module.min.js`: 3D表示に使うライブラリ Three.js (r170) です。CDNを使わず、リポジトリに入れています。
 - `vendor/three.LICENSE`: Three.js のライセンス(MIT)です。消さないでください。
 - `snow-camp-v1/`: 第1版の保管用コピー(`index.html` と `vendor/`)。変更しないでください。
+- `band/index.html`: バンドのプレイリストゲーム(1ファイル。ライブラリなし)。
 - `snowfield/index.html`: 雪原開拓(仮)(1ファイル。Three.js はルートの `vendor/` を使う)。
 - `zombie/index.html`: ZOMBIE DISMANTLER(1ファイル。Three.js はルートの `vendor/` を使う)。
 - `hiyoko/index.html`: ひよこ100万羽(HTML・CSS・JavaScriptを1ファイルに。Three.js はルートの `vendor/` を使う)。
