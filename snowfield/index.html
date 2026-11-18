@@ -53,10 +53,17 @@
   #debug { position: fixed; right: 8px; top: calc(env(safe-area-inset-top) + 8px); padding: 4px 8px; border-radius: 8px; background: rgba(0, 0, 0, .55); color: #fff; font: 11px/1.4 monospace; white-space: pre; pointer-events: none; display: none; }
   #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: #000; z-index: 10; }
   #over.show { display: flex; animation: overIn 1.6s ease-in; }
-  #over .go { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(44px, 13vw, 84px); font-weight: 700; letter-spacing: .08em; color: #d11a1a; text-shadow: 0 0 18px rgba(200, 0, 0, .55); }
+  #over .go { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(34px, 10vw, 76px); font-weight: 700; letter-spacing: .08em; color: #d11a1a; text-shadow: 0 0 18px rgba(200, 0, 0, .55); }
   #over .card button { margin-top: 42px; padding: 10px 30px; border: 1px solid #8a1414; border-radius: 4px; background: transparent; color: #d11a1a; font-size: 16px; font-weight: 700; letter-spacing: .2em; }
   @keyframes overIn { from { opacity: 0; } }
-  #over .card { text-align: center; }
+  #over .card { text-align: center; width: min(78vw, 360px); }
+  /* s64: 装備・暮らしの解放率とヒント(ポップすぎないよう、暗い色で細く) */
+  #over .rates { margin: 30px auto 0; display: grid; gap: 12px; }
+  #over .rate { display: grid; grid-template-columns: 4.2em 1fr 3.2em; align-items: center; gap: 10px; color: #b9b2b2; font-size: 14px; letter-spacing: .1em; }
+  #over .rate .bar { height: 6px; border-radius: 3px; background: #2a2222; overflow: hidden; }
+  #over .rate .bar i { display: block; height: 100%; width: 0; background: #a31515; transition: width 1.2s ease-out .8s; }
+  #over .rate b { text-align: right; color: #e0d8d8; font-weight: 700; }
+  #over .hint { margin-top: 24px; color: #9a9393; font-size: 13px; line-height: 1.7; min-height: 1em; }
   /* 一時的な10分タイマー(あとで消す) */
   #spot { position: fixed; inset: 0; display: none; pointer-events: none; z-index: 8; }
   /* タイトル画面(10 MINUTES APOCALYPSE) */
@@ -111,6 +118,11 @@
   <div id="dog-label">🐶 たすけて!</div>
   <div id="over"><div class="card">
     <div class="go">GAME OVER</div>
+    <div class="rates">
+      <div class="rate"><span>装備</span><div class="bar"><i id="rate-def"></i></div><b id="rate-def-n">0%</b></div>
+      <div class="rate"><span>暮らし</span><div class="bar"><i id="rate-life"></i></div><b id="rate-life-n">0%</b></div>
+    </div>
+    <div class="hint" id="over-hint"></div>
     <button id="over-retry" type="button">最初から</button>
   </div></div>
   <div id="spot"></div>
@@ -127,7 +139,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.07-s63';
+  const GAME_VERSION = '2026.12.07-s64';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -6018,8 +6030,30 @@
   // ================================================================
   // ゲームオーバー(拠点の中に入りこんだゾンビにつかまったとき)
   let gameOver = false, godMode = false;
+  // s64: シナリオの建築エリアを「装備(守り)」と「暮らし(それ以外)」に分けて、何%建てたか
+  function buildRates() {
+    const r = { def: [0, 0], life: [0, 0] };
+    for (const sc of SCENARIO) for (const k of ['enter', 'exit']) for (const a of sc[k] || []) {
+      if (a.do !== 'site') continue;
+      const g = DEF_IDS.includes(a.id) ? r.def : r.life;
+      g[1]++; if (sites[a.id] && sites[a.id].done) g[0]++;
+    }
+    const pct = ([d, t]) => t ? Math.floor(d / t * 100) : 0;
+    return { def: pct(r.def), life: pct(r.life) };
+  }
+  // なぜゲームオーバーになったかのヒント(巨大ゾンビ犬のときは書かない)
+  const OVER_HINTS = {
+    alone: 'ヒント: まずはキャンプ場(柵)を作ろう',
+    breach: 'ヒント: 守りが足りなかった…<br>装備を100%にしよう',
+    zombify: 'ヒント: 食べ物が足りなかった…<br>ポンプ・田んぼ・食堂を作ろう',
+    buried: 'ヒント: 暮らしの建物がまだ残っていた…<br>暮らしを100%にしよう',
+  };
   function showGameOver(title, sub) {
     gameOver = true;
+    const R = buildRates();
+    $('rate-def-n').textContent = R.def + '%'; $('rate-life-n').textContent = R.life + '%';
+    requestAnimationFrame(() => { $('rate-def').style.width = R.def + '%'; $('rate-life').style.width = R.life + '%'; });
+    $('over-hint').innerHTML = OVER_HINTS[night.end] || '';
 
     shake(0.6); SND.boom(); if (!fastForwarding) tone(220, 0.8, 'sawtooth', 0.08, 0.4);
     $('over').classList.add('show');
@@ -6139,6 +6173,7 @@
     camp() { return campInfo(); },
     setWeapon(i) { const lv = WEAPON_LEVELS[i]; if (lv) setAxes(lv); return AXES.kind; },
     fire() { return { on: fireOn(), left: +(fireUntil - gt).toFixed(1), burning: zs.filter(z => z.burn && !z.dead).length }; },
+    rates() { return { ...buildRates(), end: night.end || null }; },
     axes() { return { n: axeInst.count, show: +(weaponShow - gt).toFixed(2), r: +axeR.toFixed(2), off: axesOff, launcher: launcher.visible }; },
     debugDrops() { const out = {}; for (const k in drops) for (const it of drops[k].items) { const key = k + ':' + it.st; out[key] = (out[key] || 0) + 1; } return { out, guide: (() => { const g = guideTarget(); return g && { kind: g.kind, x: g.x, z: g.z }; })(), meatLeft: dropsLeft, sample: drops.meat.items.slice(0, 3).map(i => [i.st, i.x.toFixed(1), i.y.toFixed(2), i.z.toFixed(1)]) }; },
   };
