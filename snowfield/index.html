@@ -170,7 +170,7 @@
   // ================================================================
   //  設定(テンポ・気持ちよさの数字)
   // ================================================================
-  const GAME_VERSION = '2026.12.08-s69';
+  const GAME_VERSION = '2026.12.09-s70';
   const SHOW_TEXT = false; // 説明文・浮かぶ文字(「キャン!」など)を出すか。オーナーの希望で出さない
   const FX = { shake: 1, particles: 1, volume: 1 };            // 演出の強さ(重いときは粒が自動で減る)
   const PLAYER_CFG = { speed: 9.5, accel: 16, radius: 0.4, reach: 1.35 };
@@ -6180,13 +6180,35 @@
     $('reg').classList.remove('show'); $('rank-btn').textContent = 'ランキングを見る';
     showRanking();
   });
+  // ---- s70: 遊んだ記録(ログ)を Firestore の plays に1回ぶん送る ----
+  // 端末の番号はランダムに作ってこの端末に覚えさせる(個人情報は使わない。ブラウザのデータを消すと新しい番号になる)
+  // 自動テスト(?debug・?noadapt・?notitle)のときは送らない。?logtest を付けると送る
+  const LOG_ON = !/[?&](notitle|debug|noadapt)/.test(location.search) || /[?&]logtest/.test(location.search);
+  let logSent = false, lastLog = null;
+  function deviceId() {
+    try { let id = localStorage.getItem('apoc10-device-v1'); if (!id) { id = fbId(); localStorage.setItem('apoc10-device-v1', id); } return id; } catch (e) { return 'nostorage'; }
+  }
+  function sendPlayLog(end) {
+    if (logSent) return; logSent = true;
+    const R = buildRates();
+    const f = { device: { stringValue: deviceId() }, ver: { stringValue: GAME_VERSION }, end: { stringValue: end },
+      def: { integerValue: String(R.def) }, life: { integerValue: String(R.life) }, dog: { booleanValue: !!(dog && dog.rescued) },
+      clearTime: allDoneAt !== null ? { doubleValue: +allDoneAt.toFixed(1) } : { nullValue: null }, kills: { integerValue: String(zKills) } };
+    lastLog = f;
+    if (!LOG_ON) return;
+    fetch(FB_DOCS + ':commit?key=' + FB.key, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writes: [{ update: { name: 'projects/' + FB.project + '/databases/(default)/documents/plays/' + fbId(), fields: f },
+        updateTransforms: [{ fieldPath: 'at', setToServerValue: 'REQUEST_TIME' }], currentDocument: { exists: false } }] }) }).catch(() => {});
+  }
   function showClear() {
+    sendPlayLog('clear');
     $('clear-time').textContent = allDoneAt !== null ? fmtTime(allDoneAt) : '--:--';
     if (allDoneAt === null) $('rank-btn').style.display = 'none';
     $('clear').classList.add('show');
   }
   function showGameOver(title, sub) {
     gameOver = true;
+    sendPlayLog(night.end === 'dawn' ? 'giant' : (night.end || 'unknown'));
     const R = buildRates();
     $('rate-def-n').textContent = R.def + '%'; $('rate-life-n').textContent = R.life + '%';
     requestAnimationFrame(() => { $('rate-def').style.width = R.def + '%'; $('rate-life').style.width = R.life + '%'; });
@@ -6314,6 +6336,7 @@
     allDoneAt() { return allDoneAt; },
     rates() { return { ...buildRates(), end: night.end || null }; },
     swept() { return insideSwept; },
+    lastLog() { return lastLog; },
     pullZombie(x, z) { const zb = zs.find(o => !o.dead && o.appear >= 1); if (!zb) return false; zb.x = x; zb.z = z; return true; },
     decor() { return { all: DECOR.length, hidden: DECOR.filter(d => d.hidden).length }; },
     axes() { return { n: axeInst.count, show: +(weaponShow - gt).toFixed(2), r: +axeR.toFixed(2), off: axesOff, launcher: launcher.visible }; },
